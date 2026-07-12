@@ -1,0 +1,248 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/image-plan.schema.json",
+  "title": "Image Generation Plan",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_id",
+    "source_refs",
+    "style_profile_ref",
+    "style_family",
+    "image_structure_rule_ref",
+    "image_set_structure",
+    "creative_direction",
+    "buyer_objections",
+    "generator_contract",
+    "reference_images",
+    "main_images",
+    "detail_images",
+    "disclaimer_images",
+    "must_preserve",
+    "must_not_change",
+    "forbidden_content",
+    "risks",
+    "processing"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "$ref": "#/$defs/productId" },
+    "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "style_profile_ref": { "type": "string", "minLength": 1 },
+    "style_family": { "$ref": "#/$defs/styleFamily" },
+    "image_structure_rule_ref": { "type": "string", "minLength": 1 },
+    "image_set_structure": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "variant_image_strategy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["mode", "variant_kinds", "variant_main_count", "shared_detail_count", "shared_disclaimer_count"],
+      "properties": {
+        "mode": {"type": "string", "enum": ["single_shared_main", "sku_specific_main_shared_details"]},
+        "variant_kinds": {"type": "array", "items": {"type": "string", "enum": ["color", "size_or_measurement", "configuration", "seller_specification"]}},
+        "variant_main_count": {"type": "integer", "minimum": 1, "maximum": 10},
+        "shared_detail_count": {"type": "integer", "minimum": 6, "maximum": 8},
+        "shared_disclaimer_count": {"type": "integer", "minimum": 0, "maximum": 1}
+      }
+    },
+    "buyer_objections": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "generator_contract": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["must_follow_style_profile", "style_profile_ref", "allowed_structure", "aspect_ratio", "deviation_requires_review"],
+      "properties": {
+        "must_follow_style_profile": { "type": "boolean", "const": true },
+        "style_profile_ref": { "type": "string", "minLength": 1 },
+        "allowed_structure": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "aspect_ratio": { "type": "string", "const": "3:4" },
+        "deviation_requires_review": { "type": "boolean" },
+        "advisory_skills_required": {
+          "type": "array",
+          "items": {"const": "ecommerce-branding"},
+          "maxItems": 1
+        },
+        "advisory_scope": {
+          "type": "string",
+          "enum": ["none", "background_lighting_composition_visual_consistency_only"]
+        },
+        "project_rules_take_precedence": {"const": true},
+        "image_slot_concurrency": {"type": "integer", "minimum": 1, "maximum": 4},
+        "image_qc_same_execution": {"type": "boolean"},
+        "product_pixel_lock_required": { "type": "boolean" },
+        "composition_tool": { "type": "string", "minLength": 1 },
+        "source_preflight_ref": { "type": "string", "minLength": 1 },
+        "generation_strategy": { "type": "string", "enum": ["image_type_routing", "product_specific_visual_story"] },
+        "deterministic_image_types": { "type": "array", "items": {"type": "string"} },
+        "ai_reference_edit_image_types": { "type": "array", "items": {"type": "string"} },
+        "raw_1688_image_direct_upload_forbidden": { "type": "boolean", "const": true },
+        "final_chinese_text_forbidden": { "type": "boolean", "const": true }
+        ,"plain_white_background_forbidden": { "type": "boolean" }
+        ,"main_images_first": { "type": "boolean" }
+        ,"target_total_seconds": { "type": "integer", "minimum": 1 }
+        ,"quality_gate": { "type": "string" }
+        ,"typography_strategy": { "type": "string" }
+      }
+    },
+    "creative_direction": { "type": "object" },
+    "learned_image_preferences": { "type": "array", "items": { "type": "object" } },
+    "reference_images": { "type": "array", "items": { "$ref": "#/$defs/referenceImage" } },
+    "buyer_analysis": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["who_buys", "why_buy", "main_pain_point", "strongest_selling_point", "proof_strategy"],
+      "properties": {
+        "who_buys": { "type": "array", "items": { "type": "string" } },
+        "why_buy": { "type": "array", "items": { "type": "string" } },
+        "main_pain_point": { "type": "string" },
+        "strongest_selling_point": { "type": "string" },
+        "proof_strategy": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "main_images": { "type": "array", "items": { "$ref": "#/$defs/plannedImage" } },
+    "detail_images": { "type": "array", "items": { "$ref": "#/$defs/plannedImage" } },
+    "disclaimer_images": { "type": "array", "items": { "$ref": "#/$defs/plannedImage" } },
+    "must_preserve": { "type": "array", "items": { "type": "string" } },
+    "must_not_change": { "type": "array", "items": { "type": "string" } },
+    "forbidden_content": { "type": "array", "items": { "type": "string" } },
+    "risks": { "type": "array", "items": { "$ref": "#/$defs/imageRisk" } },
+    "processing": { "$ref": "#/$defs/processingStep" }
+  },
+  "$defs": {
+    "productId": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "styleFamily": {
+      "type": "string",
+      "enum": [
+        "electronics_clean_tech",
+        "outdoor_rugged_lifestyle",
+        "kitchen_warm_home",
+        "home_minimal_organized",
+        "pet_friendly_lifestyle",
+        "beauty_clean_premium",
+        "baby_safe_soft",
+        "auto_practical_performance",
+        "unknown"
+      ]
+    },
+    "unknownableString": { "type": ["string", "null"], "minLength": 1 },
+    "referenceImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "role", "usable", "notes"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "path": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "enum": ["main", "sku", "detail", "disclaimer"] },
+        "usable": { "type": "boolean" },
+        "notes": { "$ref": "#/$defs/unknownableString" }
+      }
+    },
+    "plannedImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "slot",
+        "image_type",
+        "purchase_reason",
+        "visual_goal",
+        "scene_description",
+        "style_direction",
+        "purpose",
+        "buyer_question",
+        "selling_goal",
+        "scene",
+        "russian_text",
+        "visual_direction",
+        "reference_product_images",
+        "reference_image_ids",
+        "operation",
+        "prompt_brief",
+        "output_path",
+        "status",
+        "failure_reason"
+      ],
+      "properties": {
+        "type": { "type": "string", "minLength": 1 },
+        "slot": { "type": "string", "minLength": 1 },
+        "image_type": { "type": "string", "minLength": 1 },
+        "requested_image_type": {"type": "string", "minLength": 1},
+        "fallback_reason": {"type": "string", "minLength": 1},
+        "purchase_reason": { "type": "string", "minLength": 1 },
+        "visual_goal": { "type": "string", "minLength": 1 },
+        "scene_description": { "type": "string", "minLength": 1 },
+        "style_direction": { "type": "string", "minLength": 1 },
+        "purpose": { "type": "string", "minLength": 1 },
+        "buyer_question": { "type": "string", "minLength": 1 },
+        "selling_goal": { "type": "string", "minLength": 1 },
+        "scene": { "type": "string", "minLength": 1 },
+        "russian_text": { "type": "array", "items": { "type": "string" } },
+        "measurement_annotation": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": [
+            "length", "width", "height", "unit", "estimated", "confidence",
+            "source", "source_ref", "source_field", "label_ru"
+          ],
+          "properties": {
+            "length": {"type": "number", "exclusiveMinimum": 0},
+            "width": {"type": "number", "exclusiveMinimum": 0},
+            "height": {"type": "number", "exclusiveMinimum": 0},
+            "unit": {"const": "cm"},
+            "estimated": {"type": "boolean"},
+            "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+            "source": {"type": "string", "minLength": 1},
+            "source_ref": {"type": "string", "minLength": 1},
+            "source_field": {"const": "cost-analysis.product_dimensions"},
+            "label_ru": {"type": "string", "minLength": 1}
+          }
+        },
+        "visual_direction": { "type": "string", "minLength": 1 },
+        "reference_product_images": { "type": "array", "items": { "type": "string" } },
+        "reference_images": { "type": "array", "items": { "type": "string" } },
+        "reference_image_ids": { "type": "array", "items": { "type": "string" } },
+        "variant_scope": {"type": "string", "enum": ["shared", "sku"]},
+        "shared_across_variants": {"type": "boolean"},
+        "source_sku_id": {"type": "string", "minLength": 1},
+        "variant_kind": {"type": "string", "enum": ["color", "size_or_measurement", "configuration", "seller_specification", "mixed_supported", "not_applicable"]},
+        "variant_value": {"type": "string", "minLength": 1},
+        "operation": {
+          "type": "string",
+          "enum": ["locked_product_composite", "edit_real_image", "compose_from_real_images", "not_started", "needs_human_input"]
+        },
+        "source_text_policy": { "type": "string", "minLength": 1 },
+        "prompt": { "$ref": "#/$defs/unknownableString" },
+        "prompt_brief": { "$ref": "#/$defs/unknownableString" },
+        "output_path": { "type": "string", "minLength": 1 },
+        "status": { "type": "string", "enum": ["planned", "generated", "failed", "needs_review", "not_started", "replaced", "deleted"] },
+        "failure_reason": { "$ref": "#/$defs/unknownableString" },
+        "workbench_order": { "type": "integer", "minimum": 0 },
+        "kept_at": { "type": "string", "minLength": 1 },
+        "kept_by": { "type": "string", "minLength": 1 },
+        "replaced_at": { "type": "string", "minLength": 1 },
+        "replaced_by": { "type": "string", "minLength": 1 },
+        "deleted_at": { "type": "string", "minLength": 1 }
+      }
+    },
+    "imageRisk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["area", "level", "message"],
+      "properties": {
+        "area": { "type": "string", "minLength": 1 },
+        "level": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+        "message": { "type": "string", "minLength": 1 }
+      }
+    },
+    "processingStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "status", "started_at", "finished_at", "error"],
+      "properties": {
+        "step": { "type": "string", "const": "image_plan" },
+        "status": { "type": "string", "enum": ["not_started", "in_progress", "completed", "failed", "retryable"] },
+        "started_at": { "$ref": "#/$defs/unknownableString" },
+        "finished_at": { "$ref": "#/$defs/unknownableString" },
+        "error": { "$ref": "#/$defs/unknownableString" }
+      }
+    }
+  }
+}

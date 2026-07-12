@@ -1,0 +1,14 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["category_id", "type_id", "attributes", "confirmed_variant_fields", "incorrectly_classified_fields", "rule_data_complete"],
+  "properties": {
+    "category_id": {"type": "integer", "minimum": 1},
+    "type_id": {"type": "integer", "minimum": 1},
+    "attributes": {"type": "array", "items": {"type": "object", "additionalProperties": false, "required": ["attribute_id", "attribute_name", "is_aspect", "is_required", "dictionary_id", "allowed_for_variant_merge", "evidence_source", "reason"], "properties": {"attribute_id": {"type": "integer", "minimum": 1}, "attribute_name": {"type": "string"}, "is_aspect": {"type": ["boolean", "null"]}, "is_required": {"type": ["boolean", "null"]}, "dictionary_id": {"type": ["integer", "null"]}, "allowed_for_variant_merge": {"type": "boolean"}, "evidence_source": {"type": "string"}, "reason": {"type": "string"}}}},
+    "confirmed_variant_fields": {"type": "array", "items": {"type": "object"}},
+    "incorrectly_classified_fields": {"type": "array", "items": {"type": "object"}},
+    "rule_data_complete": {"type": "boolean"}
+  }
+}

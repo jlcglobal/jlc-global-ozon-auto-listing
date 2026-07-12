@@ -1,0 +1,170 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/variant-grouping-result.schema.json",
+  "title": "Source Product SKU Grouping Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_group_id",
+    "source_product_id",
+    "canonical_source_url",
+    "collection_product_id",
+    "sku_selection_task",
+    "selected_sku_count",
+    "product_group_count",
+    "variant_count",
+    "grouping_rule",
+    "must_merge",
+    "variant_mapping_status",
+    "upload_allowed",
+    "category_id",
+    "type_id",
+    "model_name_for_merge",
+    "common_attributes",
+    "variant_attribute",
+    "variant_attributes",
+    "variants",
+    "mapping_requirements",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_group_id": { "type": "string", "pattern": "^PG-[A-F0-9]{12}$" },
+    "source_product_id": { "type": "string", "minLength": 1 },
+    "canonical_source_url": { "type": "string", "minLength": 1 },
+    "collection_product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "sku_selection_task": { "type": "string", "minLength": 1 },
+    "selected_sku_count": { "type": "integer", "minimum": 1 },
+    "product_group_count": { "type": "integer", "const": 1 },
+    "variant_count": { "type": "integer", "minimum": 1 },
+    "grouping_rule": {
+      "type": "string",
+      "enum": [
+        "same_source_product",
+        "same_canonical_source_url",
+        "same_collection_product_id",
+        "same_sku_selection_task"
+      ]
+    },
+    "must_merge": { "type": "boolean" },
+    "variant_mapping_status": {
+      "type": "string",
+      "enum": ["MAPPED", "SEPARATE_CARDS_REQUIRED", "NOT_REQUIRED"]
+    },
+    "internal_product_group": { "type": "boolean" },
+    "internal_group_count": { "type": "integer", "const": 1 },
+    "platform": { "type": "string", "const": "ozon" },
+    "platform_can_merge": { "type": "boolean" },
+    "upload_strategy": { "type": "string", "enum": ["single_card_variants", "separate_cards"] },
+    "upload_allowed": { "type": "boolean" },
+    "category_id": { "type": "integer", "minimum": 1 },
+    "type_id": { "type": "integer", "minimum": 1 },
+    "model_name_for_merge": { "type": "string", "minLength": 1 },
+    "common_product_name": { "type": "string", "minLength": 1 },
+    "common_attributes": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["brand", "model_name", "product_type"],
+      "properties": {
+        "brand": { "type": "string", "minLength": 1 },
+        "model_name": { "type": "string", "minLength": 1 },
+        "product_type": { "type": "string", "minLength": 1 }
+      }
+    },
+    "variant_attribute": {
+      "oneOf": [
+        { "type": "null" },
+        { "$ref": "#/$defs/variantAttribute" }
+      ]
+    },
+    "variant_attributes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/variantAttribute" }
+    },
+    "variants": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "$ref": "#/$defs/variant" }
+    },
+    "mapping_requirements": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["difference_types", "allowed_variant_fields", "missing_rule"],
+      "properties": {
+        "difference_types": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "allowed_variant_fields": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["attribute_id", "attribute_name", "required"],
+            "properties": {
+              "attribute_id": { "type": "integer", "minimum": 1 },
+              "attribute_name": { "type": "string", "minLength": 1 },
+              "required": { "type": "boolean" }
+            }
+          }
+        },
+        "missing_rule": { "type": ["string", "null"] }
+      }
+    },
+    "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  },
+  "$defs": {
+    "variantAttribute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribute_id", "attribute_name"],
+      "properties": {
+        "attribute_id": { "type": "integer", "minimum": 1 },
+        "attribute_name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "variantAttributeValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribute_id", "attribute_name", "value", "source_value"],
+      "properties": {
+        "attribute_id": { "type": "integer", "minimum": 1 },
+        "attribute_name": { "type": "string", "minLength": 1 },
+        "value": { "type": "string", "minLength": 1 },
+        "source_value": { "type": "string", "minLength": 1 },
+        "dictionary_value_id": { "type": ["integer", "null"], "minimum": 1 },
+        "estimated": { "type": "boolean" },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "conversion_note": { "type": "string", "minLength": 1 }
+      }
+    },
+    "variant": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "selection_order",
+        "sku_id",
+        "offer_id",
+        "sku_name",
+        "variant_attribute_values",
+        "purchase_price_cny",
+        "selling_price",
+        "currency_code",
+        "image"
+      ],
+      "properties": {
+        "selection_order": { "type": "integer", "minimum": 1 },
+        "sku_id": { "type": "string", "minLength": 1 },
+        "offer_id": { "type": "string", "minLength": 1 },
+        "sku_name": { "type": "string", "minLength": 1 },
+        "variant_attribute_values": {
+          "type": "array",
+          "items": { "$ref": "#/$defs/variantAttributeValue" }
+        },
+        "purchase_price_cny": { "type": ["number", "null"], "minimum": 0 },
+        "selling_price": { "type": ["string", "number"], "minLength": 1 },
+        "currency_code": { "type": "string", "minLength": 1 },
+        "image": { "type": "string", "minLength": 1 },
+        "stock": { "type": "integer", "const": 0 }
+      }
+    }
+  }
+}

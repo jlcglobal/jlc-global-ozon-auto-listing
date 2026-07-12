@@ -1,0 +1,169 @@
+{
+  "schema_version": "1.0.0",
+  "shipping": {
+    "workbook": "pricing-engine/shipping_rules.xlsx",
+    "sheet": "RETS",
+    "selection_strategy": "lowest_cost_eligible_route",
+    "destination": "Russia",
+    "rub_per_cny_fallback": 12.0,
+    "volumetric_weight": {
+      "enabled": true,
+      "divisor_cm3_per_kg": 6000,
+      "source": "pricing_rules"
+    },
+    "routes": {
+      "RETS Extra Small Economy": {
+        "min_weight_g_exclusive": null,
+        "max_weight_g": 500,
+        "min_value_rub_exclusive": null,
+        "max_value_rub": 1500,
+        "max_side_cm": 60,
+        "max_sum_cm": 90,
+        "source_cells": ["RETS!AN2", "RETS!AO2"]
+      },
+      "RETS Budget Economy": {
+        "min_weight_g_exclusive": 500,
+        "max_weight_g": 30000,
+        "min_value_rub_exclusive": null,
+        "max_value_rub": 1500,
+        "max_side_cm": 60,
+        "max_sum_cm": 150,
+        "source_cells": ["RETS!AN2", "RETS!AO2"]
+      },
+      "RETS Small Economy": {
+        "min_weight_g_exclusive": null,
+        "max_weight_g": 2000,
+        "min_value_rub_exclusive": 1500,
+        "max_value_rub": 7000,
+        "max_side_cm": 60,
+        "max_sum_cm": 150,
+        "source_cells": ["RETS!AN2", "RETS!AO2"]
+      },
+      "RETS Big Standard": {
+        "min_weight_g_exclusive": 2000,
+        "max_weight_g": 30000,
+        "min_value_rub_exclusive": 1500,
+        "max_value_rub": 7000,
+        "max_side_cm": 150,
+        "max_sum_cm": 250,
+        "source_cells": ["RETS!AN2", "RETS!AO2"]
+      },
+      "RETS Premium Small Economy": {
+        "min_weight_g_exclusive": null,
+        "max_weight_g": 5000,
+        "min_value_rub_exclusive": 7000,
+        "max_value_rub": 250000,
+        "max_side_cm": 150,
+        "max_sum_cm": 250,
+        "source_cells": ["RETS!AN2", "RETS!AO2"]
+      },
+      "RETS Premium Big Economy": {
+        "min_weight_g_exclusive": 5000,
+        "max_weight_g": 30000,
+        "min_value_rub_exclusive": 7000,
+        "max_value_rub": 250000,
+        "max_side_cm": 150,
+        "max_sum_cm": 310,
+        "source_cells": ["RETS!AN2", "RETS!AO2"]
+      }
+    }
+  },
+  "pricing": {
+    "default_profit_rate": 0.5,
+    "commission_rate_min": 0.12,
+    "commission_rate_max": 0.2,
+    "commission_rate_default": 0.18,
+    "category_commission_rates": {},
+    "logistics_commission_rate": 0.02,
+    "acquiring_fee_rate": 0.02,
+    "withdrawal_fee_rate": 0.012,
+    "packing_fee_cny": 2.0,
+    "other_fixed_cost_cny": 0.0,
+    "rounding_step_cny": 1.0
+  },
+  "profitability": {
+    "minimum_profit_cny": 5.0,
+    "minimum_profit_margin": 0.1,
+    "warning_logistics_ratio": 0.65
+  },
+  "package_estimation": {
+    "weight_multiplier": 1.15,
+    "minimum_extra_weight_g": 30,
+    "dimension_multiplier": 1.05,
+    "minimum_extra_dimension_cm": 1,
+    "confidence_cap": 65
+  },
+  "measurement_profiles": [
+    {
+      "name": "portable_scale",
+      "keywords": ["行李秤", "行李称", "电子秤", "luggage scale"],
+      "weight_g": {"min": 20, "max": 1500, "estimate": 200},
+      "dimensions_cm": {"length": 16, "width": 11, "height": 4},
+      "confidence": 78
+    },
+    {
+      "name": "cup_bottle",
+      "keywords": ["水杯", "杯子", "保温杯", "bottle", "cup"],
+      "weight_g": {"min": 50, "max": 3000, "estimate": 500},
+      "dimensions_cm": {"length": 12, "width": 12, "height": 25},
+      "confidence": 70
+    },
+    {
+      "name": "kitchen_appliance",
+      "keywords": ["磨刀机", "厨房电器", "kitchen appliance"],
+      "weight_g": {"min": 100, "max": 8000, "estimate": 1800},
+      "dimensions_cm": {"length": 30, "width": 15, "height": 15},
+      "confidence": 68
+    },
+    {
+      "name": "drain_cover",
+      "keywords": [
+        "地漏盖",
+        "地漏防臭",
+        "排水口覆盖",
+        "下水道防返臭",
+        "drain cover"
+      ],
+      "weight_g": {
+        "min": 20,
+        "max": 1000,
+        "estimate": 150
+      },
+      "dimensions_cm": {
+        "length": 20,
+        "width": 20,
+        "height": 2
+      },
+      "confidence": 65
+    },
+    {
+      "name": "surveillance_camera",
+      "keywords": [
+        "监控摄像",
+        "网络监控",
+        "摄像机",
+        "摄像头",
+        "security camera",
+        "surveillance camera"
+      ],
+      "weight_g": {
+        "min": 150,
+        "max": 5000,
+        "estimate": 1200
+      },
+      "dimensions_cm": {
+        "length": 30,
+        "width": 20,
+        "height": 15
+      },
+      "confidence": 60
+    },
+    {
+      "name": "default",
+      "keywords": [],
+      "weight_g": {"min": 5, "max": 30000, "estimate": 1000},
+      "dimensions_cm": {"length": 30, "width": 20, "height": 15},
+      "confidence": 45
+    }
+  ]
+}

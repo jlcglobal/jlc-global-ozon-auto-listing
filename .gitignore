@@ -1,0 +1,86 @@
+# Secrets and local-only configuration
+.env
+.env.*
+!.env.example
+!**/.env.example
+*.pem
+*.key
+*.p12
+*.pfx
+*credentials*.json
+*secrets*.json
+*tokens*.json
+*cookies*.json
+config/lan-access.json
+
+# Dependencies and build output
+node_modules/
+dist/
+build/
+target/
+.venv/
+venv/
+
+# Python caches and test caches
+__pycache__/
+*.py[cod]
+.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+.coverage
+htmlcov/
+
+# Runtime product data and generated media
+products/*
+!products/.gitkeep
+batches/*
+!batches/.gitkeep
+runtime/*
+!runtime/.gitkeep
+generated_images/
+generated-images/
+**/output/generated-images/
+**/output/ozon-image-staging/
+**/image-cache/
+**/thumbnail-cache/
+**/thumbnails/
+
+# Local caches, queues and databases
+cache/
+*.sqlite
+*.sqlite3
+*.db
+*.db-wal
+*.db-shm
+*.sqlite-wal
+*.sqlite-shm
+image-channel-queue.json
+remote-pending-queue.json
+batch-result.json
+
+# Logs, temporary state, tunnels, locks and process files
+logs/*
+!logs/.gitkeep
+tmp/
+temp/
+.tmp/
+*.log
+*.pid
+*.lock
+*.sock
+*.tunnel
+*tunnel-state*
+*public-channel-state*
+
+# Packaged release artifacts
+release/*.zip
+
+# Editors and operating-system files
+.DS_Store
+**/.DS_Store
+.idea/
+.vscode/
+*.swp
+*.swo
+Thumbs.db
+Desktop.ini

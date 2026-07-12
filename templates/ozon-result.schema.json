@@ -1,0 +1,47 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-result.schema.json",
+  "title": "Ozon Product Creation Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "local_product_id", "shop_name", "task_id", "status", "moderation_status", "items", "errors", "error_code", "error_message", "failed_step", "created_at", "raw_response"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "local_product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "shop_name": {"type": "string", "minLength": 1},
+    "task_id": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "string", "const": "unknown"}, {"type": "null"}]},
+    "status": {"type": "string", "enum": ["not_started", "submitted", "processing", "created", "updated", "skipped", "failed"]},
+    "moderation_status": {"type": "string", "minLength": 1},
+    "items": {"type": "array", "items": {"$ref": "#/$defs/resultItem"}},
+    "errors": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "warnings": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "error_code": {"type": ["string", "null"], "minLength": 1},
+    "error_message": {"type": ["string", "null"], "minLength": 1},
+    "failed_step": {"type": ["string", "null"], "minLength": 1},
+    "created_at": {"type": "string", "format": "date-time"},
+    "raw_response": {"type": ["object", "null"], "additionalProperties": true},
+    "recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["query_count", "last_checked_at", "next_check_at"],
+      "properties": {
+        "query_count": {"type": "integer", "minimum": 0},
+        "last_checked_at": {"type": "string", "format": "date-time"},
+        "next_check_at": {"type": ["string", "null"], "format": "date-time"}
+      }
+    }
+  },
+  "$defs": {
+    "resultItem": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_sku_id", "offer_id", "product_id", "status", "errors"],
+      "properties": {
+        "source_sku_id": {"type": "string", "minLength": 1},
+        "offer_id": {"type": "string", "minLength": 1},
+        "product_id": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "string", "const": "unknown"}, {"type": "null"}]},
+        "status": {"type": "string", "minLength": 1},
+        "errors": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+      }
+    }
+  }
+}

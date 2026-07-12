@@ -1,0 +1,11 @@
+{
+  "name": "crossborder-1688-manual-collector",
+  "version": "0.2.0",
+  "private": true,
+  "scripts": {
+    "build": "tsc -p tsconfig.json"
+  },
+  "devDependencies": {
+    "typescript": "^5.5.0"
+  }
+}

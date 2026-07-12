@@ -1,0 +1,22 @@
+{
+  "schema_version": "1.1.0",
+  "default_read_shop": "zhonglian1",
+  "shops": [
+    {
+      "name": "zhonglian1",
+      "client_id_env": "OZON_ZHONGLIAN1_CLIENT_ID",
+      "api_key_env": "OZON_ZHONGLIAN1_API_KEY",
+      "default_currency_code": "CNY",
+      "default_vat": "0",
+      "default_unbranded_value": "Нет бренда",
+      "default_unbranded_dictionary_value_id": 126745801,
+      "id": "zhonglian1",
+      "display_name": "zhonglian1",
+      "enabled": true,
+      "notes": "",
+      "validation_status": "connected",
+      "last_validated_at": "2026-07-12T09:19:22+08:00",
+      "last_validation_error": null
+    }
+  ]
+}

@@ -1,0 +1,53 @@
+{
+  "values": [
+    {
+      "id": 81476,
+      "value": "NFC",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 81478,
+      "value": "Wi-Fi",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 81483,
+      "value": "Bluetooth",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 81484,
+      "value": "ИК",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 81485,
+      "value": "Проводной",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 81486,
+      "value": "Радио",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 81487,
+      "value": "Сотовый GSM",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972091039,
+      "value": "LTE",
+      "info": "",
+      "picture": ""
+    }
+  ],
+  "truncated": false
+}

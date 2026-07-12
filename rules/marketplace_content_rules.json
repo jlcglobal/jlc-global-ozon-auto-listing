@@ -1,0 +1,57 @@
+{
+  "schema_version": "1.0.0",
+  "title": {
+    "minimum_length": 10,
+    "maximum_length": 120,
+    "core_keyword_max_start_index": 20,
+    "forbidden_patterns": [
+      "100%",
+      "№1",
+      "лучший",
+      "гарантированно",
+      "официально сертифицирован"
+    ]
+  },
+  "keywords": {
+    "primary_min": 1,
+    "primary_max": 8,
+    "secondary_max": 20,
+    "allowed_sources": [
+      "product_type",
+      "usage_scene",
+      "purchase_motivation",
+      "sku"
+    ]
+  },
+  "required_description_sections": [
+    "product_value",
+    "usage_scenarios",
+    "core_advantages",
+    "usage_method",
+    "notices"
+  ],
+  "attribute_fields": [
+    "product_type",
+    "brand",
+    "material",
+    "dimensions",
+    "weight",
+    "load_capacity",
+    "certifications",
+    "functions",
+    "package_quantity",
+    "accessories"
+  ],
+  "upload_gate": {
+    "stage35_upload_allowed": false,
+    "required_for_future_upload": [
+      "human_approval",
+      "description_category_id",
+      "type_id",
+      "required_ozon_attribute_ids",
+      "sale_price_rub",
+      "stock",
+      "warehouse_id"
+    ]
+  }
+}

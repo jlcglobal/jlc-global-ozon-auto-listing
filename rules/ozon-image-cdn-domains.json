@@ -1,0 +1,6 @@
+{
+  "schema_version": "1.0.0",
+  "exact_hosts": ["ir.ozone.ru"],
+  "host_suffixes": [],
+  "temporary_host_suffixes": ["trycloudflare.com"]
+}

@@ -1,0 +1,143 @@
+{
+  "values": [
+    {
+      "id": 61753,
+      "value": "Алюминий",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61762,
+      "value": "Бамбук",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61766,
+      "value": "Береза",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61808,
+      "value": "Глина",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61815,
+      "value": "Дерево",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61819,
+      "value": "Доломит",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61828,
+      "value": "Жесть",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61873,
+      "value": "Керамика",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61928,
+      "value": "Медь",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61936,
+      "value": "Металл",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 61969,
+      "value": "Нержавеющая сталь",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62015,
+      "value": "Пластик",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62030,
+      "value": "Полипропилен",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62077,
+      "value": "Силикон",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62099,
+      "value": "Сталь",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62102,
+      "value": "Стекло",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62149,
+      "value": "Фарфор",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62186,
+      "value": "Хрусталь",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62191,
+      "value": "Чугун",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62401,
+      "value": "Боросиликатное стекло",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62461,
+      "value": "Дуб",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 62468,
+      "value": "Луженая сталь",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970688284,
+      "value": "Бетон",
+      "info": "",
+      "picture": ""
+    }
+  ],
+  "truncated": false
+}

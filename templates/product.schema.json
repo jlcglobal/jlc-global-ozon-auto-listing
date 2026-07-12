@@ -1,0 +1,230 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/product.schema.json",
+  "title": "Crossborder Product",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "product_id",
+    "schema_version",
+    "source",
+    "facts",
+    "inferences",
+    "unknowns",
+    "risks",
+    "selection",
+    "profit",
+    "platform",
+    "qc",
+    "processing"
+  ],
+  "properties": {
+    "product_id": { "type": "string", "minLength": 1 },
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "source": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["source_file", "raw_image_dir", "sku_image_dir", "original_url", "notes"],
+      "properties": {
+        "source_file": { "type": "string" },
+        "raw_image_dir": { "type": "string" },
+        "sku_image_dir": { "type": "string" },
+        "original_url": { "$ref": "#/$defs/unknownableString" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "facts": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["title_cn", "category", "brand", "materials", "dimensions", "weight", "functions", "accessories", "skus", "images"],
+      "properties": {
+        "title_cn": { "$ref": "#/$defs/unknownableString" },
+        "category": { "$ref": "#/$defs/unknownableString" },
+        "brand": { "$ref": "#/$defs/unknownableString" },
+        "materials": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+        "dimensions": { "$ref": "#/$defs/unknownableObject" },
+        "weight": { "$ref": "#/$defs/unknownableObject" },
+        "functions": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+        "accessories": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+        "skus": { "type": "array", "items": { "$ref": "#/$defs/sku" } },
+        "images": { "type": "array", "items": { "$ref": "#/$defs/imageRef" } }
+      }
+    },
+    "inferences": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/inference" }
+    },
+    "unknowns": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/unknown" }
+    },
+    "risks": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/risk" }
+    },
+    "selection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["decision", "reasons", "blockers"],
+      "properties": {
+        "decision": { "type": "string", "enum": ["pass", "review_required", "reject", "unknown"] },
+        "reasons": { "type": "array", "items": { "type": "string" } },
+        "blockers": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "profit": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["status", "fields"],
+      "properties": {
+        "status": { "type": "string", "enum": ["not_configured", "incomplete", "ready", "unknown"] },
+        "fields": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "platform": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["ozon"],
+      "properties": {
+        "ozon": {
+          "type": "object",
+          "additionalProperties": true,
+          "required": ["category", "title_ru", "bullets_ru", "description_ru", "keywords_ru", "attributes", "skus"],
+          "properties": {
+            "category": { "$ref": "#/$defs/unknownableString" },
+            "title_ru": { "$ref": "#/$defs/unknownableString" },
+            "bullets_ru": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+            "description_ru": { "$ref": "#/$defs/unknownableString" },
+            "keywords_ru": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+            "attributes": { "type": "object", "additionalProperties": true },
+            "skus": { "type": "array", "items": { "$ref": "#/$defs/platformSku" } }
+          }
+        }
+      }
+    },
+    "qc": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checked_at", "summary", "items"],
+      "properties": {
+        "status": { "type": "string", "enum": ["not_started", "pass", "review_required", "fail"] },
+        "checked_at": { "$ref": "#/$defs/unknownableString" },
+        "summary": { "type": "string" },
+        "items": { "type": "array", "items": { "$ref": "#/$defs/qcItem" } }
+      }
+    },
+    "processing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "current_step", "steps"],
+      "properties": {
+        "status": { "type": "string", "enum": ["not_started", "in_progress", "failed", "completed", "paused"] },
+        "current_step": { "type": "string" },
+        "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } }
+      }
+    }
+  },
+  "$defs": {
+    "unknownableString": {
+      "type": "string",
+      "minLength": 1
+    },
+    "unknownableObject": {
+      "oneOf": [
+        { "type": "object", "additionalProperties": true },
+        { "type": "string", "const": "unknown" }
+      ]
+    },
+    "sku": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sku_id", "name", "color", "spec", "accessories", "image_refs"],
+      "properties": {
+        "sku_id": { "type": "string" },
+        "name": { "$ref": "#/$defs/unknownableString" },
+        "color": { "$ref": "#/$defs/unknownableString" },
+        "spec": { "$ref": "#/$defs/unknownableString" },
+        "accessories": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+        "image_refs": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "platformSku": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["sku_id", "title_ru", "attributes"],
+      "properties": {
+        "sku_id": { "type": "string" },
+        "title_ru": { "$ref": "#/$defs/unknownableString" },
+        "attributes": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "imageRef": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "path", "type", "role", "notes"],
+      "properties": {
+        "id": { "type": "string" },
+        "path": { "type": "string" },
+        "type": { "type": "string", "enum": ["raw", "sku", "generated", "edited"] },
+        "role": { "type": "string" },
+        "notes": { "type": "string" }
+      }
+    },
+    "inference": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "value", "confidence", "basis"],
+      "properties": {
+        "field": { "type": "string" },
+        "value": {},
+        "confidence": { "type": "string", "enum": ["low", "medium", "high"] },
+        "basis": { "type": "string" }
+      }
+    },
+    "unknown": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "reason", "needed_from_human"],
+      "properties": {
+        "field": { "type": "string" },
+        "reason": { "type": "string" },
+        "needed_from_human": { "type": "boolean" }
+      }
+    },
+    "risk": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["area", "level", "message", "blocking"],
+      "properties": {
+        "area": { "type": "string" },
+        "level": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+        "message": { "type": "string" },
+        "blocking": { "type": "boolean" }
+      }
+    },
+    "qcItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["area", "status", "message"],
+      "properties": {
+        "area": { "type": "string" },
+        "status": { "type": "string", "enum": ["pass", "review_required", "fail", "unknown"] },
+        "message": { "type": "string" }
+      }
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "started_at", "finished_at", "outputs", "failure_reason", "retryable"],
+      "properties": {
+        "name": { "type": "string" },
+        "status": { "type": "string", "enum": ["not_started", "in_progress", "failed", "completed", "skipped"] },
+        "started_at": { "$ref": "#/$defs/unknownableString" },
+        "finished_at": { "$ref": "#/$defs/unknownableString" },
+        "outputs": { "type": "array", "items": { "type": "string" } },
+        "failure_reason": { "$ref": "#/$defs/unknownableString" },
+        "retryable": { "type": "boolean" }
+      }
+    }
+  }
+}

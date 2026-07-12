@@ -1,0 +1,80 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/rich-content.schema.json",
+  "title": "Ozon Rich Content",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "attribute_id", "language", "format", "status", "content", "serialized_json", "source_images", "warnings"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "attribute_id": {"type": "integer", "minimum": 0},
+    "language": {"type": "string", "const": "ru"},
+    "format": {"type": "string", "const": "ozon_rich_content_json"},
+    "status": {"type": "string", "enum": ["ready", "ready_for_upload", "missing_public_images", "invalid"]},
+    "content": {"$ref": "#/$defs/ozonPayload"},
+    "serialized_json": {"type": "string", "minLength": 2},
+    "source_images": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/sourceImage"}},
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  },
+  "$defs": {
+    "ozonPayload": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "content"],
+      "properties": {
+        "version": {"type": "number", "const": 0.3},
+        "content": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/widget"}}
+      }
+    },
+    "widget": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["widgetName", "type", "blocks"],
+      "properties": {
+        "widgetName": {"type": "string", "const": "raShowcase"},
+        "type": {"type": "string", "const": "billboard"},
+        "blocks": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/block"}}
+      }
+    },
+    "block": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["img", "title", "text"],
+      "properties": {
+        "img": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["src", "srcMobile"],
+          "properties": {
+            "src": {"type": "string", "pattern": "^(https://|asset://)"},
+            "srcMobile": {"type": "string", "pattern": "^(https://|asset://)"}
+          }
+        },
+        "title": {"$ref": "#/$defs/textBlock"},
+        "text": {"$ref": "#/$defs/textBlock"}
+      }
+    },
+    "textBlock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["content", "size", "align", "color"],
+      "properties": {
+        "content": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1, "not": {"pattern": "<[^>]+>"}}},
+        "size": {"type": "string", "enum": ["size2", "size3", "size4", "size5"]},
+        "align": {"type": "string", "enum": ["left", "center", "right"]},
+        "color": {"type": "string", "enum": ["color1", "color2"]}
+      }
+    },
+    "sourceImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["role", "local_path", "public_url"],
+      "properties": {
+        "role": {"type": "string", "enum": ["main", "benefit", "scene", "disclaimer"]},
+        "local_path": {"type": "string", "minLength": 1},
+        "public_url": {"type": "string", "pattern": "^(https://|asset://)"}
+      }
+    }
+  }
+}

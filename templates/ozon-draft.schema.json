@@ -1,0 +1,200 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-draft.schema.json",
+  "title": "Ozon Seller API Draft",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "product_id", "offer_id", "description_category_id", "type_id", "category",
+    "title", "description", "keywords", "attributes", "attribute_warnings", "price", "stock", "images", "skus",
+    "upload_allowed", "preflight", "source_refs"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "$ref": "#/$defs/productId" },
+    "offer_id": { "$ref": "#/$defs/unknownableString" },
+    "description_category_id": { "$ref": "#/$defs/unknownableInteger" },
+    "type_id": { "$ref": "#/$defs/unknownableInteger" },
+    "category": { "$ref": "#/$defs/categorySummary" },
+    "title": { "$ref": "#/$defs/unknownableString" },
+    "description": { "$ref": "#/$defs/unknownableString" },
+    "keywords": { "type": "array", "uniqueItems": true, "items": { "$ref": "#/$defs/unknownableString" } },
+    "warning": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "attributes": { "type": "array", "items": { "$ref": "#/$defs/ozonAttribute" } },
+    "attribute_warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "price": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["price", "old_price", "currency_code", "vat"],
+      "properties": {
+        "price": { "type": ["string", "null"], "pattern": "^[0-9]+(\\.[0-9]{1,2})?$" },
+        "old_price": { "type": ["string", "null"], "pattern": "^[0-9]+(\\.[0-9]{1,2})?$" },
+        "currency_code": { "type": "string", "enum": ["CNY", "RUB", "unknown"] },
+        "vat": { "$ref": "#/$defs/unknownableString" }
+      }
+    },
+    "currency": {"type": "string", "enum": ["CNY", "RUB", "unknown"]},
+    "pricing_source": {"type": "string", "minLength": 1},
+    "profit_warning": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "stock": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["quantity", "warehouse_id"],
+      "properties": {
+        "quantity": { "type": ["integer", "null"], "minimum": 0 },
+        "warehouse_id": { "$ref": "#/$defs/unknownableInteger" }
+      }
+    },
+    "images": { "type": "array", "items": { "$ref": "#/$defs/ozonImage" } },
+    "skus": { "type": "array", "items": { "$ref": "#/$defs/ozonSku" } },
+    "upload_allowed": { "type": "boolean" },
+    "preflight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "errors", "warnings", "checked_at"],
+      "properties": {
+        "status": { "type": "string", "enum": ["not_checked", "pass", "failed"] },
+        "errors": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+        "checked_at": { "$ref": "#/$defs/unknownableString" }
+        ,"metadata_source": { "type": "string", "enum": ["ozon_seller_api", "ozon_upload_preflight", "unknown"] }
+        ,"missing_required_attributes": { "type": "array", "items": { "$ref": "#/$defs/missingOzonAttribute" } }
+        ,"invalid_values": { "type": "array", "items": { "$ref": "#/$defs/invalidOzonValue" } }
+      }
+    },
+    "source_refs": { "type": "array", "minItems": 5, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } }
+  },
+  "allOf": [{
+    "if": {"properties": {"upload_allowed": {"const": true}}},
+    "then": {
+      "properties": {
+        "preflight": {
+          "properties": {
+            "status": {"const": "pass"},
+            "errors": {"maxItems": 0}
+          }
+        }
+      }
+    }
+  }],
+  "$defs": {
+    "productId": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "unknownableString": { "type": ["string", "null"], "minLength": 1 },
+    "unknownableInteger": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "string", "const": "unknown" },
+        { "type": "null" }
+      ]
+    },
+    "categorySummary": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["category_id", "category_name", "confidence", "match_status", "metadata_source"],
+      "properties": {
+        "category_id": { "$ref": "#/$defs/unknownableInteger" },
+        "category_name": { "type": "string", "minLength": 1 },
+        "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+        "match_status": {
+          "type": "string",
+          "enum": [
+            "pending_metadata_match", "semantic_match_needs_ozon_id", "needs_review", "unresolved",
+            "api_confirmed", "api_match_needs_review"
+          ]
+        },
+        "metadata_source": {
+          "type": "string",
+          "enum": ["stage35_category_proposal", "offline_semantic_profiles", "ozon_seller_api", "unknown"]
+        }
+      }
+    },
+    "optionValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name_cn", "value_cn", "source", "source_text"],
+      "properties": {
+        "name_cn": { "$ref": "#/$defs/unknownableString" },
+        "value_cn": { "$ref": "#/$defs/unknownableString" },
+        "source": { "type": "string", "minLength": 1 },
+        "source_text": { "$ref": "#/$defs/unknownableString" }
+      }
+    },
+    "ozonAttribute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field_key", "attribute_id", "complex_id", "values", "source", "status"],
+      "properties": {
+        "field_key": { "type": "string", "minLength": 1 },
+        "attribute_id": { "$ref": "#/$defs/unknownableInteger" },
+        "complex_id": { "$ref": "#/$defs/unknownableInteger" },
+        "values": { "type": "array", "items": { "type": "object", "additionalProperties": true } },
+        "source": { "type": "string", "enum": ["source", "analysis", "human", "unknown"] },
+        "status": { "type": "string", "enum": ["confirmed", "unknown", "needs_ozon_mapping"] }
+      }
+    },
+    "missingOzonAttribute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribute_id", "attribute_name"],
+      "properties": {
+        "attribute_id": { "type": "integer", "minimum": 1 },
+        "attribute_name": { "type": "string", "minLength": 1 }
+      }
+    },
+    "invalidOzonValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribute_id", "attribute_name", "value", "reason"],
+      "properties": {
+        "attribute_id": { "type": "integer", "minimum": 1 },
+        "attribute_name": { "type": "string", "minLength": 1 },
+        "value": {},
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    },
+    "ozonImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["slot", "role", "path", "source_image_ids", "qc_status"],
+      "properties": {
+        "slot": { "type": "string", "minLength": 1 },
+        "role": { "type": "string", "enum": ["main", "detail", "disclaimer", "sku"] },
+        "path": { "type": "string", "minLength": 1 },
+        "source_image_ids": { "type": "array", "items": { "type": "string" } },
+        "qc_status": { "type": "string", "enum": ["not_checked", "pass", "review_required", "fail"] }
+        ,"variant_scope": {"type": "string", "enum": ["shared", "sku"]}
+        ,"source_sku_id": {"type": "string", "minLength": 1}
+        ,"variant_kind": {"type": "string", "enum": ["color", "size_or_measurement", "configuration", "mixed_supported", "not_applicable"]}
+        ,"variant_value": {"type": "string", "minLength": 1}
+      }
+    },
+    "ozonSku": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "source_sku_id", "source_sku_name", "display_name_ru", "option_values", "offer_id",
+        "purchase_price_cny", "purchase_price_source", "sale_price_rub", "stock",
+        "source_image_url", "local_image_path", "sku_image_missing", "availability", "attributes", "source_data"
+      ],
+      "properties": {
+        "source_sku_id": { "$ref": "#/$defs/unknownableString" },
+        "source_sku_name": { "$ref": "#/$defs/unknownableString" },
+        "display_name_ru": { "$ref": "#/$defs/unknownableString" },
+        "option_values": { "type": "array", "items": { "$ref": "#/$defs/optionValue" } },
+        "offer_id": { "$ref": "#/$defs/unknownableString" },
+        "purchase_price_cny": { "type": ["number", "null"], "minimum": 0 },
+        "purchase_price_source": { "type": "string", "enum": ["sku_specific_price", "price_range", "unknown"] },
+        "sale_price_rub": { "type": ["string", "null"], "pattern": "^[0-9]+(\\.[0-9]{1,2})?$" },
+        "sale_price": { "type": ["string", "null"], "pattern": "^[0-9]+(\\.[0-9]{1,2})?$" },
+        "sale_currency_code": { "type": "string", "enum": ["CNY", "RUB", "unknown"] },
+        "stock": { "type": ["integer", "null"], "minimum": 0 },
+        "source_image_url": { "$ref": "#/$defs/unknownableString" },
+        "local_image_path": { "$ref": "#/$defs/unknownableString" },
+        "sku_image_missing": { "type": "boolean" },
+        "availability": { "type": "string", "enum": ["in_stock", "out_of_stock", "unknown"] },
+        "attributes": { "type": "array", "items": { "$ref": "#/$defs/ozonAttribute" } },
+        "source_data": { "type": "object", "additionalProperties": true }
+      }
+    }
+  }
+}

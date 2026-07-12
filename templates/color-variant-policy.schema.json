@@ -1,0 +1,30 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/color-variant-policy.schema.json",
+  "title": "Color Variant Upload Policy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "strategy", "status", "main_sku_id", "required_sale_skus", "missing_count", "blocking_variants", "warning_variants"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "strategy": {"type": "string", "const": "block_main_warn_optional"},
+    "status": {"type": "string", "enum": ["PASS", "WARNING", "BLOCK"]},
+    "main_sku_id": {"type": "string", "minLength": 1},
+    "required_sale_skus": {"type": "array", "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "missing_count": {"type": "integer", "minimum": 0},
+    "blocking_variants": {"type": "array", "items": {"$ref": "#/$defs/variant"}},
+    "warning_variants": {"type": "array", "items": {"$ref": "#/$defs/variant"}}
+  },
+  "$defs": {
+    "variant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sku_id", "sku_name", "reason"],
+      "properties": {
+        "sku_id": {"type": "string", "minLength": 1},
+        "sku_name": {"type": "string", "minLength": 1},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

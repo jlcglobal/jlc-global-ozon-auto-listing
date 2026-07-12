@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>商品采集箱</title>
+    <link rel="stylesheet" href="/inbox.css">
+  </head>
+  <body>
+    <header>
+      <div>
+        <h1>商品采集箱</h1>
+        <p>采集完成后先保存在这里，运行任务时冻结当前待处理商品。</p>
+      </div>
+      <div><button id="refresh-ozon-status" class="secondary">刷新Ozon状态</button><button id="run-task">运行任务</button></div>
+    </header>
+    <section class="metrics" aria-label="任务状态">
+      <div><strong id="pending-products">0</strong><span>待处理商品</span></div>
+      <div><strong id="pending-skus">0</strong><span>商品SKU总数</span></div>
+      <div><strong id="processing">0</strong><span>正在处理</span></div>
+      <div><strong id="success">0</strong><span>已成功</span></div>
+      <div><strong id="failed">0</strong><span>已失败</span></div>
+      <div><strong id="progress">0%</strong><span>当前批次进度</span></div>
+    </section>
+    <section class="batch-bar">
+      <div><strong id="batch-name">尚未运行</strong><span id="batch-status"></span></div>
+      <button id="view-result" class="secondary" disabled>查看本次结果</button>
+    </section>
+    <main id="product-grid" aria-live="polite"></main>
+    <dialog id="result-dialog">
+      <header><h2>本次任务结果</h2><button id="close-result" class="icon" aria-label="关闭">×</button></header>
+      <pre id="result-content"></pre>
+    </dialog>
+    <script src="/inbox.js"></script>
+  </body>
+</html>

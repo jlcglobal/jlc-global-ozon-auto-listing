@@ -1,0 +1,70 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/batch-result.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "batch_id", "status", "started_at", "completed_at", "product_count",
+    "sku_count", "success_count", "failed_count", "create_count", "update_count",
+    "api_write_count", "inventory_api_called", "submitted_count", "pending_remote_count",
+    "uploaded_count", "moderation_count", "performance", "products"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "batch_id": {"type": "string", "pattern": "^B-[A-F0-9]{12}$"},
+    "status": {"type": "string", "enum": ["STOPPED", "COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED"]},
+    "started_at": {"type": "string", "minLength": 1},
+    "completed_at": {"type": "string", "minLength": 1},
+    "product_count": {"type": "integer", "minimum": 0},
+    "sku_count": {"type": "integer", "minimum": 0},
+    "success_count": {"type": "integer", "minimum": 0},
+    "failed_count": {"type": "integer", "minimum": 0},
+    "create_count": {"type": "integer", "minimum": 0},
+    "update_count": {"type": "integer", "minimum": 0},
+    "api_write_count": {"type": "integer", "minimum": 0},
+    "submitted_count": {"type": "integer", "minimum": 0},
+    "pending_remote_count": {"type": "integer", "minimum": 0},
+    "uploaded_count": {"type": "integer", "minimum": 0},
+    "moderation_count": {"type": "integer", "minimum": 0},
+    "inventory_api_called": {"type": "boolean", "const": false},
+    "performance": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["average_product_seconds", "slowest_product_id", "slowest_product_seconds", "slowest_step", "average_image_generation_seconds", "category_rematch_count", "cache_hit_rate", "ozon_api_average_seconds"],
+      "properties": {
+        "average_product_seconds": {"type": "number", "minimum": 0},
+        "slowest_product_id": {"type": ["string", "null"]},
+        "slowest_product_seconds": {"type": "number", "minimum": 0},
+        "slowest_step": {"type": ["string", "null"]},
+        "average_image_generation_seconds": {"type": "number", "minimum": 0},
+        "category_rematch_count": {"type": "integer", "minimum": 0},
+        "cache_hit_rate": {"type": "number", "minimum": 0, "maximum": 1},
+        "ozon_api_average_seconds": {"type": "number", "minimum": 0}
+      }
+    },
+    "products": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "product_id", "selected_sku_count", "status", "upload_action", "offer_ids",
+          "ozon_product_ids", "moderation_status", "warnings", "failed_step", "errors", "api_write_count"
+        ],
+        "properties": {
+          "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+          "selected_sku_count": {"type": "integer", "minimum": 0},
+          "status": {"type": "string", "minLength": 1},
+          "upload_action": {"type": "string", "minLength": 1},
+          "offer_ids": {"type": "array", "items": {"type": "string"}},
+          "ozon_product_ids": {"type": "array", "items": {"type": ["string", "integer"]}},
+          "moderation_status": {"type": "string", "minLength": 1},
+          "warnings": {"type": "array", "items": {"type": "string"}},
+          "failed_step": {"type": ["string", "null"]},
+          "errors": {"type": "array", "items": {}},
+          "api_write_count": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}

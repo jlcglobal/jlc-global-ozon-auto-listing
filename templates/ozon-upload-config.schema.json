@@ -1,0 +1,93 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-upload-config.schema.json",
+  "title": "Ozon Upload Configuration",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "product_id", "shop_name", "currency_code", "sku_prices",
+    "brand", "model_name", "type", "sku_colors", "product_dimensions",
+    "product_weight", "package_dimensions", "package_weight", "vat", "stock_mode",
+    "old_price", "configured_at", "configured_by"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "shop_name": {"type": "string", "minLength": 1},
+    "currency_code": {"type": "string", "enum": ["CNY", "RUB"]},
+    "sku_prices": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/skuPrice"}},
+    "brand": {"$ref": "#/$defs/dictionaryAttribute"},
+    "model_name": {"$ref": "#/$defs/textAttribute"},
+    "merge_product_name": {"type": "string", "minLength": 1},
+    "type": {"$ref": "#/$defs/dictionaryAttribute"},
+    "sku_colors": {"type": "array", "items": {"$ref": "#/$defs/skuColor"}},
+    "product_dimensions": {"$ref": "#/$defs/packageDimensions"},
+    "product_weight": {"$ref": "#/$defs/packageWeight"},
+    "package_dimensions": {"$ref": "#/$defs/packageDimensions"},
+    "package_weight": {"$ref": "#/$defs/packageWeight"},
+    "vat": {"type": "string", "minLength": 1},
+    "stock_mode": {"type": "string", "const": "not_set"},
+    "old_price": {"type": ["string", "null"], "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"},
+    "configured_at": {"type": "string", "format": "date-time"},
+    "configured_by": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "skuPrice": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_sku_id", "price"],
+      "properties": {
+        "source_sku_id": {"type": "string", "minLength": 1},
+        "price": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"}
+      }
+    },
+    "dictionaryAttribute": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attribute_id", "dictionary_value_id", "value", "source"],
+      "properties": {
+        "attribute_id": {"type": "integer", "minimum": 1},
+        "dictionary_value_id": {"type": "integer", "minimum": 1},
+        "value": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "textAttribute": {
+      "type": "object", "additionalProperties": false,
+      "required": ["attribute_id", "value", "source"],
+      "properties": {
+        "attribute_id": {"type": "integer", "minimum": 1},
+        "value": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "skuColor": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_sku_id", "attribute_id", "dictionary_value_id", "value"],
+      "properties": {
+        "source_sku_id": {"type": "string", "minLength": 1},
+        "attribute_id": {"type": "integer", "minimum": 1},
+        "dictionary_value_id": {"type": "integer", "minimum": 1},
+        "value": {"type": "string", "minLength": 1}
+      }
+    },
+    "packageDimensions": {
+      "type": "object", "additionalProperties": false,
+      "required": ["length_mm", "width_mm", "height_mm", "source", "source_status"],
+      "properties": {
+        "length_mm": {"type": "number", "exclusiveMinimum": 0},
+        "width_mm": {"type": "number", "exclusiveMinimum": 0},
+        "height_mm": {"type": "number", "exclusiveMinimum": 0},
+        "source": {"type": "string", "minLength": 1},
+        "source_status": {"type": "string", "enum": ["confirmed_source", "estimated_human_approved", "estimated_system"]}
+      }
+    },
+    "packageWeight": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value_g", "source", "source_status"],
+      "properties": {
+        "value_g": {"type": "number", "exclusiveMinimum": 0},
+        "source": {"type": "string", "minLength": 1},
+        "source_status": {"type": "string", "enum": ["confirmed_source", "estimated_human_approved", "estimated_system"]}
+      }
+    }
+  }
+}

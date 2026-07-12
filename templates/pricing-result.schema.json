@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/pricing-result.schema.json",
+  "title": "Pricing Engine Result",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "pricing_source", "shipping_rules", "exchange_rate", "commission", "sku_pricing", "recommendation", "warnings", "generated_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "pricing_source": {"const": "pricing-engine"},
+    "shipping_rules": {
+      "type": "object", "additionalProperties": false,
+      "required": ["workbook", "worksheet", "workbook_sha256", "selection_strategy"],
+      "properties": {
+        "workbook": {"type": "string", "minLength": 1},
+        "worksheet": {"const": "RETS"},
+        "workbook_sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "selection_strategy": {"const": "lowest_cost_eligible_route"}
+      }
+    },
+    "exchange_rate": {
+      "type": "object", "additionalProperties": false,
+      "required": ["rub_per_cny", "source"],
+      "properties": {
+        "rub_per_cny": {"type": "number", "exclusiveMinimum": 0},
+        "source": {"const": "RETS!P2"}
+      }
+    },
+    "commission": {
+      "type": "object", "additionalProperties": false,
+      "required": ["value", "source"],
+      "properties": {
+        "value": {"type": "number", "minimum": 0.12, "maximum": 0.2},
+        "source": {"enum": ["category_rule", "default_unknown_category"]}
+      }
+    },
+    "sku_pricing": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/skuPricing"}},
+    "recommendation": {"enum": ["UPLOAD", "WARNING", "REJECT"]},
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "generated_at": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "nullableMoney": {"type": ["number", "null"], "minimum": 0},
+    "shipping": {
+      "oneOf": [
+        {"type": "null"},
+        {
+          "type": "object", "additionalProperties": false,
+          "required": ["route_name", "shipping_cost_cny", "source", "source_sheet", "source_cells", "calculated_value_rub", "weight"],
+          "properties": {
+            "route_name": {"type": "string", "minLength": 1},
+            "shipping_cost_cny": {"type": "number", "minimum": 0},
+            "source": {"const": "shipping_table"},
+            "source_sheet": {"const": "RETS"},
+            "source_cells": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+            "calculated_value_rub": {"type": "number", "minimum": 0},
+            "weight": {
+              "type": "object", "additionalProperties": false,
+              "required": ["actual_weight_g", "volumetric_weight_g", "billable_weight_g", "basis", "volumetric_source"],
+              "properties": {
+                "actual_weight_g": {"type": "number", "minimum": 0},
+                "volumetric_weight_g": {"type": "number", "minimum": 0},
+                "billable_weight_g": {"type": "number", "minimum": 0},
+                "basis": {"enum": ["actual", "volumetric"]},
+                "volumetric_source": {"type": "string", "minLength": 1}
+              }
+            }
+          }
+        }
+      ]
+    },
+    "skuPricing": {
+      "type": "object",
+      "required": ["sku_id", "purchase_cost_cny", "shipping", "selling_price_cny", "selling_price_rub", "commission_rate", "commission_source", "estimated_profit_cny", "status", "errors"],
+      "properties": {
+        "sku_id": {"type": "string", "minLength": 1},
+        "purchase_cost_cny": {"$ref": "#/$defs/nullableMoney"},
+        "purchase_cost_source": {"type": "string"},
+        "shipping": {"$ref": "#/$defs/shipping"},
+        "base_cost_cny": {"type": "number", "minimum": 0},
+        "base_price_before_percentage_fees_cny": {"type": "number", "minimum": 0},
+        "selling_price_cny": {"$ref": "#/$defs/nullableMoney"},
+        "selling_price_rub": {"$ref": "#/$defs/nullableMoney"},
+        "commission_rate": {"type": "number", "minimum": 0.12, "maximum": 0.2},
+        "commission_source": {"enum": ["category_rule", "default_unknown_category"]},
+        "logistics_commission_rate": {"type": "number"},
+        "acquiring_fee_rate": {"type": "number"},
+        "withdrawal_fee_rate": {"type": "number"},
+        "packing_fee_cny": {"type": "number"},
+        "other_fixed_cost_cny": {"type": "number"},
+        "total_percentage_fee_rate": {"type": "number"},
+        "estimated_variable_fees_cny": {"type": "number"},
+        "estimated_profit_cny": {"$ref": "#/$defs/nullableMoney"},
+        "profit_rate_markup": {"type": "number"},
+        "status": {"enum": ["UPLOAD", "WARNING", "REJECT"]},
+        "errors": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      },
+      "additionalProperties": false
+    }
+  }
+}

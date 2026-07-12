@@ -1,0 +1,64 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/merge-repair-payload.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "generated_at",
+    "upload_mode",
+    "api_writes_performed",
+    "action",
+    "archive_status",
+    "product_group_id",
+    "protected_offers",
+    "protected_product_ids",
+    "validation",
+    "request"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "upload_mode": {"type": "string", "const": "dry-run"},
+    "api_writes_performed": {"type": "boolean", "const": false},
+    "action": {"type": "string", "const": "update"},
+    "archive_status": {"type": "string", "const": "manually_archived"},
+    "product_group_id": {"type": "string", "minLength": 1},
+    "protected_offers": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "string", "minLength": 1}
+    },
+    "protected_product_ids": {
+      "type": "array",
+      "minItems": 1,
+      "items": {"type": "integer", "minimum": 1}
+    },
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "checks", "errors"],
+      "properties": {
+        "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+        "checks": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["name", "passed", "detail"],
+            "properties": {
+              "name": {"type": "string"},
+              "passed": {"type": "boolean"},
+              "detail": {"type": "string"}
+            }
+          }
+        },
+        "errors": {
+          "type": "array",
+          "items": {"type": "string", "minLength": 1}
+        }
+      }
+    },
+    "request": {"type": "object", "additionalProperties": true}
+  }
+}

@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "status": "valid",
+  "source_archive": "xiaobai-ozon-rule-db-2026-07-10.zip",
+  "source_archive_sha256": "f476781485a98230fde13666ecb7e2cdf235cd8ca74cfad6f173fce5118b6244",
+  "imported_at": "2026-07-10T22:40:27+00:00",
+  "version": "ozon-rules-2026-07-10",
+  "updated_at": "2026-07-10T22:29:16.420Z",
+  "category_count": 7424,
+  "attribute_count": 266834,
+  "attribute_rule_count": 7424,
+  "variant_rule_count": 7424,
+  "variant_attribute_count": 45357,
+  "sync_error_count": 0,
+  "files": {
+    "attributes.json": {
+      "sha256": "69a6b255f3dd0fe1c81f171a52c7ac8c7418a2725fd5de2541f544bef48dab1a",
+      "bytes": 101134925
+    },
+    "categories.json": {
+      "sha256": "364c26002ad927bbc27525f980b94a01edca6031f1a4be0a49a03db239cd8fe3",
+      "bytes": 4094257
+    },
+    "sync-errors.json": {
+      "sha256": "37517e5f3dc66819f61f5a7bb8ace1921282415f10551d2defa5c3eb0985b570",
+      "bytes": 3
+    },
+    "variants.json": {
+      "sha256": "ec04a056a6e5265aca78331aeadb2a1254cd4c4ba646a1be7a13f9c4d2449574",
+      "bytes": 8649531
+    },
+    "version.json": {
+      "sha256": "8d5870837f64ca996e673e4fd30490c2b09c5e338106ad11e8d9f4c1f3c1c2b4",
+      "bytes": 195
+    }
+  }
+}

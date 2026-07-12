@@ -1,0 +1,82 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-category.schema.json",
+  "title": "Ozon Category Match",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "product_id", "category_id", "category_name", "confidence",
+    "match_status", "metadata_source", "alternatives", "rationale", "evidence", "warnings"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "enum": ["1.0.0", "2.0.0"] },
+    "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "category_id": { "$ref": "#/$defs/unknownableInteger" },
+    "category_name": { "type": "string", "minLength": 1 },
+    "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+    "match_status": {
+      "type": "string",
+      "enum": [
+        "semantic_match_needs_ozon_id", "needs_review", "unresolved",
+        "api_confirmed", "api_match_needs_review"
+      ]
+    },
+    "metadata_source": {
+      "type": "string",
+      "enum": ["offline_semantic_profiles", "ozon_seller_api"]
+    },
+    "type_id": { "$ref": "#/$defs/unknownableInteger" },
+    "parent_id": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "null" }
+      ]
+    },
+    "category_path": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "alternatives": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category_id", "category_name", "confidence", "reason"],
+        "properties": {
+          "category_id": { "$ref": "#/$defs/unknownableInteger" },
+          "category_name": { "type": "string", "minLength": 1 },
+          "confidence": { "type": "number", "minimum": 0, "maximum": 1 },
+          "reason": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "rationale": { "type": "string", "minLength": 1 },
+    "evidence": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["field", "matched_signals", "source_refs"],
+        "properties": {
+          "field": { "type": "string", "minLength": 1 },
+          "matched_signals": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+          "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "warnings": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "schema_version": { "const": "2.0.0" } } },
+      "then": { "required": ["type_id", "parent_id", "category_path"] }
+    }
+  ],
+  "$defs": {
+    "unknownableInteger": {
+      "oneOf": [
+        { "type": "integer", "minimum": 1 },
+        { "type": "string", "const": "unknown" },
+        { "type": "null" }
+      ]
+    }
+  }
+}

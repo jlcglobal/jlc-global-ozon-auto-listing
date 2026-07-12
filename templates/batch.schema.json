@@ -1,0 +1,49 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/batch.schema.json",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "batch_id", "status", "created_at", "started_at", "completed_at",
+    "product_count", "sku_count", "processing_count", "success_count", "failed_count",
+    "progress", "products"
+  ],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "batch_id": {"type": "string", "pattern": "^B-[A-F0-9]{12}$"},
+    "status": {"type": "string", "enum": ["QUEUED", "RUNNING", "STOPPED", "COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED"]},
+    "created_at": {"type": "string", "minLength": 1},
+    "started_at": {"type": "string", "minLength": 1},
+    "completed_at": {"type": "string", "minLength": 1},
+    "product_count": {"type": "integer", "minimum": 0},
+    "sku_count": {"type": "integer", "minimum": 0},
+    "processing_count": {"type": "integer", "minimum": 0},
+    "success_count": {"type": "integer", "minimum": 0},
+    "failed_count": {"type": "integer", "minimum": 0},
+    "progress": {"type": "integer", "minimum": 0, "maximum": 100},
+    "target_store_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true},
+    "auto_upload": {"type": "boolean"},
+    "manual_upload_required": {"type": "boolean"},
+    "inventory_submission_enabled": {"type": "boolean", "const": false},
+    "products": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["product_id", "selected_sku_count", "status", "current_step", "started_at", "completed_at", "warnings", "errors"],
+        "properties": {
+          "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+          "selected_sku_count": {"type": "integer", "minimum": 0},
+          "status": {"type": "string", "minLength": 1},
+          "current_step": {"type": "string", "minLength": 1},
+          "started_at": {"type": "string", "minLength": 1},
+          "completed_at": {"type": "string", "minLength": 1},
+          "warnings": {"type": "array", "items": {"type": "string"}},
+          "errors": {"type": "array", "items": {"type": ["string", "object"]}}
+          ,"target_store_ids": {"type": "array", "items": {"type": "string", "minLength": 1}, "uniqueItems": true}
+          ,"publication_count": {"type": "integer", "minimum": 0}
+        }
+      }
+    }
+  }
+}

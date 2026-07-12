@@ -1,0 +1,229 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/status.schema.json",
+  "title": "Product Workflow Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_id",
+    "status",
+    "current_step",
+    "progress",
+    "started_at",
+    "completed_at",
+    "error_code",
+    "error_message",
+    "warnings",
+    "retry_count",
+    "ozon",
+    "steps",
+    "history"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "$ref": "#/$defs/productId" },
+    "status": {
+      "type": "string",
+      "enum": [
+        "COLLECTING",
+        "COLLECTED",
+        "QUEUED",
+        "PROCESSING",
+        "CATEGORY_MATCHED",
+        "CONTENT_GENERATED",
+        "IMAGES_GENERATED",
+        "PRICED",
+      "OZON_READY",
+      "STOPPED",
+      "UPLOADING",
+        "UPLOADED",
+        "PENDING_REMOTE",
+        "FAILED_HARD_BLOCKER",
+        "OZON_MODERATION",
+        "ACTIVE"
+      ]
+    },
+    "current_step": { "$ref": "#/$defs/stepName" },
+    "progress": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "started_at": { "$ref": "#/$defs/unknownableString" },
+    "completed_at": { "$ref": "#/$defs/unknownableString" },
+    "error_code": { "$ref": "#/$defs/unknownableString" },
+    "error_message": { "$ref": "#/$defs/unknownableString" },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "warning_history": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["batch_id", "archived_at", "warnings"],
+        "properties": {
+          "batch_id": { "$ref": "#/$defs/unknownableString" },
+          "archived_at": { "type": "string", "minLength": 1 },
+          "warnings": { "type": "array", "items": { "type": "string" } }
+        }
+      }
+    },
+    "retry_count": { "type": "integer", "minimum": 0 },
+    "task_authorized": { "type": "boolean" },
+    "batch_id": { "$ref": "#/$defs/unknownableString" },
+    "completed_steps": { "type": "array", "items": { "type": "string" } },
+    "pending_steps": { "type": "array", "items": { "type": "string" } },
+    "failed_step": { "$ref": "#/$defs/unknownableString" },
+    "retry_count_by_step": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
+    "api_write_count": { "type": "integer", "minimum": 0 },
+    "last_run_at": { "$ref": "#/$defs/unknownableString" },
+    "next_action": { "$ref": "#/$defs/unknownableString" },
+    "remote_recovery": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["task_id", "query_count", "last_checked_at", "next_check_at", "api_write_completed"],
+      "properties": {
+        "task_id": {"type": "string", "minLength": 1},
+        "query_count": {"type": "integer", "minimum": 0},
+        "last_checked_at": {"$ref": "#/$defs/unknownableString"},
+        "next_check_at": {"$ref": "#/$defs/unknownableString"},
+        "api_write_completed": {"type": "boolean"}
+      }
+    },
+    "review": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["approved_by_human", "approved_at", "reviewer", "notes"],
+      "properties": {
+        "approved_by_human": { "type": "boolean" },
+        "approved_at": { "$ref": "#/$defs/unknownableString" },
+        "reviewer": { "$ref": "#/$defs/unknownableString" },
+        "notes": { "type": "array", "items": { "type": "string" } }
+      }
+    },
+    "platform_grouping": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["internal_product_group_id", "source_product_id", "canonical_source_url", "sibling_offer_ids", "shared_assets", "shared_product_analysis", "source_sku_count", "ozon_card_count", "platform_can_merge", "upload_strategy", "reason"],
+      "properties": {
+        "internal_product_group_id": {"type": "string", "minLength": 1},
+        "source_product_id": {"$ref": "#/$defs/unknownableString"},
+        "canonical_source_url": {"$ref": "#/$defs/unknownableString"},
+        "sibling_offer_ids": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "shared_assets": {"type": "array", "items": {"type": "string", "minLength": 1}},
+        "shared_product_analysis": {"type": "string", "minLength": 1},
+        "source_sku_count": {"type": "integer", "minimum": 1},
+        "ozon_card_count": {"type": "integer", "minimum": 1},
+        "platform_can_merge": {"type": "boolean"},
+        "upload_strategy": {"type": "string", "enum": ["merged_variants", "separate_cards", "single_sku", "rule_required"]},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "ozon": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["upload_status", "product_id", "offer_id", "task_id", "last_response", "errors"],
+      "properties": {
+        "upload_status": {
+          "type": "string",
+          "enum": ["not_started", "blocked", "uploading", "updating", "uploaded", "failed"]
+        },
+        "product_id": { "$ref": "#/$defs/unknownableString" },
+        "offer_id": { "$ref": "#/$defs/unknownableString" },
+        "task_id": { "$ref": "#/$defs/unknownableString" },
+        "shop_name": { "$ref": "#/$defs/unknownableString" },
+        "last_response": { "type": ["object", "null"], "additionalProperties": true },
+        "errors": { "type": "array", "items": { "$ref": "#/$defs/statusError" } }
+      }
+    },
+    "steps": { "type": "array", "items": { "$ref": "#/$defs/step" } },
+    "history": { "type": "array", "items": { "$ref": "#/$defs/historyItem" } }
+  },
+  "allOf": [
+    {
+      "if": { "properties": { "status": { "const": "UPLOADED" } } },
+      "then": {
+        "properties": {
+          "ozon": { "properties": { "upload_status": { "const": "uploaded" } } }
+        }
+      }
+    }
+  ],
+  "$defs": {
+    "productId": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "unknownableString": { "type": ["string", "null"], "minLength": 1 },
+    "stepName": {
+      "type": "string",
+      "enum": [
+        "none",
+        "collect_source",
+        "queue",
+        "validate_source",
+        "category_match",
+        "variant_rules",
+        "offer_exists_check",
+        "upload_feasibility",
+        "marketplace_content",
+        "measurements",
+        "image_qc",
+        "pricing",
+        "rich_content",
+        "field_completion",
+        "final_upload_check",
+        "download_images",
+        "write_source",
+        "product_analysis",
+        "product_positioning",
+        "style_selector",
+        "russian_copy",
+        "image_plan",
+        "image_generation",
+        "qc",
+        "ozon_draft",
+        "human_review",
+        "ozon_preflight",
+        "ozon_upload",
+        "ozon_update",
+        "ozon_status"
+      ]
+    },
+    "step": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "started_at", "finished_at", "retry_count", "retryable", "error"],
+      "properties": {
+        "name": { "$ref": "#/$defs/stepName" },
+        "status": { "type": "string", "enum": ["not_started", "in_progress", "completed", "failed", "skipped"] },
+        "started_at": { "$ref": "#/$defs/unknownableString" },
+        "finished_at": { "$ref": "#/$defs/unknownableString" },
+        "retry_count": { "type": "integer", "minimum": 0 },
+        "retryable": { "type": "boolean" },
+        "error": { "$ref": "#/$defs/statusErrorOrNull" }
+      }
+    },
+    "statusErrorOrNull": {
+      "oneOf": [
+        { "$ref": "#/$defs/statusError" },
+        { "type": "null" }
+      ]
+    },
+    "statusError": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "reason", "occurred_at", "retryable"],
+      "properties": {
+        "step": { "$ref": "#/$defs/stepName" },
+        "reason": { "type": "string", "minLength": 1 },
+        "occurred_at": { "$ref": "#/$defs/unknownableString" },
+        "retryable": { "type": "boolean" }
+      }
+    },
+    "historyItem": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["from", "to", "at", "reason"],
+      "properties": {
+        "from": { "type": ["string", "null"] },
+        "to": { "type": "string" },
+        "at": { "$ref": "#/$defs/unknownableString" },
+        "reason": { "type": "string", "minLength": 1 }
+      }
+    }
+  }
+}

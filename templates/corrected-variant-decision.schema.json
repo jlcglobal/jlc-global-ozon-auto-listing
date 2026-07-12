@@ -1,0 +1,19 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["product_id", "internal_product_group", "internal_group_count", "source_sku_count", "platform", "platform_can_merge", "reason", "allowed_variant_fields", "upload_strategy", "variant_rule_data_incomplete"],
+  "properties": {
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "internal_product_group": {"type": "boolean"},
+    "internal_group_count": {"type": "integer", "const": 1},
+    "source_sku_count": {"type": "integer", "minimum": 1},
+    "platform": {"type": "string", "const": "ozon"},
+    "platform_can_merge": {"type": "boolean"},
+    "reason": {"type": "string", "minLength": 1},
+    "allowed_variant_fields": {"type": "array", "items": {"type": "object"}},
+    "upload_strategy": {"type": "string", "enum": ["single_card_variants", "separate_cards"]},
+    "variant_rule_data_incomplete": {"type": "boolean"},
+    "forbidden_coercions": {"type": "array", "items": {"type": "string"}}
+  }
+}

@@ -1,0 +1,503 @@
+{
+  "values": [
+    {
+      "id": 83618,
+      "value": "IP10",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83619,
+      "value": "IP11",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83620,
+      "value": "IP12",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83621,
+      "value": "IP13",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83622,
+      "value": "IP14",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83623,
+      "value": "IP15",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83624,
+      "value": "IP16",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83625,
+      "value": "IP17",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83626,
+      "value": "IP18",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83627,
+      "value": "IP20",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83628,
+      "value": "IP21",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83629,
+      "value": "IP21S",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83630,
+      "value": "IP22",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83631,
+      "value": "IP22S",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83632,
+      "value": "IP23",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83633,
+      "value": "IP23S",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83634,
+      "value": "IP24",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83635,
+      "value": "IP25",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83636,
+      "value": "IP26",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83637,
+      "value": "IP27",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83638,
+      "value": "IP28",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83639,
+      "value": "IP30",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83640,
+      "value": "IP31",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83641,
+      "value": "IP32",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83642,
+      "value": "IP33",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83643,
+      "value": "IP34",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83644,
+      "value": "IP35",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83645,
+      "value": "IP36",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83646,
+      "value": "IP37",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83647,
+      "value": "IP38",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83648,
+      "value": "IP40",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83649,
+      "value": "IP41",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83650,
+      "value": "IP42",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83651,
+      "value": "IP43",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83652,
+      "value": "IP44",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83653,
+      "value": "IP45",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83654,
+      "value": "IP46",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83655,
+      "value": "IP47",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83656,
+      "value": "IP48",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83657,
+      "value": "IP50",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83658,
+      "value": "IP51",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83659,
+      "value": "IP52",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83660,
+      "value": "IP53",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83661,
+      "value": "IP54",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83662,
+      "value": "IP55",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83663,
+      "value": "IP56",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83664,
+      "value": "IP57",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83665,
+      "value": "IP58",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83666,
+      "value": "IP60",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83667,
+      "value": "IP61",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83668,
+      "value": "IP62",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83669,
+      "value": "IP63",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83670,
+      "value": "IP64",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83671,
+      "value": "IP65",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83672,
+      "value": "IP66",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83673,
+      "value": "IP67",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83674,
+      "value": "IP68",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83675,
+      "value": "IP69K",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83676,
+      "value": "IPX0",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83677,
+      "value": "IPX1",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83678,
+      "value": "IPX2",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83679,
+      "value": "IPX3",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83680,
+      "value": "IPX4",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83681,
+      "value": "IPX5",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83682,
+      "value": "IPX6",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83683,
+      "value": "IPX7",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 83684,
+      "value": "IPX8",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970697859,
+      "value": "WR30",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970697860,
+      "value": "WR50",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970697861,
+      "value": "WR100",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970697862,
+      "value": "WR200",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970985085,
+      "value": "IPX12",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970985086,
+      "value": "IPX9",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970985087,
+      "value": "IP769",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970985088,
+      "value": "IP70",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971169021,
+      "value": "20 ATM",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972090546,
+      "value": "IP00",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972132180,
+      "value": "5 ATM",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972191853,
+      "value": "IP73",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972741673,
+      "value": "IP69",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972942175,
+      "value": "10 АТМ",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972999792,
+      "value": "IP59",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 973051775,
+      "value": "2 ATM",
+      "info": "",
+      "picture": ""
+    }
+  ],
+  "truncated": false
+}

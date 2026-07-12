@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["internal_group_count", "platform_card_count", "platform_can_merge", "allowed_aspect_attributes", "detected_sku_differences", "mapped_aspect_attributes", "upload_strategy", "reason"],
+  "properties": {
+    "internal_group_count": {"type": "integer", "const": 1},
+    "platform_card_count": {"type": "integer", "minimum": 1},
+    "platform_can_merge": {"type": "boolean"},
+    "allowed_aspect_attributes": {"type": "array", "items": {"type": "object"}},
+    "detected_sku_differences": {"type": "array", "items": {"type": "object"}},
+    "mapped_aspect_attributes": {"type": "array", "items": {"type": "object"}},
+    "upload_strategy": {"type": "string", "enum": ["merged_variants", "separate_cards", "single_sku", "rule_required"]},
+    "reason": {"type": "string", "minLength": 1}
+  }
+}

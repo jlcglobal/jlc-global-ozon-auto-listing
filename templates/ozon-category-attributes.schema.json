@@ -1,0 +1,55 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-category-attributes.schema.json",
+  "title": "Ozon Category Attribute Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "product_id", "fetched_at", "api_endpoint", "category_id",
+    "category_name", "type_id", "attributes", "warnings"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "fetched_at": { "type": "string", "format": "date-time" },
+    "api_endpoint": { "type": "string", "const": "/v1/description-category/attribute" },
+    "category_id": { "type": "integer", "minimum": 1 },
+    "category_name": { "type": "string", "minLength": 1 },
+    "type_id": { "type": "integer", "minimum": 1 },
+    "attributes": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/categoryAttribute" }
+    },
+    "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  },
+  "$defs": {
+    "allowedValue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "value"],
+      "properties": {
+        "id": { "type": "integer", "minimum": 1 },
+        "value": { "type": "string", "minLength": 1 }
+      }
+    },
+    "categoryAttribute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "attribute_id", "attribute_name", "required", "type", "dictionary_id",
+        "complex_id", "is_collection", "allowed_values", "values_truncated"
+      ],
+      "properties": {
+        "attribute_id": { "type": "integer", "minimum": 1 },
+        "attribute_name": { "type": "string", "minLength": 1 },
+        "required": { "type": "boolean" },
+        "type": { "type": "string", "minLength": 1 },
+        "dictionary_id": { "type": ["integer", "null"], "minimum": 1 },
+        "complex_id": { "type": ["integer", "null"], "minimum": 1 },
+        "is_collection": { "type": "boolean" },
+        "allowed_values": { "type": "array", "items": { "$ref": "#/$defs/allowedValue" } },
+        "values_truncated": { "type": "boolean" }
+      }
+    }
+  }
+}

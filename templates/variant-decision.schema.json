@@ -1,0 +1,102 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/variant-decision.schema.json",
+  "title": "Ozon SKU Variant Compatibility Decision",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_id",
+    "checked_at",
+    "rule_source",
+    "rule_version",
+    "category_id",
+    "type_id",
+    "sku_count",
+    "can_merge",
+    "confidence",
+    "difference_type",
+    "matched_rule_source",
+    "mapping_supported",
+    "allowed_variant_fields",
+    "detected_difference_fields",
+    "reason",
+    "warnings"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "checked_at": { "type": "string", "format": "date-time" },
+    "rule_source": { "type": "string", "minLength": 1 },
+    "rule_version": { "type": "string", "minLength": 1 },
+    "category_id": { "type": "integer", "minimum": 1 },
+    "type_id": { "type": "integer", "minimum": 1 },
+    "sku_count": { "type": "integer", "minimum": 0 },
+    "can_merge": { "type": "boolean" },
+    "internal_product_group": { "type": "boolean" },
+    "platform_can_merge": { "type": "boolean" },
+    "variant_rule_data_incomplete": { "type": "boolean" },
+    "confidence": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "difference_type": { "type": "string", "minLength": 1 },
+    "matched_rule_source": { "type": "string", "minLength": 1 },
+    "mapping_supported": { "type": "boolean" },
+    "allowed_variant_fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["attribute_id", "attribute_name", "required"],
+        "properties": {
+          "attribute_id": { "type": "integer", "minimum": 1 },
+          "attribute_name": { "type": "string", "minLength": 1 },
+          "required": { "type": "boolean" }
+        }
+      }
+    },
+    "detected_difference_fields": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": [
+          "source_field",
+          "source_values",
+          "difference_kind",
+          "mapped_variant_fields",
+          "compatible"
+        ],
+        "properties": {
+          "source_field": { "type": "string", "minLength": 1 },
+          "source_values": {
+            "type": "array",
+            "minItems": 2,
+            "items": { "type": "string", "minLength": 1 }
+          },
+          "difference_kind": {
+            "type": "string",
+            "enum": ["color", "configuration", "size_or_measurement", "model_or_style", "unknown"]
+          },
+          "mapped_variant_fields": {
+            "type": "array",
+            "items": {
+              "type": "object",
+              "additionalProperties": false,
+              "required": ["attribute_id", "attribute_name"],
+              "properties": {
+                "attribute_id": { "type": "integer", "minimum": 1 },
+                "attribute_name": { "type": "string", "minLength": 1 }
+              }
+            }
+          },
+          "compatible": { "type": "boolean" }
+        }
+      }
+    },
+    "reason": {
+      "type": "array",
+      "minItems": 1,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}

@@ -1,0 +1,6 @@
+jsonschema==4.23.0
+fastapi==0.115.6
+uvicorn==0.34.0
+numpy==1.26.4
+Pillow==11.3.0
+opencv-python-headless==4.11.0.86

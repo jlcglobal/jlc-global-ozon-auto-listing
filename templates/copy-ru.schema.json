@@ -1,0 +1,62 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/copy-ru.schema.json",
+  "title": "Russian Product Copy",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_id",
+    "source_refs",
+    "title_ru",
+    "bullets_ru",
+    "description_ru",
+    "keywords_ru",
+    "excluded_unknown_fields",
+    "warnings",
+    "processing"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "$ref": "#/$defs/productId" },
+    "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "title_ru": { "$ref": "#/$defs/unknownableString" },
+    "short_title": { "$ref": "#/$defs/unknownableString" },
+    "bullets_ru": { "type": "array", "items": { "$ref": "#/$defs/evidenceText" } },
+    "selling_points": { "type": "array", "items": { "$ref": "#/$defs/evidenceText" } },
+    "description_ru": { "$ref": "#/$defs/unknownableString" },
+    "description": { "$ref": "#/$defs/unknownableString" },
+    "keywords_ru": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+    "keywords": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+    "usage_scenarios": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+    "warning": { "type": "array", "items": { "type": "string" } },
+    "excluded_unknown_fields": { "type": "array", "items": { "type": "string" } },
+    "warnings": { "type": "array", "items": { "type": "string" } },
+    "processing": { "$ref": "#/$defs/processingStep" }
+  },
+  "$defs": {
+    "productId": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "unknownableString": { "type": ["string", "null"], "minLength": 1 },
+    "evidenceText": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text_ru", "evidence"],
+      "properties": {
+        "text_ru": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "processingStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "status", "started_at", "finished_at", "error"],
+      "properties": {
+        "step": { "type": "string", "const": "russian_copy" },
+        "status": { "type": "string", "enum": ["not_started", "in_progress", "completed", "failed", "retryable"] },
+        "started_at": { "$ref": "#/$defs/unknownableString" },
+        "finished_at": { "$ref": "#/$defs/unknownableString" },
+        "error": { "$ref": "#/$defs/unknownableString" }
+      }
+    }
+  }
+}

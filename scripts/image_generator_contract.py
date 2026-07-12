@@ -1,0 +1,212 @@
+#!/usr/bin/env python3
+"""Create a strict prompt packet for Codex built-in image generation.
+
+This module intentionally does not call any model or image API.
+"""
+
+from __future__ import annotations
+
+import argparse
+import json
+from pathlib import Path
+from typing import Any, Dict
+
+try:
+    from scripts.style_selector import load_json
+except ModuleNotFoundError:  # Allows direct execution as scripts/image_generator_contract.py.
+    from style_selector import load_json
+
+
+IMAGE_TYPE_REQUIREMENTS = {
+    "main": {
+        "decision_job": "Earn the click in three seconds by showing the real product, its core value and its usage context.",
+        "required_composition": "The real product is dominant; the usage context supports it; the core Russian sales message is immediately readable.",
+    },
+    "benefit": {
+        "decision_job": "Turn one verified product capability or use into one clear buyer benefit.",
+        "required_composition": "One benefit only, supported by the real product or a truthful usage action; avoid a feature collage.",
+    },
+    "feature": {
+        "decision_job": "Prove one visible, source-backed reason to buy this exact product.",
+        "required_composition": "Show one verified feature with product-specific close-up evidence; do not build a generic icon collage.",
+    },
+    "scene": {
+        "decision_job": "Answer how and where the buyer will use the product.",
+        "required_composition": "Show a plausible real-life use environment derived from product positioning, with the real product visibly in use.",
+    },
+    "usage": {
+        "decision_job": "Show one truthful use action so the buyer immediately understands the product.",
+        "required_composition": "Use a clear real-life action derived from source facts; never invent functions or accessories.",
+    },
+    "problem_solution": {
+        "decision_job": "Make the pre-purchase problem and the verified solution path understandable at a glance.",
+        "required_composition": "Use a clear problem-to-solution visual sequence without claiming unverified performance.",
+    },
+    "detail": {
+        "decision_job": "Build trust with visible, verified construction and operation details.",
+        "required_composition": "Use close-up evidence from the references; do not invent material, interfaces, controls or accessories.",
+    },
+    "size_spec": {
+        "decision_job": "Help the buyer judge fit using product-body dimensions, with estimates clearly marked as approximate.",
+        "required_composition": "Render product-body measurement guides. Estimated values must say 'Примерные размеры'; package dimensions are forbidden.",
+    },
+    "comparison": {
+        "decision_job": "Help the buyer choose among verified SKU differences.",
+        "required_composition": "Compare only source-backed SKU attributes and preserve each SKU's exact product identity.",
+    },
+    "disclaimer": {
+        "decision_job": "Reduce returns by explaining confirmed limitations and information the buyer must verify.",
+        "required_composition": "Use a calm, readable information layout; do not turn unknowns into negative product claims.",
+    },
+}
+
+
+def find_slot(plan: Dict[str, Any], slot: str) -> Dict[str, Any]:
+    for key in ("main_images", "detail_images", "disclaimer_images"):
+        for item in plan.get(key, []):
+            if item.get("slot") == slot:
+                return item
+    raise ValueError(f"Unknown image slot: {slot}")
+
+
+def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
+    profile = load_json(product_dir / "output/style-profile.json")
+    plan = load_json(product_dir / "output/image-plan.json")
+    positioning_path = product_dir / "output/product-positioning.json"
+    positioning = load_json(positioning_path) if positioning_path.is_file() else {}
+    item = find_slot(plan, slot)
+    expected_ref = f"products/{product_dir.name}/output/style-profile.json"
+
+    if plan["style_profile_ref"] != expected_ref:
+        raise ValueError("Image plan does not reference this product's style-profile.json")
+    if plan["style_family"] != profile["style_family"]:
+        raise ValueError("Image plan style family does not match style-profile.json")
+    if item["image_type"] not in profile["image_set_structure"]:
+        raise ValueError("Image type is not allowed by the selected style structure")
+    if item["status"] == "needs_review" or item["operation"] == "needs_human_input":
+        raise ValueError(f"Image slot {slot} is blocked: {item['failure_reason']}")
+    if not item["reference_product_images"]:
+        raise ValueError("A final product image requires real product references")
+    russian_text = item.get("russian_text", [])
+    if not russian_text or any(str(value).strip().lower() == "unknown" for value in russian_text):
+        raise ValueError(f"Image slot {slot} is blocked: Russian image text is unknown")
+
+    image_type_contract = IMAGE_TYPE_REQUIREMENTS[item["image_type"]]
+    operation = str(item.get("operation") or "needs_human_input")
+    measurement_annotation = item.get("measurement_annotation")
+    if item["image_type"] == "size_spec":
+        if not measurement_annotation:
+            raise ValueError("Size image requires product-body dimensions from the measurement module")
+        if measurement_annotation.get("source_field") != "cost-analysis.product_dimensions":
+            raise ValueError("Size image must not use package dimensions")
+        if measurement_annotation.get("estimated") and not any(
+            "Примерные размеры" in str(value) for value in russian_text
+        ):
+            raise ValueError("Estimated size image must be labelled 'Примерные размеры'")
+
+    return {
+        "product_id": product_dir.name,
+        "slot": slot,
+        "aspect_ratio": "3:4",
+        "style_family": profile["style_family"],
+        "style_direction": {
+            "tone": profile["tone"],
+            "color_direction": profile["color_direction"],
+            "composition_style": profile["composition_style"],
+            "text_style": profile["text_style"],
+        },
+        "creative_direction": profile.get("creative_direction") or plan.get("creative_direction") or {},
+        "learned_image_preferences": plan.get("learned_image_preferences") or [],
+        "product_positioning": {
+            "market_positioning": positioning.get("market_positioning", "unknown"),
+            "target_customer": positioning.get("target_customer", "unknown"),
+            "purchase_motivation": positioning.get("purchase_motivation", "unknown"),
+            "customer_pain_points": positioning.get("customer_pain_points", ["unknown"]),
+            "core_sales_angle": positioning.get("core_sales_angle", "unknown"),
+            "emotional_trigger": positioning.get("emotional_trigger", "unknown"),
+            "competitive_advantage": positioning.get("competitive_advantage", "unknown"),
+        },
+        "image_intent": {
+            "image_type": item["image_type"],
+            "buyer_question": item["buyer_question"],
+            "purchase_reason": item["purchase_reason"],
+            "visual_goal": item["visual_goal"],
+            "scene_description": item["scene_description"],
+            "selling_goal": item["selling_goal"],
+            "scene": item["scene"],
+            "russian_text": item["russian_text"],
+            "measurement_annotation": measurement_annotation,
+            "style_direction": item["style_direction"],
+            "visual_direction": item["visual_direction"],
+        },
+        "buyer_objections": plan.get("buyer_objections", ["unknown"]),
+        "generation_contract": {
+            **image_type_contract,
+            "advisory_skills_applied": plan["generator_contract"].get("advisory_skills_required", []),
+            "advisory_scope": plan["generator_contract"].get("advisory_scope", "unknown"),
+            "project_rules_take_precedence": True,
+            "image_slot_concurrency": plan["generator_contract"].get("image_slot_concurrency", 1),
+            "image_qc_same_execution": plan["generator_contract"].get("image_qc_same_execution", False),
+            "conversion_logic_required": True,
+            "exact_russian_text": russian_text,
+            "operation": operation,
+            "background_generation_only": False,
+            "product_pixels_must_come_from_reference": operation == "compose_from_real_images",
+            "composition_tool": (
+                "deterministic crop, mask and layout"
+                if operation == "compose_from_real_images"
+                else "built-in reference image editing"
+            ),
+            "forbidden_shortcuts": [
+                "plain white-background optimization only",
+                "fixed category template reused across different products",
+                "repeating the same composition with only a background change",
+                "generic product photography without a buyer decision purpose",
+                "unverified product features, parameters, accessories or certifications",
+                "Chinese source text, seller watermarks, or 1688 decorations in the final image",
+                "showing several selectable SKUs as if one order contains all of them",
+            ],
+            "main_images_first": True,
+            "target_total_seconds": 300,
+            "quality_gate": [
+                "wrong product or SKU",
+                "wrong color",
+                "invented accessory or function",
+                "obvious deformation",
+                "Chinese or garbage text",
+                "unreadable Russian text",
+            ],
+        },
+        "reference_product_images": item["reference_product_images"],
+        "required_visual_signals": profile["generator_constraints"]["required_visual_signals"],
+        "forbidden_visual_signals": profile["generator_constraints"]["forbidden_visual_signals"],
+        "truthfulness_guardrails": profile["generator_constraints"]["truthfulness_guardrails"],
+        "must_preserve": plan["must_preserve"],
+        "must_not_change": plan["must_not_change"],
+        "instruction": (
+            "Use deterministic crop, mask and layout from the real references; AI must not redraw the product. "
+            if operation == "compose_from_real_images"
+            else "Use the built-in image editor with the supplied real product references. Preserve product identity, color, structure, proportions, markings and accessories while creating the requested scene. "
+        ) + (
+            "Reject low-resolution thumbnails instead of enlarging them. Add only verified Russian text, reject Chinese text and seller watermarks, "
+            "and never imply that all selectable SKU variants are included in one order."
+        ),
+    }
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser(description="Build a Codex image generation prompt packet.")
+    parser.add_argument("product_dir", help="Path to products/{product_id}")
+    parser.add_argument("slot", help="Image plan slot, for example main-001")
+    args = parser.parse_args()
+    try:
+        packet = build_prompt_packet(Path(args.product_dir).resolve(), args.slot)
+    except ValueError as error:
+        print(f"BLOCKED: {error}")
+        return 2
+    print(json.dumps(packet, ensure_ascii=False, indent=2))
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

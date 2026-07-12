@@ -1,0 +1,35 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/final-upload-check.schema.json",
+  "title": "Final Ozon Upload Check",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "checked_at", "status", "upload_allowed", "checks", "errors", "warnings"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "checked_at": {"type": "string", "format": "date-time"},
+    "status": {"type": "string", "enum": ["PASS", "FAIL"]},
+    "upload_allowed": {"type": "boolean"},
+    "checks": {"type": "array", "minItems": 4, "items": {"$ref": "#/$defs/check"}},
+    "errors": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}}
+  },
+  "allOf": [{
+    "if": {"properties": {"upload_allowed": {"const": true}}},
+    "then": {"properties": {"status": {"const": "PASS"}, "errors": {"maxItems": 0}}},
+    "else": {"properties": {"status": {"const": "FAIL"}}}
+  }],
+  "$defs": {
+    "check": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "passed", "detail"],
+      "properties": {
+        "name": {"type": "string", "minLength": 1},
+        "passed": {"type": "boolean"},
+        "detail": {"type": "string", "minLength": 1}
+      }
+    }
+  }
+}

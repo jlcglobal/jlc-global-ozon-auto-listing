@@ -18,6 +18,8 @@
 - 基线标签：`baseline-before-category-selection`
 - 基线提交信息：`baseline: current crossborder-ai-factory before category workflow update`
 - 工作台与成员隔离阶段提交：`a6491560c3033af5b41153b11d89437189774e81`（`feat: simplify workbench and isolate operator data`）。
+- 清理旧采集箱和重复发布镜像提交：`7d54daf`（`refactor: simplify core workbench maintenance`）。
+- 一键启动、类目搜索和7424类目离线规则提交：`aadf80b`（`fix: keep workbench and category selection available`）。
 - 基线包含327个文件，约166.15 MiB，主要体积来自必须保留的Ozon本地规则/类目缓存。
 - 没有配置远程仓库，没有push，没有上传GitHub。
 

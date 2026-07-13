@@ -263,6 +263,22 @@ def client_ip_allowed(client_host: str, config: Dict[str, Any]) -> bool:
     return False
 
 
+def loopback_can_use_implicit_owner(request: Request) -> bool:
+    """Trust the host workbench, but never a cross-site page targeting localhost."""
+    origin = str(request.headers.get("origin") or "").strip()
+    fetch_site = str(request.headers.get("sec-fetch-site") or "").strip().lower()
+    if not origin:
+        return fetch_site not in {"cross-site", "same-site"}
+    try:
+        parsed = urllib.parse.urlparse(origin)
+        return (
+            parsed.scheme in {"http", "https"}
+            and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
+        )
+    except ValueError:
+        return False
+
+
 def is_loopback_client(client_host: str) -> bool:
     host = str(client_host or "").split("%", 1)[0]
     if host in {"localhost", "testclient"}:
@@ -1029,9 +1045,15 @@ async def local_network_only(request: Request, call_next):
     operator: Optional[Dict[str, Any]] = None
     if request.url.path.startswith("/api/") and request.method != "OPTIONS" and request.url.path != "/health":
         operator = authenticate_operator(ROOT, supplied) if supplied else None
-        if operator is None and loopback and not supplied:
+        if (
+            operator is None
+            and loopback
+            and not supplied
+            and loopback_can_use_implicit_owner(request)
+        ):
             # The host Mac is the owner's trusted workstation. LAN devices and
             # any explicitly supplied code are always authenticated normally.
+            # Cross-site pages cannot inherit the owner's local permission.
             operator = default_operator(ROOT)
         if operator is None:
             return JSONResponse(
@@ -1158,24 +1180,6 @@ def read_product_card(product_dir: Path) -> Dict[str, Any]:
         "thumbnail_url": f"/api/inbox/products/{product_dir.name}/thumbnail",
         "retryable": status.get("status") == "FAILED_HARD_BLOCKER",
     }
-
-
-@app.get("/inbox")
-def inbox_page() -> FileResponse:
-    trigger_image_cleanup()
-    ensure_image_status_monitor()
-    sync_remote_ozon_status_once()
-    return FileResponse(STATIC_DIR / "inbox.html", media_type="text/html")
-
-
-@app.get("/inbox.css")
-def inbox_css() -> FileResponse:
-    return FileResponse(STATIC_DIR / "inbox.css", media_type="text/css")
-
-
-@app.get("/inbox.js")
-def inbox_js() -> FileResponse:
-    return FileResponse(STATIC_DIR / "inbox.js", media_type="application/javascript")
 
 
 @app.get("/api/inbox/products")

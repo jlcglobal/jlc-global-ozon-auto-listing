@@ -130,6 +130,30 @@ class LanCollaborationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(denied.status_code, 401)
             self.assertEqual(allowed.status_code, 200)
 
+    async def test_cross_site_page_cannot_inherit_loopback_owner(self):
+        def request_with(headers=None):
+            encoded = [(key.lower().encode(), value.encode()) for key, value in (headers or {}).items()]
+            return Request({
+                "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+                "method": "POST", "scheme": "http", "path": "/api/workbench/settings",
+                "raw_path": b"/api/workbench/settings", "query_string": b"", "headers": encoded,
+                "client": ("127.0.0.1", 50000), "server": ("127.0.0.1", 8765),
+            })
+
+        async def accepted(_request):
+            return JSONResponse({"ok": True})
+
+        cross_site = await workbench.local_network_only(
+            request_with({"Origin": "https://untrusted.example", "Sec-Fetch-Site": "cross-site"}),
+            accepted,
+        )
+        same_origin = await workbench.local_network_only(
+            request_with({"Origin": "http://127.0.0.1:8765", "Sec-Fetch-Site": "same-origin"}),
+            accepted,
+        )
+        self.assertEqual(cross_site.status_code, 401)
+        self.assertEqual(same_origin.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

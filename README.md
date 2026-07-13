@@ -24,6 +24,18 @@ python3 -m uvicorn app:app \
   --port 8765
 ```
 
+需要让同一局域网内的成员电脑访问时，将`--host 127.0.0.1`改为`--host 0.0.0.0`，并在系统设置中启用局域网访问、为成员创建独立访问码。
+
+## 打包Edge采集插件
+
+插件只有一份源码：`collector/edge-extension/`。发布ZIP由脚本生成，不再维护容易不同步的第二份源码镜像：
+
+```bash
+python3 scripts/package_edge_extension.py
+```
+
+生成文件位于`release/1688商品采集插件-<版本>.zip`。
+
 ## 永久安全限制
 
 - 不提交库存字段，不设置`stock=0`，不调用库存接口。

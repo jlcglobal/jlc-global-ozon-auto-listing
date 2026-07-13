@@ -362,14 +362,16 @@ class CollectionInboxTest(unittest.TestCase):
         }.issubset(statuses))
         self.assertTrue({"WAITING_REVIEW", "APPROVED", "REJECTED"}.isdisjoint(statuses))
 
-    def test_inbox_ui_has_required_actions(self):
-        html = (ROOT / "collector/local-ingest/static/inbox.html").read_text(encoding="utf-8")
-        script = (ROOT / "collector/local-ingest/static/inbox.js").read_text(encoding="utf-8")
-        self.assertIn("运行任务", html)
-        self.assertIn("查看本次结果", html)
-        self.assertIn("打开商品目录", script)
-        self.assertIn("重新采集", script)
-        self.assertIn("删除商品", script)
+    def test_workbench_is_the_only_product_inbox_ui(self):
+        static_dir = ROOT / "collector/local-ingest/static"
+        self.assertFalse((static_dir / "inbox.html").exists())
+        self.assertFalse((static_dir / "inbox.css").exists())
+        self.assertFalse((static_dir / "inbox.js").exists())
+        html = (static_dir / "workbench.html").read_text(encoding="utf-8")
+        script = (static_dir / "workbench.js").read_text(encoding="utf-8")
+        self.assertIn("我的采集箱", html)
+        self.assertIn("运行可处理商品", script)
+        self.assertIn("彻底删除", script)
 
 
 if __name__ == "__main__":

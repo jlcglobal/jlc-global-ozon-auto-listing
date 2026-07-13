@@ -956,6 +956,7 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
             f"调用$full-product-pipeline，product_id={product_dir.name}。"
             f"本轮只完成status.json中的next_action步骤：{step}，完成后立即校验输出并更新断点，不执行后续步骤。"
             "需求已经完全确定：事实只读取当前商品目录；未知可选字段写unknown；不得向用户提问。"
+            "如果存在input/operator-guidance.json，必须读取并使用其中用户对商品结构、SKU对应关系和配件数量的回答；回答只补充对应问题，不得扩展成未经确认的事实。"
             + fast_analysis_instruction
             + "product_analysis必须逐项读取1688标题、结构化属性、SKU文字和详情图中的明确文字；例如标题明确写硅胶时材质不能仍为unknown。"
             "商品重量尺寸和包装重量尺寸缺失时允许由measurement模块估算并保存estimated与confidence；包装重量及长宽高必须分别严格大于商品本体值，运费只使用包装值。"
@@ -982,6 +983,7 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                 f"调用$full-product-pipeline，product_id={product_dir.name}。"
                 "本轮只完成product_analysis并生成output/product-analysis.json，校验后立即结束。"
                 "只读取input/source.json中的标题、有效结构化商品属性、所选SKU文字，以及确有必要的主图/SKU图；"
+                "如果存在input/operator-guidance.json，必须读取其中用户对商品结构、SKU对应关系或配件数量的回答，并保存可追溯引用；"
                 "如果存在input/manual-confirmation.json，必须同时读取；其中尺寸、重量、材质和人民币进价是用户在本批次唯一一次确认后保存的补充信息，"
                 "应标记为estimated_human_approved并优先于普通AI推测，但不得改写input/source.json；"
                 "没有详情图时直接记录unknown，不扫描无关文件。"
@@ -1011,6 +1013,7 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                 "这是用户点击运行任务后已授权的无人值守批次；禁止向用户提问、请求确认或等待回复，直接执行并保存结果。"
                 "本轮只完成image_generation；只读取image-plan.json、style-profile.json、product-analysis.json、"
                 "copy-ru.json、platform-grouping-result.json和计划中列出的真实参考图。"
+                "如果存在input/visual-preference.json，必须把set_hint应用于整套视觉，并把slot_hints只应用于对应图片；简单风格意见不能覆盖真实性、SKU和配件硬规则。"
                 "不要重跑商品分析、类目、属性、定价或文案。"
                 "先读取并确认现有image-source-preflight.json已通过；报告通过且参考图哈希未变化时直接复用，不重复运行检查。低清SKU缩略图禁止放大、像素复制或自动抠图。"
                 f"再运行image_slot_scheduler.py，每波最多{image_slot_concurrency}张；"

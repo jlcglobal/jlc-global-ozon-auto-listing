@@ -17,6 +17,7 @@ from ozon_field_completion import build_package  # noqa: E402
 from ozon_uploader.service import build_import_items  # noqa: E402
 
 
+@unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class VisualFirstImageFlowTest(unittest.TestCase):
     def setUp(self):
         self.product = ROOT / "products/P000011"

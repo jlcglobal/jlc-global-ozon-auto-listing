@@ -23,6 +23,7 @@ def load(path: Path):
     return json.loads(path.read_text(encoding="utf-8"))
 
 
+@unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class CapacityVariantMappingTest(unittest.TestCase):
     def setUp(self):
         self.product = ROOT / "products/P000011"

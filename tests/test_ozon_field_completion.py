@@ -17,6 +17,7 @@ from ozon_field_completion.service import _auto_upload_config, build_color_varia
 from ozon_uploader.service import build_preflight, load_json  # noqa: E402
 
 
+@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class OzonFieldCompletionTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):

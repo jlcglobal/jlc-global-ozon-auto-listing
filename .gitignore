@@ -12,6 +12,9 @@
 *tokens*.json
 *cookies*.json
 config/lan-access.json
+config/operators.json
+config/workbench-settings.json
+config/workbench-risk-rules.json
 
 # Dependencies and build output
 node_modules/

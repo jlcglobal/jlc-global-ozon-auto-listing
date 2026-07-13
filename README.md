@@ -1,15 +1,45 @@
 # crossborder-ai-factory
 
-Stage 1 defines the local data contract for a single 1688-to-Ozon product workflow. It does not collect 1688 pages, generate images, call Ozon Seller API, or call any OpenAI API.
+本项目是本地运行的1688到Ozon商品生产工作台。当前主流程为：
 
-## Stage 1 Scope
+`1688选择SKU和最终Ozon类目 -> 我的采集箱 -> 批次生成资料/价格/属性/图片 -> 手动检查或自动审核 -> 多店Ozon提交 -> 异步状态回查`
 
-- Product directory structure
-- JSON Schema files
-- Unified product validator
-- Workflow status machine checks
-- One structural example product directory
-- Automated tests
+当前不包含销售分析、上架后自动调价、广告和自动运营，也不接OpenAI API或其他需要第三方AI密钥的接口。
+
+## 当前使用入口
+
+- 工作台：`http://127.0.0.1:8765/workbench`
+- 采集：加载`collector/edge-extension/`中的Edge扩展。
+- 每位成员使用自己的成员访问码采集；商品、批次、通知、导出和发布记录只对所属成员可见。
+- 负责人可以管理成员、店铺和全局设置，但不能查看其他成员商品。
+- Edge插件要求先选择不超过10个SKU，再选择最终Ozon类目，未选类目不能完成采集。
+- 工作台主入口为`我的采集箱 / 需要我处理 / 已上架商品`。
+
+## 启动本地工作台
+
+```bash
+python3 -m uvicorn app:app \
+  --app-dir collector/local-ingest \
+  --host 127.0.0.1 \
+  --port 8765
+```
+
+## 永久安全限制
+
+- 不提交库存字段，不设置`stock=0`，不调用库存接口。
+- pending、上传中、审核中或状态不明确时禁止重传。
+- 已成功CREATE不得重复CREATE；明确存在的商品只能安全UPDATE。
+- 单商品最多10个SKU；单商品或单店失败不能阻塞整个批次。
+- 类目由采集阶段用户最终选择，任务运行中不得重新猜测或替换。
+- 属性、字典值和SKU合并/拆卡必须依赖当前类目缓存和官方`is_aspect`。
+- 不虚构材质、承重、认证、功能和配件；估算尺寸/重量必须记录`estimated`和置信度。
+
+## 数据与Git边界
+
+- `products/`、`batches/`、`runtime/`、运行数据库、队列、日志和生成图片属于本机运行数据，默认不纳入Git。
+- 店铺真实密钥保存在被忽略的本地`.env.<store>`文件中，页面和导出只显示“已配置”。
+- 配置模板、Schema、迁移、Ozon本地规则库、测试、启动脚本和Edge插件源码必须纳入Git。
+- 详细当前状态见`CURRENT_TASK.md`，跨会话交接见`PROJECT_HANDOFF.md`，工作台覆盖情况见`WORKBENCH_REQUIREMENTS_MATRIX.md`。
 
 ## Product Directory
 

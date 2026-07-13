@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "1688 Single Product Collector",
-  "version": "0.4.5",
+  "version": "0.4.6",
   "description": "Capture the current 1688 product page and send it to the local crossborder-ai-factory ingest service.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [

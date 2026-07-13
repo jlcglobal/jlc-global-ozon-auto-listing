@@ -6,7 +6,9 @@ const searchInput = document.getElementById("global-search");
 const viewMeta = {
   review: ["预览检查", "直接修改商品资料和图片"],
   confirm: ["批量确认", "本批次只确认一次"],
-  inbox: ["采集箱", "选品后的商品都在这里"],
+  inbox: ["我的采集箱", "只显示我采集的商品"],
+  attention: ["需要我处理", "问题、失败和待上传商品集中在这里"],
+  listed: ["已上架商品", "查看已经通过Ozon审核的商品"],
   batches: ["任务状态", "生成、上传和失败状态"],
   shops: ["店铺设置", "添加、验证和管理Ozon店铺"],
   settings: ["系统设置", "生产安全规则"],
@@ -56,6 +58,9 @@ const state = {
   confirmationData: null,
   confirmationProductId: null,
   confirmationEvidenceTab: "sku",
+  session: null,
+  notifications: [],
+  notificationTimer: null,
 };
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
@@ -91,16 +96,17 @@ function maybeNotifyListingSuccess(product) {
   toast(`上架成功：${title} 已通过Ozon审核并正式上架${storeText}`, "success", 9000);
 }
 
-async function api(url, options = {}, allowAccessRetry = true) {
+async function api(url, options = {}, accessAttempts = 0) {
   const accessCode = localStorage.getItem("cafAccessCode") || "";
   const headers = {"Content-Type": "application/json", ...(options.headers || {})};
   if (accessCode) headers["X-Factory-Access-Code"] = accessCode;
   const response = await fetch(url, {...options, headers});
   const data = await response.json().catch(() => ({}));
-  if (response.status === 401 && data.detail?.code === "ACCESS_CODE_REQUIRED" && allowAccessRetry) {
+  if (response.status === 401 && data.detail?.code === "ACCESS_CODE_REQUIRED" && accessAttempts < 3) {
+    localStorage.removeItem("cafAccessCode");
     const entered = await requestAccessCode(data.detail.message);
     localStorage.setItem("cafAccessCode", entered);
-    return api(url, options, false);
+    return api(url, options, accessAttempts + 1);
   }
   if (!response.ok) throw new Error(typeof data.detail === "string" ? data.detail : data.detail?.message || JSON.stringify(data.detail || data));
   return data;
@@ -138,7 +144,7 @@ async function navigate(view, options = {}) {
   state.view = view;
   setHeading(view);
   root.innerHTML = `<div class="empty-state"><strong>正在读取真实数据</strong><span>请稍候</span></div>`;
-  const renderers = {home: renderHome, review: renderReview, confirm: renderBatchConfirmation, inbox: renderInbox, batches: renderBatches, images: renderImages, risks: renderRisks, shops: renderShops, skills: renderSkills, experience: renderExperience, logs: renderLogs, settings: renderSettings};
+  const renderers = {home: renderHome, review: renderReview, confirm: renderBatchConfirmation, inbox: renderInbox, attention: renderAttention, listed: renderListed, batches: renderBatches, images: renderImages, risks: renderRisks, shops: renderShops, skills: renderSkills, experience: renderExperience, logs: renderLogs, settings: renderSettings};
   try {
     await (renderers[view] || renderHome)(options);
   } catch (error) {
@@ -166,6 +172,48 @@ async function loadWorkbenchSettings() {
   if (label) label.textContent = state.workbenchSettings.auto_mode_enabled ? "自动模式" : "手动检查";
   if (note) note.textContent = state.workbenchSettings.auto_mode_enabled ? "运行任务后自动质检并上传" : "自动模式已关闭";
   return state.workbenchSettings;
+}
+
+async function loadSession() {
+  state.session = await api("/api/workbench/session");
+  const operator = state.session.operator || {};
+  document.getElementById("operator-name").textContent = operator.display_name || "工作室成员";
+  document.getElementById("operator-role").textContent = operator.role === "owner" ? "负责人设置 · 只看我的商品" : "工作室成员 · 只看我的商品";
+  document.querySelectorAll("[data-owner-only]").forEach((element) => element.classList.toggle("is-hidden", !state.session.can_manage_settings));
+  return state.session;
+}
+
+async function pollNotifications({showDesktop = true} = {}) {
+  try {
+    const data = await api("/api/workbench/notifications");
+    state.notifications = data.items || [];
+    const count = data.count ? String(data.count) : "";
+    document.getElementById("notification-count").textContent = count;
+    document.getElementById("attention-nav-count").textContent = count;
+    if (showDesktop && "Notification" in window && Notification.permission === "granted") {
+      for (const item of state.notifications) {
+        const key = `caf-notification:${state.session?.operator?.id || "operator"}:${item.id}`;
+        if (localStorage.getItem(key)) continue;
+        localStorage.setItem(key, new Date().toISOString());
+        const systemNotice = new Notification(item.title, {body:`${item.product_title}：${item.message}`, tag:item.id});
+        systemNotice.onclick = () => {
+          window.focus();
+          state.currentProductId = item.product_id;
+          navigate(item.type === "question" ? "attention" : "review", {productId:item.product_id});
+          systemNotice.close();
+        };
+      }
+    }
+    return data;
+  } catch (_) { return {items:[], count:0}; }
+}
+
+async function enableDesktopNotifications() {
+  if (!("Notification" in window)) return toast("当前浏览器不支持电脑通知", "error");
+  const permission = await Notification.requestPermission();
+  if (permission !== "granted") return toast("电脑通知未开启，可在浏览器网站权限中重新允许", "error");
+  toast("电脑通知已开启；只通知属于你的商品", "success");
+  await pollNotifications();
 }
 
 async function renderHome() {
@@ -255,11 +303,12 @@ async function renderReview(options = {}) {
   state.selectedStoreIds = new Set(Object.values(product.publications?.stores || {}).filter((item) => item.selected).map((item) => item.store_id));
   const running = ["QUEUED", "PROCESSING", "CATEGORY_MATCHED", "CONTENT_GENERATED", "IMAGES_GENERATED", "PRICED", "UPLOADING"].includes(String(product.status?.status || "").toUpperCase());
   const readyToUpload = String(product.status?.status || "").toUpperCase() === "OZON_READY";
+  const canRunProduct = ["run", "fix", "review_upload"].includes(product.primary_action?.key);
   const primaryText = readyToUpload
     ? `确认修改并立即上传（${state.selectedStoreIds.size} 家店铺）`
-    : state.workbenchSettings.auto_mode_enabled
-      ? `运行任务并自动上传（${state.selectedStoreIds.size} 家店铺）`
-      : "运行任务生成商品资料";
+    : product.primary_action?.key === "run" || product.primary_action?.key === "fix"
+      ? `${product.primary_action.label}（${state.selectedStoreIds.size} 家店铺）`
+      : product.primary_action?.label || "查看状态";
   root.innerHTML = `<article class="product-preview-page">
     <header class="preview-toolbar">
       <button class="preview-back" data-go="inbox">返回采集箱</button>
@@ -269,11 +318,13 @@ async function renderReview(options = {}) {
       ${running ? `<button class="safe-stop-button" data-batch-action="stop">安全停止</button>` : ""}
       <button class="preview-delete" data-delete-product="${product.product_id}">彻底删除</button>
     </header>
+    ${product.pending_question?.question ? `<section class="task-summary"><div><h2>需要你确认一个关键问题</h2><p>${escapeHtml(product.pending_question.question)}</p></div><button class="primary-button" data-primary-action="answer" data-product-id="${product.product_id}">回答问题</button></section>` : ""}
     ${running ? renderLiveProgress(product) : ""}
     <section class="preview-title-block">
       <input class="preview-title-input" data-draft-field="title_ru" value="${escapeHtml(product.content.title_ru || product.source.title_cn)}" aria-label="俄文商品标题">
       <p><span>中文参考</span>${escapeHtml(product.content.title_zh_reference || product.source.title_cn)}</p>
     </section>
+    <div class="visual-preference"><label><span>整套图片风格意见（可选）</span><input id="visual-set-hint" maxlength="120" value="${escapeHtml(product.visual_preference?.set_hint || "")}" placeholder="例如：更明亮、更科技感、户外感更强"></label><button class="secondary-button" data-action="save-visual-preference">应用到整套图片</button></div>
     <section class="preview-gallery" id="image-workspace">${renderPreviewGallery(product)}</section>
     <section class="preview-section">
       <h2>商品信息</h2>
@@ -304,7 +355,7 @@ async function renderReview(options = {}) {
     <footer class="preview-submit-bar">
       <button class="preview-back" data-go="inbox">返回</button>
       <span id="save-state" class="preview-save-state">${product.draft.saved_at ? `修改已自动保存 v${product.draft.version}` : "当前为AI初稿"}</span>
-      <button class="preview-primary" data-action="run-product" ${running || !state.selectedStoreIds.size || state.draftSaveFailed ? "disabled" : ""}>${escapeHtml(primaryText)}</button>
+      <button class="preview-primary" data-action="run-product" ${running || !canRunProduct || !state.selectedStoreIds.size || state.draftSaveFailed ? "disabled" : ""}>${escapeHtml(primaryText)}</button>
     </footer>
   </article>`;
   state.currentImageSlot = state.currentImageSlot && product.images.some((item) => item.slot === state.currentImageSlot) ? state.currentImageSlot : product.images[0]?.slot || null;
@@ -459,10 +510,10 @@ function imageTile(image) {
   return `<article class="image-tile ${state.currentImageSlot === image.slot ? "selected" : ""}" data-image-slot="${escapeHtml(image.slot)}" ${image.product_id ? `data-product-id="${escapeHtml(image.product_id)}"` : ""}>
     <div class="image-frame ${image.state === "GENERATING" || image.state === "RETRYING" ? "generating" : image.state === "WAITING" ? "waiting" : ""}">${src}<span class="image-badge ${stateClass}">${escapeHtml(image.state)}</span></div>
     <div class="image-info"><h3>${escapeHtml(image.slot)} · ${escapeHtml(image.type)}</h3><p>${escapeHtml(issue)}</p>
-      <div class="image-actions"><button data-image-action="prompt">提示词</button><button data-image-action="regenerate">重生成</button>${image.download_url ? `<a href="${image.download_url}">下载</a>` : ""}</div>
+      <div class="image-actions"><button data-image-action="prompt">单图意见</button><button data-image-action="regenerate">重生成</button>${image.download_url ? `<a href="${image.download_url}">下载</a>` : ""}</div>
       <div class="image-actions-more">${image.url ? `<button data-image-action="keep">保留</button><button data-image-action="copy-url">复制URL</button><button data-image-action="set-main">设为主图</button><button data-image-action="set-detail">设为详情图</button><button data-image-action="move-up">前移</button><button data-image-action="replace">替换</button><button class="danger-mini" data-image-action="delete">删除</button>` : ""}</div>
       <input type="file" accept="image/*" data-replace-file hidden>
-      <div class="prompt-editor"><textarea data-prompt-input>${escapeHtml(image.prompt)}</textarea><div class="image-actions"><button data-image-action="queue-prompt">保存并重生成</button></div></div>
+      <div class="prompt-editor"><textarea data-prompt-input placeholder="例如：背景更明亮、产品再大一点">${escapeHtml(image.prompt)}</textarea><div class="image-actions"><button data-image-action="queue-prompt">应用意见并重生成</button></div></div>
     </div>
   </article>`;
 }
@@ -688,15 +739,27 @@ async function renderInbox() {
   const data = await loadProducts(searchInput.value);
   state.selectedBatchProducts = new Set([...state.selectedBatchProducts].filter((id) => state.products.some((item) => item.product_id === id)));
   await loadWorkbenchSettings();
-  const filters = ["全部", "采集箱", "生成中", "待人工检查", "上传中", "已完成", "已停止"];
-  const counts = Object.fromEntries(filters.map((filter) => [filter, filter === "全部" ? state.products.length : state.products.filter((item) => item.workflow_bucket === filter).length]));
-  const visible = state.inboxFilter === "全部" ? state.products : state.products.filter((item) => item.workflow_bucket === state.inboxFilter);
-  root.innerHTML = `<section class="section-head"><div><h2>采集箱</h2><p>${data.total} 个真实商品 · 每个最多10个SKU · 当前${state.workbenchSettings.auto_mode_enabled ? "自动模式" : "手动检查模式"}</p></div><div class="toolbar"><button class="secondary-button" data-action="refresh-ozon">刷新Ozon状态</button><button class="primary-button" data-action="open-batch" data-batch-source="inbox">运行任务</button></div></section><div class="inbox-status-tabs">${filters.map((filter) => `<button class="${state.inboxFilter === filter ? "active" : ""}" data-inbox-filter="${filter}">${filter}<span>${counts[filter]}</span></button>`).join("")}</div><div class="bulk-toolbar"><label><input type="checkbox" data-select-all-products> 全选当前结果</label><span>已选 ${state.selectedBatchProducts.size} 个商品</span><span class="spacer"></span><button class="primary-button" data-action="open-batch" ${state.selectedBatchProducts.size ? "" : "disabled"}>运行所选商品</button></div><div class="list-layout inbox-list">${visible.map(inboxCard).join("") || empty("当前状态下没有商品")}</div>`;
+  const runnable = state.products.filter((item) => ["run", "fix"].includes(item.primary_action?.key));
+  root.innerHTML = `<section class="task-summary"><div><h2>${data.total} 个我的商品</h2><p>采集后从这里直接继续下一步；每个商品最多10个SKU · 当前${state.workbenchSettings.auto_mode_enabled ? "自动模式" : "手动检查模式"}</p></div><button class="primary-button task-primary" data-action="open-batch" ${runnable.length ? "" : "disabled"}>运行可处理商品</button></section><div class="bulk-toolbar"><label><input type="checkbox" data-select-all-products> 多选商品</label><span>已选 ${state.selectedBatchProducts.size} 个</span><span class="spacer"></span><button class="primary-button" data-action="open-batch" ${state.selectedBatchProducts.size ? "" : "disabled"}>运行所选</button></div><div class="list-layout inbox-list">${state.products.map((product) => inboxCard(product, true)).join("") || empty("采集箱为空。请先在1688选择SKU和最终Ozon类目，再完成采集。")}</div>`;
 }
 
-function inboxCard(product) {
-  const action = product.workflow_bucket === "待人工检查" ? "预览并检查" : product.workflow_bucket === "已完成" ? "查看商品" : "查看进度";
-  return `<article class="list-card"><input class="batch-select" type="checkbox" data-select-batch-product="${product.product_id}" ${state.selectedBatchProducts.has(product.product_id) ? "checked" : ""}>${thumbnail(product)}<div><h3>${escapeHtml(product.title_cn)}</h3><p>${product.product_id} · ${product.sku_count} SKU · 采购价 ${product.purchase_price_cny === null ? "未确认" : `¥${number(product.purchase_price_cny, 2)}`} · ${dateText(product.captured_at)}</p><p><span class="workflow-bucket">${escapeHtml(product.workflow_bucket)}</span> ${riskPill(product.risk)} · 进度 ${product.progress}% · 图片 ${product.image_count}</p></div><div class="list-actions"><button data-open-product="${product.product_id}">${action}</button><a class="secondary-button" href="${escapeHtml(product.source_url)}" target="_blank" rel="noreferrer">1688</a></div>${productMenu(product.product_id)}</article>`;
+async function renderAttention() {
+  await loadProducts(searchInput.value);
+  await pollNotifications({showDesktop:false});
+  const items = state.products.filter((item) => item.attention_required);
+  root.innerHTML = `<section class="task-summary"><div><h2>${items.length ? `${items.length} 个商品需要你处理` : "现在没有需要处理的商品"}</h2><p>这里只显示等待回答、明确失败或已经生成完成等待上传的商品。</p></div><button class="secondary-button" data-action="refresh-ozon">刷新状态</button></section><div class="list-layout inbox-list">${items.map((product) => inboxCard(product, false)).join("") || empty("你当前没有待处理事项")}</div>`;
+}
+
+async function renderListed() {
+  await loadProducts(searchInput.value);
+  const items = state.products.filter((item) => ["UPLOADED", "ACTIVE"].includes(String(item.raw_status || "").toUpperCase()));
+  root.innerHTML = `<section class="task-summary"><div><h2>${items.length} 个已上架商品</h2><p>只显示你采集并已经通过Ozon审核的商品。</p></div><button class="secondary-button" data-action="refresh-ozon">刷新Ozon状态</button></section><div class="list-layout inbox-list">${items.map((product) => inboxCard(product, false)).join("") || empty("还没有已上架商品")}</div>`;
+}
+
+function inboxCard(product, selectable = false) {
+  const action = product.primary_action || {key:"status", label:"查看进度"};
+  const question = product.pending_question?.question ? `<p class="card-alert">需要确认：${escapeHtml(product.pending_question.question)}</p>` : "";
+  return `<article class="list-card task-card ${product.attention_required ? "task-card-attention" : ""}">${selectable ? `<input class="batch-select" type="checkbox" data-select-batch-product="${product.product_id}" ${state.selectedBatchProducts.has(product.product_id) ? "checked" : ""}>` : `<span></span>`}${thumbnail(product)}<div><h3>${escapeHtml(product.title_cn)}</h3><p>${product.product_id} · ${product.sku_count} SKU · ${dateText(product.captured_at)}</p><p><span class="workflow-bucket">${escapeHtml(product.workflow_bucket)}</span> · ${escapeHtml(stepLabel(product.current_step))} · ${product.progress}%</p>${question}</div><div class="list-actions"><button class="primary-button" data-primary-action="${escapeHtml(action.key)}" data-product-id="${product.product_id}">${escapeHtml(action.label)}</button><a class="source-link" href="${escapeHtml(product.source_url)}" target="_blank" rel="noreferrer">查看1688来源</a></div>${productMenu(product.product_id)}</article>`;
 }
 
 function confidenceMeta(value) {
@@ -806,7 +869,7 @@ async function cancelWaitingConfirmation(batchId) {
   state.confirmationData = null;
   state.confirmationProductId = null;
   state.confirmationBatchId = null;
-  return navigate("batches");
+  return navigate("inbox");
 }
 
 async function openDeleteDialog(productId) {
@@ -1028,15 +1091,15 @@ async function renderLogs() {
   root.innerHTML = `<section class="section-head"><div><h2>运营时间线</h2><p>${data.items.length} 条可读记录</p></div></section><article class="panel"><div class="log-list">${data.items.map(logEntry).join("") || empty("暂无日志")}</div></article>`;
 }
 
-function renderSettings() {
-  root.innerHTML = `<section class="section-head"><div><h2>系统设置</h2><p>自动模式是全局开关，默认关闭；硬规则不可降级</p></div></section><div class="settings-grid">
-    <article class="setting-block primary-setting"><h3>处理模式</h3><label class="toggle-row"><span><strong>AI自动模式</strong><small>关闭：生成后进入预览检查；开启：自动质检后上传，异常商品转人工</small></span><input type="checkbox" data-global-auto-mode ${state.workbenchSettings.auto_mode_enabled ? "checked" : ""}></label><div class="summary-row"><span>当前模式</span><strong>${state.workbenchSettings.auto_mode_enabled ? "自动处理并上传" : "手动预览检查"}</strong></div><div class="summary-row"><span>经验学习</span><strong>同类目同类修改出现2次后启用</strong></div></article>
-    <article class="setting-block"><h3>Ozon提交保护</h3><label class="toggle-row"><span>禁止重复CREATE</span><input type="checkbox" checked disabled></label><label class="toggle-row"><span>pending禁止重复写入</span><input type="checkbox" checked disabled></label><label class="toggle-row"><span>查询不明确时禁止上传</span><input type="checkbox" checked disabled></label><label class="toggle-row"><span>库存接口永久禁用</span><input type="checkbox" checked disabled></label></article>
-    <article class="setting-block"><h3>商品真实性</h3><label class="toggle-row"><span>产品像素锁定</span><input type="checkbox" checked disabled></label><label class="toggle-row"><span>真实性失败阻止上传</span><input type="checkbox" checked disabled></label><label class="toggle-row"><span>单图失败只重试单图</span><input type="checkbox" checked disabled></label><label class="toggle-row"><span>单商品最多10个SKU</span><input type="checkbox" checked disabled></label></article>
-    <article class="setting-block"><h3>本地缓存</h3><div class="summary-row"><span>采集图和商品图</span><strong>10天清理</strong></div><div class="summary-row"><span>图片识别结果</span><strong>本地缓存</strong></div><div class="summary-row"><span>Ozon规则</span><strong>批次预热</strong></div></article>
-    <article class="setting-block"><h3>AI权限中心</h3><div class="summary-row"><span>允许</span><strong>优化文案、选择Skill、安全重试、失败单图重做</strong></div><div class="summary-row"><span>受限</span><strong>中风险进入人工队列</strong></div><div class="summary-row"><span>禁止</span><strong>改利润底线、跳过必填、伪造SKU、重复CREATE、库存接口、覆盖人工锁</strong></div></article>
-    <article class="setting-block"><h3>角色与访问</h3><div class="summary-row"><span>当前角色</span><strong>管理员 · 全部权限</strong></div><div class="summary-row"><span>运营</span><strong>审核、图片、上传；可限制店铺</strong></div><div class="summary-row"><span>查看人员</span><strong>只读</strong></div><div class="summary-row"><span>第三方AI API</span><strong>未接入</strong></div></article>
-    <article class="setting-block"><h3>数据导出</h3><div class="store-card-actions"><a class="secondary-button" href="/api/workbench/export/csv">CSV</a><a class="secondary-button" href="/api/workbench/export/xlsx">Excel</a><a class="secondary-button" href="/api/workbench/export/json">JSON</a><a class="secondary-button" href="/api/workbench/export/backup">项目备份</a><a class="secondary-button" href="/api/workbench/export/migration">迁移包</a></div><p class="form-help">所有导出自动排除明文店铺密钥。</p></article>
+async function renderSettings() {
+  if (!state.session?.can_manage_settings) throw new Error("只有工作室负责人可以打开系统设置");
+  const [operators] = await Promise.all([api("/api/workbench/operators"), loadWorkbenchSettings()]);
+  const currentId = state.session.operator?.id;
+  root.innerHTML = `<section class="section-head"><div><h2>系统设置</h2><p>负责人可以修改全局模式和成员；任何人都只能看到自己的商品。</p></div></section><div class="settings-grid">
+    <article class="setting-block primary-setting"><h3>处理模式</h3><label class="toggle-row"><span><strong>AI自动模式</strong><small>关闭：生成后停在检查上传；开启：运行任务后自动质检并上传，异常商品转入“需要我处理”</small></span><input type="checkbox" data-global-auto-mode ${state.workbenchSettings.auto_mode_enabled ? "checked" : ""}></label><div class="summary-row"><span>经验学习</span><strong>同类目同类修改出现2次后才启用</strong></div></article>
+    <article class="setting-block"><div class="store-card-head"><div><h3>工作室成员</h3><span class="status-pill low">严格隔离</span></div><button class="primary-button" data-action="add-operator">添加成员</button></div><p class="form-help">负责人只能管理设置，不能查看成员商品；成员可以选择任意已配置店铺。</p><div class="member-list">${operators.items.map((item) => `<div class="member-row"><span><strong>${escapeHtml(item.display_name)}</strong><small>${escapeHtml(item.id)} · ${item.role === "owner" ? "负责人" : "成员"} · ${item.enabled ? "已启用" : "已停用"}</small></span><span class="store-card-actions">${item.id !== currentId ? `<button class="secondary-button" data-reset-operator="${escapeHtml(item.id)}">重置访问码</button>` : ""}${item.id !== currentId && item.role !== "owner" ? `<button class="danger-button" data-delete-operator="${escapeHtml(item.id)}">删除</button>` : ""}</span></div>`).join("")}</div></article>
+    <article class="setting-block"><h3>永久安全规则</h3><div class="summary-row"><span>Ozon</span><strong>禁止重复CREATE、pending禁止重传</strong></div><div class="summary-row"><span>库存</span><strong>不提交库存字段，库存接口永久禁用</strong></div><div class="summary-row"><span>商品</span><strong>真实性失败阻断，单商品最多10个SKU</strong></div><div class="summary-row"><span>图片</span><strong>失败只重做单图，保留真实SKU差异</strong></div></article>
+    <article class="setting-block"><h3>我的数据导出</h3><div class="store-card-actions"><a class="secondary-button" href="/api/workbench/export/csv">CSV</a><a class="secondary-button" href="/api/workbench/export/xlsx">Excel</a><a class="secondary-button" href="/api/workbench/export/json">JSON</a><a class="secondary-button" href="/api/workbench/export/backup">我的备份</a></div><p class="form-help">导出只包含当前成员自己的商品，自动排除所有明文店铺密钥。</p></article>
   </div>`;
 }
 
@@ -1186,10 +1249,50 @@ root.addEventListener("click", async (event) => {
   }
   const deleteProduct = event.target.closest("[data-delete-product]");
   if (deleteProduct) return openDeleteDialog(deleteProduct.dataset.deleteProduct);
+  const deleteOperator = event.target.closest("[data-delete-operator]");
+  if (deleteOperator) {
+    if (!confirm("删除该成员访问配置？不会删除店铺配置，也不会把其商品转给其他人。")) return;
+    try {
+      await api(`/api/workbench/operators/${encodeURIComponent(deleteOperator.dataset.deleteOperator)}`, {method:"DELETE"});
+      toast("成员访问配置已删除", "success");
+      return renderSettings();
+    } catch (error) { return toast(error.message, "error"); }
+  }
+  const resetOperator = event.target.closest("[data-reset-operator]");
+  if (resetOperator) {
+    if (!confirm("重置后旧访问码会立即失效。确认继续？")) return;
+    try {
+      const result = await api(`/api/workbench/operators/${encodeURIComponent(resetOperator.dataset.resetOperator)}`, {method:"PATCH", body:JSON.stringify({regenerate_access_code:true})});
+      document.getElementById("operator-one-time-code").textContent = result.one_time_access_code;
+      document.getElementById("access-code-result-dialog").showModal();
+      return renderSettings();
+    } catch (error) { return toast(error.message, "error"); }
+  }
   const go = event.target.closest("[data-go]");
   if (go) return navigate(go.dataset.go);
   const inboxFilter = event.target.closest("[data-inbox-filter]");
   if (inboxFilter) { state.inboxFilter = inboxFilter.dataset.inboxFilter; return renderInbox(); }
+  const primaryAction = event.target.closest("[data-primary-action]");
+  if (primaryAction) {
+    const productId = primaryAction.dataset.productId;
+    const actionKey = primaryAction.dataset.primaryAction;
+    state.currentProductId = productId;
+    state.currentImageSlot = null;
+    if (actionKey === "answer") {
+      const product = state.products.find((item) => item.product_id === productId) || await api(`/api/workbench/products/${productId}`);
+      document.getElementById("question-product-id").value = productId;
+      document.getElementById("question-product-title").textContent = product.title_cn || product.source?.title_cn || productId;
+      document.getElementById("question-text").textContent = product.pending_question?.question || "请确认商品关键信息";
+      document.getElementById("question-answer").value = "";
+      document.getElementById("question-dialog").showModal();
+      return;
+    }
+    if (actionKey === "run") {
+      state.selectedBatchProducts = new Set([productId]);
+      return openBatchDialog();
+    }
+    return navigate("review", {productId});
+  }
   const open = event.target.closest("[data-open-product]");
   if (open) { state.currentProductId = open.dataset.openProduct; state.currentImageSlot = null; return navigate("review", {productId: state.currentProductId}); }
   const openConfirmation = event.target.closest("[data-open-confirmation]");
@@ -1299,6 +1402,10 @@ root.addEventListener("click", async (event) => {
     } catch (error) { return toast(error.message, "error"); }
   }
   if (action === "add-shop") return openStoreDialog();
+  if (action === "add-operator") {
+    document.getElementById("operator-form").reset();
+    return document.getElementById("operator-dialog").showModal();
+  }
   if (action === "change-category") return openCategoryDialog();
   if (action === "open-batch") return openBatchDialog();
   if (action === "adopt-all-confirmation") {
@@ -1326,7 +1433,7 @@ root.addEventListener("click", async (event) => {
       state.confirmationData = null;
       state.confirmationProductId = null;
       state.confirmationBatchId = null;
-      return navigate("batches");
+      return navigate("inbox");
     } catch (error) {
       toast(error.message, "error");
       button.disabled = false;
@@ -1348,6 +1455,14 @@ root.addEventListener("click", async (event) => {
   }
   if (action === "skip") return changeProduct("next");
   if (action === "regenerate-current" && state.currentImageSlot) return queueImageRegeneration(state.currentImageSlot);
+  if (action === "save-visual-preference") {
+    const hint = document.getElementById("visual-set-hint")?.value.trim() || "";
+    try {
+      const result = await api(`/api/workbench/products/${state.currentProductId}/visual-preference`, {method:"PUT", body:JSON.stringify({set_hint:hint})});
+      toast(result.invalidated_steps.length ? "风格意见已保存；旧图片方案已失效，重新运行后生效" : "风格意见已保存", "success");
+      return refreshCurrentProduct();
+    } catch (error) { return toast(error.message, "error"); }
+  }
   if (action === "run-product") {
     if (state.draftSaveFailed) return toast("草稿保存失败，已阻止上传", "error");
     if (!state.selectedStoreIds.size) return toast("请先选择并保存目标店铺", "error");
@@ -1379,7 +1494,7 @@ root.addEventListener("click", async (event) => {
     return;
   }
   if (action === "refresh-ozon") {
-    try { const result = await api("/api/inbox/refresh-ozon-status", {method: "POST"}); toast(`已只读刷新 ${result.synced_product_ids.length} 个任务`); await renderInbox(); } catch (error) { toast(error.message, "error"); }
+    try { const result = await api("/api/inbox/refresh-ozon-status", {method: "POST"}); toast(`已只读刷新 ${result.synced_product_ids.length} 个任务`); await navigate(state.view); } catch (error) { toast(error.message, "error"); }
   }
   const batchAction = event.target.closest("[data-batch-action]");
   if (batchAction) {
@@ -1418,6 +1533,7 @@ document.getElementById("close-image").addEventListener("click", () => document.
 document.getElementById("cancel-delete").addEventListener("click", closeDeleteDialog);
 document.getElementById("cancel-delete-x").addEventListener("click", closeDeleteDialog);
 document.getElementById("confirm-delete").addEventListener("click", confirmPermanentDelete);
+document.getElementById("enable-notifications").addEventListener("click", enableDesktopNotifications);
 document.getElementById("access-form").addEventListener("submit", (event) => {
   event.preventDefault();
   const code = document.getElementById("access-code-input").value.trim();
@@ -1498,6 +1614,34 @@ document.getElementById("store-form").addEventListener("submit", async (event) =
     await renderShops();
   } catch (error) { toast(error.message, "error"); }
 });
+document.getElementById("question-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const productId = document.getElementById("question-product-id").value;
+  const answer = document.getElementById("question-answer").value.trim();
+  if (!productId || !answer) return;
+  try {
+    await api(`/api/workbench/products/${productId}/question/answer`, {method:"POST", body:JSON.stringify({answer})});
+    document.getElementById("question-dialog").close();
+    toast("回答已保存。商品现在可以从失败步骤继续运行。", "success");
+    await pollNotifications({showDesktop:false});
+    return navigate("attention");
+  } catch (error) { toast(error.message, "error"); }
+});
+document.getElementById("operator-form").addEventListener("submit", async (event) => {
+  event.preventDefault();
+  const payload = {
+    id: document.getElementById("operator-id").value.trim(),
+    display_name: document.getElementById("operator-display-name").value.trim(),
+    role: "member",
+  };
+  try {
+    const result = await api("/api/workbench/operators", {method:"POST", body:JSON.stringify(payload)});
+    document.getElementById("operator-dialog").close();
+    document.getElementById("operator-one-time-code").textContent = result.one_time_access_code || "访问码已更新";
+    document.getElementById("access-code-result-dialog").showModal();
+    await renderSettings();
+  } catch (error) { toast(error.message, "error"); }
+});
 document.getElementById("batch-store-options").addEventListener("change", updateBatchDialogButton);
 document.getElementById("batch-form").addEventListener("submit", async (event) => {
   event.preventDefault();
@@ -1523,7 +1667,7 @@ document.getElementById("batch-form").addEventListener("submit", async (event) =
           ? `批次已启动：${result.batch_id}`
           : "没有可运行商品";
     toast(message, ["started", "queued"].includes(result.status) ? "success" : "info");
-    await navigate("batches");
+    await navigate("inbox");
   } catch (error) { toast(error.message, "error"); }
 });
 
@@ -1540,7 +1684,11 @@ document.addEventListener("keydown", (event) => {
 });
 
 async function bootstrapWorkbench() {
+  await loadSession();
   try { await loadWorkbenchSettings(); } catch (_) {}
+  await pollNotifications({showDesktop:false});
+  clearInterval(state.notificationTimer);
+  state.notificationTimer = setInterval(() => pollNotifications(), 15000);
   await navigate("inbox");
 }
 

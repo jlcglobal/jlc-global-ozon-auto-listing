@@ -57,6 +57,7 @@ class VariantImageStrategyTests(unittest.TestCase):
             )
             return copy.deepcopy(plan)
 
+    @unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_color_size_and_quantity_only_multiply_main_images(self):
         cases = [
             ("color", "颜色", ["绿色", "卡其色"]),

@@ -287,6 +287,11 @@ def select_style_profile(
     if positioning:
         refs.append(positioning_ref)
     refs.extend(image_refs(product_dir, source))
+    preference_path = product_dir / "input" / "visual-preference.json"
+    visual_preference = load_json(preference_path) if preference_path.is_file() else {}
+    set_hint = str(visual_preference.get("set_hint") or "").strip()
+    if set_hint:
+        refs.append(f"products/{product_dir.name}/input/visual-preference.json")
     refs = list(dict.fromkeys(refs))
 
     purchase_mode = score_purchase_mode(context, selector_config["decision_axes"])
@@ -340,6 +345,16 @@ def select_style_profile(
                 "source_refs": [evidence_ref],
             })
 
+    creative_direction = product_specific_creative_direction(context, positioning, profile)
+    if set_hint:
+        creative_direction["visual_mood"] = f"{creative_direction['visual_mood']}；用户整套风格意见：{set_hint}"
+        creative_direction["product_visual_thesis"] = f"{creative_direction['product_visual_thesis']}；在不改变商品真实性的前提下体现：{set_hint}"
+        selection_evidence.append({
+            "signal": "user_visual_preference",
+            "value": set_hint,
+            "source_refs": [f"products/{product_dir.name}/input/visual-preference.json"],
+        })
+
     timestamp = generated_at or datetime.now().astimezone().replace(microsecond=0).isoformat()
     return {
         "schema_version": "1.0.0",
@@ -363,7 +378,7 @@ def select_style_profile(
         "composition_style": profile["composition_style"],
         "text_style": profile["text_style"],
         "image_set_structure": dynamic_image_structure(product_dir, source) if style_family != "unknown" else [],
-        "creative_direction": product_specific_creative_direction(context, positioning, profile),
+        "creative_direction": creative_direction,
         "selection_evidence": selection_evidence,
         "matched_rules": matched_rules,
         "confidence": confidence,

@@ -17,6 +17,8 @@ import zipfile
 import urllib.error
 import urllib.parse
 import urllib.request
+from contextlib import asynccontextmanager
+from contextvars import ContextVar
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Optional, Tuple
@@ -56,6 +58,14 @@ from workbench_learning import (  # noqa: E402
     materialize_active_experience,
     record_image_feedback,
     record_workbench_edits,
+)
+from workbench_operators import (  # noqa: E402
+    DEFAULT_OPERATOR_ID,
+    authenticate as authenticate_operator,
+    default_owner as default_operator,
+    delete_operator,
+    list_operators,
+    upsert_operator,
 )
 from multi_store_upload import definitely_retryable, refresh_pending_stores  # noqa: E402
 from collector_categories import (  # noqa: E402
@@ -109,8 +119,16 @@ DEFAULT_WORKBENCH_SETTINGS = {
     "rub_rounding": 10,
 }
 
+CURRENT_OPERATOR: ContextVar[Optional[Dict[str, Any]]] = ContextVar("current_workbench_operator", default=None)
 
-app = FastAPI(title="crossborder-ai-factory local ingest", version="0.2.0")
+
+@asynccontextmanager
+async def app_lifespan(_app: FastAPI):
+    ensure_batch_dispatcher()
+    yield
+
+
+app = FastAPI(title="crossborder-ai-factory local ingest", version="0.2.0", lifespan=app_lifespan)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=["*"],
@@ -357,6 +375,8 @@ def create_product_dirs(product_dir: Path) -> None:
 def find_existing_source_urls() -> Dict[str, str]:
     existing: Dict[str, str] = {}
     for source_path in PRODUCTS_DIR.glob("P*/input/source.json"):
+        if not product_is_owned(source_path.parents[1]):
+            continue
         try:
             data = json.loads(source_path.read_text(encoding="utf-8"))
         except (json.JSONDecodeError, OSError):
@@ -777,7 +797,7 @@ def build_raw_snapshot(
     }
 
 
-def ingest_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
+def ingest_capture(payload: Dict[str, Any], operator: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
     schema_errors = validate_json(payload, "collector-capture.schema.json")
     if schema_errors:
         raise HTTPException(status_code=422, detail={"message": "Invalid collector payload", "errors": schema_errors})
@@ -838,6 +858,7 @@ def ingest_capture(payload: Dict[str, Any]) -> Dict[str, Any]:
     product_id = create_product_id()
     product_dir = PRODUCTS_DIR / product_id
     create_product_dirs(product_dir)
+    save_product_owner(product_dir, operator)
     status_collecting = make_status(product_id, "COLLECTING", "collect_source", 10, started_at, None, warnings)
     atomic_write_json(product_dir / "status.json", status_collecting)
     append_log(product_dir, "ingest_started", {"source_url": payload["source_url"], "duplicate_of": duplicate_of})
@@ -1004,18 +1025,29 @@ async def local_network_only(request: Request, call_next):
             )
         if not client_ip_allowed(client_host, config):
             return JSONResponse(status_code=403, content={"detail": "当前设备不在允许的工作室局域网内"})
-        if request.url.path.startswith("/api/") and request.method != "OPTIONS":
-            supplied = request.headers.get("X-Factory-Access-Code") or request.cookies.get("caf_access") or ""
-            if not secrets_compare(supplied, str(config.get("access_code") or "")):
-                return JSONResponse(
-                    status_code=401,
-                    content={"detail": {"code": "ACCESS_CODE_REQUIRED", "message": "请输入工作室访问码"}},
-                )
-    response = await call_next(request)
-    if not loopback and request.headers.get("X-Factory-Access-Code"):
+    supplied = request.headers.get("X-Factory-Access-Code") or request.cookies.get("caf_access") or ""
+    operator: Optional[Dict[str, Any]] = None
+    if request.url.path.startswith("/api/") and request.method != "OPTIONS" and request.url.path != "/health":
+        operator = authenticate_operator(ROOT, supplied) if supplied else None
+        if operator is None and loopback and not supplied:
+            # The host Mac is the owner's trusted workstation. LAN devices and
+            # any explicitly supplied code are always authenticated normally.
+            operator = default_operator(ROOT)
+        if operator is None:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": {"code": "ACCESS_CODE_REQUIRED", "message": "请输入你的工作室成员访问码"}},
+            )
+    token = CURRENT_OPERATOR.set(operator)
+    request.state.operator = operator
+    try:
+        response = await call_next(request)
+    finally:
+        CURRENT_OPERATOR.reset(token)
+    if supplied and operator:
         response.set_cookie(
-            "caf_access", str(config.get("access_code") or ""), httponly=True,
-            samesite="strict", max_age=60 * 60 * 12,
+            "caf_access", supplied, httponly=True, samesite="strict",
+            max_age=60 * 60 * 12,
         )
     return response
 
@@ -1024,6 +1056,77 @@ def secrets_compare(left: str, right: str) -> bool:
     if not left or not right:
         return False
     return hashlib.sha256(left.encode("utf-8")).digest() == hashlib.sha256(right.encode("utf-8")).digest()
+
+
+def current_operator() -> Dict[str, Any]:
+    return CURRENT_OPERATOR.get() or default_operator(ROOT)
+
+
+def current_operator_id() -> str:
+    return str(current_operator().get("id") or DEFAULT_OPERATOR_ID)
+
+
+def require_owner_role() -> Dict[str, Any]:
+    operator = current_operator()
+    if operator.get("role") != "owner":
+        raise HTTPException(status_code=403, detail="只有工作室负责人可以修改店铺、成员和系统设置")
+    return operator
+
+
+def product_owner(product_dir: Path) -> Dict[str, Any]:
+    value = load_optional_json(product_dir / "input/owner.json")
+    return {
+        "owner_id": str(value.get("owner_id") or DEFAULT_OPERATOR_ID),
+        "owner_name": str(value.get("owner_name") or "工作室负责人"),
+    }
+
+
+def product_is_owned(product_dir: Path, operator_id: Optional[str] = None) -> bool:
+    return product_owner(product_dir)["owner_id"] == str(operator_id or current_operator_id())
+
+
+def owned_product_dirs() -> List[Path]:
+    return [
+        path for path in sorted(PRODUCTS_DIR.glob(WORKBENCH_PRODUCT_GLOB), reverse=True)
+        if path.is_dir() and product_is_owned(path)
+    ]
+
+
+def save_product_owner(product_dir: Path, operator: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    operator = operator or current_operator()
+    value = {
+        "schema_version": "1.0.0",
+        "product_id": product_dir.name,
+        "owner_id": str(operator.get("id") or DEFAULT_OPERATOR_ID),
+        "owner_name": str(operator.get("display_name") or "工作室负责人"),
+        "assigned_at": now_iso(),
+    }
+    atomic_write_json(product_dir / "input/owner.json", value)
+    return value
+
+
+def batch_owner_path(batch_id: str) -> Path:
+    return batch_path(ROOT, batch_id).with_name("owner.json")
+
+
+def save_batch_owner(batch_id: str, operator: Optional[Dict[str, Any]] = None) -> None:
+    operator = operator or current_operator()
+    atomic_write_json(batch_owner_path(batch_id), {
+        "schema_version": "1.0.0", "batch_id": batch_id,
+        "owner_id": str(operator.get("id") or DEFAULT_OPERATOR_ID),
+        "owner_name": str(operator.get("display_name") or "工作室负责人"),
+        "created_at": now_iso(),
+    })
+
+
+def batch_is_owned(batch_id: str) -> bool:
+    value = load_optional_json(batch_owner_path(batch_id))
+    return str(value.get("owner_id") or DEFAULT_OPERATOR_ID) == current_operator_id()
+
+
+def require_owned_batch(batch_id: str) -> None:
+    if not batch_is_owned(batch_id):
+        raise HTTPException(status_code=404, detail="任务不存在")
 
 
 @app.get("/health")
@@ -1083,6 +1186,7 @@ def list_inbox_products() -> Dict[str, Any]:
         for product_dir in sorted(PRODUCTS_DIR.glob("P[0-9]*"), reverse=True)
         if (product_dir / "status.json").is_file()
         and (product_dir / "input/source.json").is_file()
+        and product_is_owned(product_dir)
         and "1688.com/offer/" in str(json.loads((product_dir / "input/source.json").read_text(encoding="utf-8")).get("source_url") or "")
     ]
     for item in products:
@@ -1162,13 +1266,13 @@ def ensure_image_status_monitor() -> None:
 
 @app.post("/api/inbox/refresh-ozon-status")
 def refresh_ozon_status() -> Dict[str, Any]:
-    return sync_remote_ozon_status_once()
+    return sync_remote_ozon_status_once([path.name for path in owned_product_dirs()])
 
 
 @app.get("/api/inbox/products/{product_id}/thumbnail")
 def product_thumbnail(product_id: str) -> FileResponse:
     product_dir = PRODUCTS_DIR / product_id
-    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir():
+    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir):
         raise HTTPException(status_code=404, detail="Product not found")
     candidates = sorted((product_dir / "input/main-images").glob("*"))
     image = next((path for path in candidates if path.is_file()), None)
@@ -1180,7 +1284,7 @@ def product_thumbnail(product_id: str) -> FileResponse:
 @app.post("/api/inbox/products/{product_id}/open-directory")
 def open_product_directory(product_id: str) -> Dict[str, Any]:
     product_dir = PRODUCTS_DIR / product_id
-    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir():
+    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir):
         raise HTTPException(status_code=404, detail="Product not found")
     subprocess.Popen(["/usr/bin/open", str(product_dir)], close_fds=True)
     return {"status": "opened", "product_id": product_id, "path": str(product_dir)}
@@ -1192,7 +1296,7 @@ async def delete_inbox_product(product_id: str, request: Request) -> Dict[str, A
     if not isinstance(payload, dict) or payload.get("confirm_product_id") != product_id:
         raise HTTPException(status_code=422, detail="必须明确确认要彻底删除的商品ID")
     product_dir = PRODUCTS_DIR / product_id
-    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir():
+    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir):
         raise HTTPException(status_code=404, detail="Product not found")
     result = purge_local_product(ROOT, product_id)
     if result["status"] != "deleted":
@@ -1559,11 +1663,6 @@ def launch_or_enqueue_batch(batch: Dict[str, Any], source: str) -> Dict[str, Any
         return {"status": "queued", "batch_id": batch["batch_id"], "queue_position": len(items)}
 
 
-@app.on_event("startup")
-def start_batch_dispatcher() -> None:
-    ensure_batch_dispatcher()
-
-
 @app.post("/api/tasks/run")
 def run_collected_tasks() -> Dict[str, Any]:
     selected_stores: List[str] = []
@@ -1572,12 +1671,16 @@ def run_collected_tasks() -> Dict[str, Any]:
     sync_remote_ozon_status_once()
     with BATCH_QUEUE_LOCK:
         reserved = reserved_product_batches()
-        product_ids = [path.name for path in collected_products(ROOT) if path.name not in reserved]
+        product_ids = [
+            path.name for path in collected_products(ROOT)
+            if path.name not in reserved and product_is_owned(path)
+        ]
         if not product_ids:
             return {"status": "empty", "queued_products": 0, "already_queued_products": len(reserved)}
         batch = create_batch(
             ROOT, product_ids=product_ids, target_store_ids=selected_stores, auto_upload=auto_upload,
         )
+        save_batch_owner(batch["batch_id"])
         launched = launch_or_enqueue_batch(batch, "collector")
     return {
         "status": launched["status"],
@@ -1630,10 +1733,14 @@ def get_batch_status() -> Dict[str, Any]:
     current = json.loads(CURRENT_BATCH_PATH.read_text(encoding="utf-8")) if CURRENT_BATCH_PATH.is_file() else {}
     current_path = batch_path(ROOT, current.get("batch_id", "")) if current.get("batch_id") else None
     batch = json.loads(current_path.read_text(encoding="utf-8")) if current_path and current_path.is_file() else None
-    if batch:
+    if batch and batch_is_owned(str(batch.get("batch_id") or "")):
         batch = overlay_live_batch_status(batch, PRODUCTS_DIR)
+    elif batch:
+        batch = None
     report_path = ROOT / "batch-result.json"
     report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else None
+    if report and not batch_is_owned(str(report.get("batch_id") or "")):
+        report = None
     return {"running": pid is not None, "pid": pid, "current_batch": batch, "last_result": report}
 
 
@@ -1642,7 +1749,7 @@ async def create_product(request: Request) -> Dict[str, Any]:
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail={"message": "Payload must be a JSON object"})
-    return ingest_capture(payload)
+    return ingest_capture(payload, current_operator())
 
 
 @app.get("/api/collector/categories")
@@ -1714,7 +1821,7 @@ def get_product(product_id: str) -> Dict[str, Any]:
     product_dir = PRODUCTS_DIR / product_id
     source_path = product_dir / "input/source.json"
     status_path = product_dir / "status.json"
-    if not source_path.is_file() or not status_path.is_file():
+    if not source_path.is_file() or not status_path.is_file() or not product_is_owned(product_dir):
         raise HTTPException(status_code=404, detail="Product not found")
     return {
         "product_id": product_id,
@@ -1728,7 +1835,7 @@ def get_product(product_id: str) -> Dict[str, Any]:
 @app.put("/api/collector/products/{product_id}/category")
 async def update_collected_product_category(product_id: str, request: Request) -> Dict[str, Any]:
     product_dir = PRODUCTS_DIR / product_id
-    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir():
+    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir):
         raise HTTPException(status_code=404, detail="Product not found")
     payload = await request.json()
     try:
@@ -1743,8 +1850,9 @@ async def update_collected_product_category(product_id: str, request: Request) -
 
 @app.get("/api/collector/products/{product_id}/status")
 def get_product_status(product_id: str) -> Dict[str, Any]:
-    status_path = PRODUCTS_DIR / product_id / "status.json"
-    if not status_path.is_file():
+    product_dir = PRODUCTS_DIR / product_id
+    status_path = product_dir / "status.json"
+    if not status_path.is_file() or not product_is_owned(product_dir):
         raise HTTPException(status_code=404, detail="Product not found")
     return json.loads(status_path.read_text(encoding="utf-8"))
 
@@ -1800,7 +1908,7 @@ def workbench_product_dir(product_id: str) -> Path:
     if not re.fullmatch(r"P[0-9]{6}", product_id):
         raise HTTPException(status_code=404, detail="商品不存在")
     product_dir = PRODUCTS_DIR / product_id
-    if not product_dir.is_dir():
+    if not product_dir.is_dir() or not product_is_owned(product_dir):
         raise HTTPException(status_code=404, detail="商品不存在")
     return product_dir
 
@@ -2025,6 +2133,28 @@ def build_ai_suggestions(product_dir: Path, content: Dict[str, Any], risk: Dict[
     return candidates
 
 
+def pending_product_question(product_dir: Path) -> Dict[str, Any]:
+    value = load_optional_json(product_dir / "input/pending-question.json")
+    return value if str(value.get("status") or "").upper() == "OPEN" else {}
+
+
+def product_primary_action(detail: Dict[str, Any]) -> Dict[str, str]:
+    status = str((detail.get("status") or {}).get("status") or "unknown").upper()
+    if detail.get("pending_question"):
+        return {"key": "answer", "label": "回答问题"}
+    if status in {"COLLECTED", "STOPPED"}:
+        return {"key": "run", "label": "运行任务"}
+    if status == "FAILED_HARD_BLOCKER":
+        return {"key": "fix", "label": "查看并继续"}
+    if status == "OZON_READY":
+        return {"key": "review_upload", "label": "检查并上传"}
+    if status in {"UPLOADED", "ACTIVE"}:
+        return {"key": "result", "label": "查看上架结果"}
+    if status in {"UPLOADING", "PENDING_REMOTE", "OZON_MODERATION"}:
+        return {"key": "status", "label": "查看上传状态"}
+    return {"key": "status", "label": "查看进度"}
+
+
 def workbench_product_detail(product_id: str) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
     source = load_optional_json(product_dir / "input/source.json")
@@ -2183,7 +2313,7 @@ def workbench_product_detail(product_id: str) -> Dict[str, Any]:
     stores = list_stores(ROOT)
     publications = load_publications(product_dir, [store["id"] for store in stores])
     assessment = prelisting_assessment(pricing, qc, risk)
-    return {
+    detail = {
         "product_id": product_id,
         "source": {
             "title_cn": source.get("title_cn") or "unknown", "source_url": source.get("source_url") or "unknown",
@@ -2212,7 +2342,18 @@ def workbench_product_detail(product_id: str) -> Dict[str, Any]:
         "ozon": status.get("ozon") or {},
         "timeline": readable_timeline(status, product_dir),
         "workbench_settings": workbench_settings(),
+        "owner": product_owner(product_dir),
+        "pending_question": pending_product_question(product_dir),
+        "visual_preference": load_optional_json(product_dir / "input/visual-preference.json", {
+            "set_hint": "", "slot_hints": {},
+        }),
     }
+    detail["primary_action"] = product_primary_action(detail)
+    detail["attention_required"] = bool(
+        detail["pending_question"]
+        or str(status.get("status") or "").upper() in {"FAILED_HARD_BLOCKER", "OZON_READY"}
+    )
+    return detail
 
 
 def workbench_card(product_dir: Path) -> Dict[str, Any]:
@@ -2240,6 +2381,10 @@ def workbench_card(product_dir: Path) -> Dict[str, Any]:
         "batch_id": detail["status"].get("batch_id") or "unknown",
         "selected_store_count": detail["publication_summary"]["selected"],
         "search_terms": " ".join(remote_search),
+        "owner": detail["owner"],
+        "primary_action": detail["primary_action"],
+        "attention_required": detail["attention_required"],
+        "pending_question": detail["pending_question"],
     }
 
 
@@ -2326,7 +2471,7 @@ def workbench_js() -> FileResponse:
 
 @app.get("/api/workbench/summary")
 def workbench_summary() -> Dict[str, Any]:
-    cards = [workbench_card(path) for path in sorted(PRODUCTS_DIR.glob(WORKBENCH_PRODUCT_GLOB), reverse=True) if (path / "status.json").is_file()]
+    cards = [workbench_card(path) for path in owned_product_dirs() if (path / "status.json").is_file()]
     counts = {name: sum(1 for card in cards if card["state"] == name) for name in ("待处理", "处理中", "完成", "失败")}
     risks = sum(1 for card in cards if card["risk"]["level"] == "high")
     batch = get_batch_status()
@@ -2343,11 +2488,72 @@ def workbench_summary() -> Dict[str, Any]:
 
 @app.get("/api/workbench/settings")
 def get_workbench_settings() -> Dict[str, Any]:
-    return workbench_settings()
+    operator = current_operator()
+    return {**workbench_settings(), "can_manage_settings": operator.get("role") == "owner"}
+
+
+@app.get("/api/workbench/session")
+def workbench_session() -> Dict[str, Any]:
+    operator = current_operator()
+    return {
+        "operator": operator,
+        "can_manage_settings": operator.get("role") == "owner",
+        "product_visibility": "own_only",
+    }
+
+
+@app.get("/api/workbench/operators")
+def workbench_operators() -> Dict[str, Any]:
+    require_owner_role()
+    return {"items": list_operators(ROOT), "product_visibility": "own_only"}
+
+
+@app.post("/api/workbench/operators")
+async def create_workbench_operator(request: Request) -> Dict[str, Any]:
+    require_owner_role()
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="成员内容格式错误")
+    try:
+        item, one_time_code = upsert_operator(ROOT, payload)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"created": True, "item": item, "one_time_access_code": one_time_code}
+
+
+@app.patch("/api/workbench/operators/{operator_id}")
+async def edit_workbench_operator(operator_id: str, request: Request) -> Dict[str, Any]:
+    require_owner_role()
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="成员内容格式错误")
+    try:
+        item, one_time_code = upsert_operator(ROOT, payload, operator_id=operator_id)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"saved": True, "item": item, "one_time_access_code": one_time_code}
+
+
+@app.delete("/api/workbench/operators/{operator_id}")
+def remove_workbench_operator(operator_id: str) -> Dict[str, Any]:
+    operator = require_owner_role()
+    if operator_id == operator.get("id"):
+        raise HTTPException(status_code=422, detail="不能删除当前正在使用的成员")
+    owned_count = sum(product_owner(path)["owner_id"] == operator_id for path in PRODUCTS_DIR.glob(WORKBENCH_PRODUCT_GLOB))
+    if owned_count:
+        raise HTTPException(status_code=409, detail=f"该成员还有{owned_count}个本地商品；请由成员自行处理或删除商品后再移除访问配置")
+    try:
+        delete_operator(ROOT, operator_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="成员不存在") from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return {"deleted": True, "operator_id": operator_id}
 
 
 @app.patch("/api/workbench/settings")
 async def update_workbench_settings(request: Request) -> Dict[str, Any]:
+    require_owner_role()
     payload = await request.json()
     if not isinstance(payload, dict) or set(payload) - {"auto_mode_enabled"}:
         raise HTTPException(status_code=422, detail="只允许修改全局自动模式开关")
@@ -2359,7 +2565,7 @@ async def update_workbench_settings(request: Request) -> Dict[str, Any]:
 def workbench_products(q: str = "", state: str = "", page: int = 1, page_size: int = 30) -> Dict[str, Any]:
     page = max(1, page)
     page_size = max(1, min(page_size, 100))
-    cards = [workbench_card(path) for path in sorted(PRODUCTS_DIR.glob(WORKBENCH_PRODUCT_GLOB), reverse=True) if (path / "status.json").is_file()]
+    cards = [workbench_card(path) for path in owned_product_dirs() if (path / "status.json").is_file()]
     query = q.strip().lower()
     if query:
         cards = [card for card in cards if query in json.dumps(card, ensure_ascii=False).lower()]
@@ -2475,7 +2681,7 @@ async def update_workbench_image(product_id: str, slot: str, request: Request) -
             by_slot[requested_slot]["workbench_order"] = order
     elif action == "keep":
         item["kept_at"] = now_iso()
-        item["kept_by"] = "local_admin"
+        item["kept_by"] = current_operator_id()
     else:
         raise HTTPException(status_code=422, detail="不支持的图片操作")
     atomic_write_json(plan_path, plan)
@@ -2508,7 +2714,7 @@ async def replace_workbench_image(product_id: str, slot: str, request: Request) 
         raise HTTPException(status_code=422, detail="图片路径不安全")
     image_path.parent.mkdir(parents=True, exist_ok=True)
     image_path.write_bytes(content)
-    item.update({"status": "replaced", "replaced_at": now_iso(), "replaced_by": "local_admin"})
+    item.update({"status": "replaced", "replaced_at": now_iso(), "replaced_by": current_operator_id()})
     atomic_write_json(product_dir / "output/image-plan.json", plan)
     record_image_feedback(
         ROOT, product_dir, item, "replace", now_iso(),
@@ -2596,7 +2802,7 @@ async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, A
     draft.update({
         "schema_version": "1.0.0", "product_id": product_id,
         "version": int(before.get("version") or 0) + 1, "saved_at": now_iso(),
-        "modified_by": "local_admin",
+        "modified_by": current_operator_id(),
         "locked_fields": sorted(set(before.get("locked_fields") or []) | set(changed)),
         "dirty": True,
     })
@@ -2605,7 +2811,7 @@ async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, A
     history = load_optional_json(history_path, {"product_id": product_id, "versions": []})
     history.setdefault("versions", []).append({
         "version": draft["version"], "saved_at": draft["saved_at"],
-        "modified_by": "local_admin", "changed_fields": changed,
+        "modified_by": current_operator_id(), "changed_fields": changed,
         "before": {field: before.get(field) for field in changed},
         "after": {field: draft.get(field) for field in changed},
     })
@@ -2620,6 +2826,135 @@ async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, A
         "saved": True, "version": draft["version"], "saved_at": draft["saved_at"],
         "locked_fields": draft["locked_fields"], "learning": learning,
     }
+
+
+@app.put("/api/workbench/products/{product_id}/visual-preference")
+async def save_visual_preference(product_id: str, request: Request) -> Dict[str, Any]:
+    product_dir = workbench_product_dir(product_id)
+    payload = await request.json()
+    if not isinstance(payload, dict):
+        raise HTTPException(status_code=422, detail="图片风格意见格式错误")
+    hint = str(payload.get("set_hint") or "").strip()
+    if len(hint) > 120:
+        raise HTTPException(status_code=422, detail="整套图片风格意见不能超过120个字符")
+    raw_slot_hints = payload.get("slot_hints") or {}
+    if not isinstance(raw_slot_hints, dict):
+        raise HTTPException(status_code=422, detail="单图意见格式错误")
+    slot_hints = {
+        str(slot): str(value).strip()[:200]
+        for slot, value in raw_slot_hints.items()
+        if str(slot).strip() and str(value).strip()
+    }
+    value = {
+        "schema_version": "1.0.0", "product_id": product_id,
+        "set_hint": hint, "slot_hints": slot_hints,
+        "updated_at": now_iso(), "updated_by": current_operator_id(),
+    }
+    atomic_write_json(product_dir / "input/visual-preference.json", value)
+    status_path = product_dir / "status.json"
+    status = load_optional_json(status_path)
+    remote_states = {"UPLOADING", "PENDING_REMOTE", "OZON_MODERATION", "UPLOADED", "ACTIVE"}
+    invalidated: List[str] = []
+    if str(status.get("status") or "").upper() not in remote_states and int(status.get("api_write_count") or 0) == 0:
+        reset_steps = {
+            "style_selector", "image_plan", "image_generation", "image_qc",
+            "marketplace_content", "field_completion", "ozon_upload",
+        }
+        completed = list(status.get("completed_steps") or [])
+        status["completed_steps"] = [step for step in completed if step not in reset_steps]
+        invalidated = [step for step in completed if step in reset_steps]
+        pipeline_steps = [
+            "validate_source", "product_analysis", "category_match", "variant_rules", "measurements",
+            "offer_exists_check", "upload_feasibility", "product_positioning", "russian_copy",
+            "style_selector", "image_plan", "image_generation", "image_qc", "marketplace_content",
+            "field_completion", "ozon_upload",
+        ]
+        status["pending_steps"] = [step for step in pipeline_steps if step not in status["completed_steps"]]
+        status["next_action"] = status["pending_steps"][0] if status["pending_steps"] else "complete"
+        if status.get("status") not in {"COLLECTED", "FAILED_HARD_BLOCKER"}:
+            status["status"] = "STOPPED"
+        status["task_authorized"] = False
+        atomic_write_json(status_path, status)
+    append_log(product_dir, "visual_preference_saved", {"set_hint": hint, "slot_hint_count": len(slot_hints), "invalidated": invalidated})
+    return {"saved": True, "preference": value, "invalidated_steps": invalidated}
+
+
+@app.get("/api/workbench/notifications")
+def workbench_notifications() -> Dict[str, Any]:
+    items = []
+    for product_dir in owned_product_dirs():
+        if not (product_dir / "status.json").is_file():
+            continue
+        source = load_optional_json(product_dir / "input/source.json")
+        status = load_optional_json(product_dir / "status.json")
+        question = pending_product_question(product_dir)
+        if question:
+            items.append({
+                "id": f"question:{product_dir.name}:{question.get('question_id') or 'current'}",
+                "type": "question", "product_id": product_dir.name,
+                "title": "商品需要你回答一个问题",
+                "message": str(question.get("question") or "请确认商品关键信息"),
+                "product_title": source.get("title_cn") or product_dir.name,
+                "created_at": question.get("created_at") or "unknown",
+                "requires_action": True,
+            })
+            continue
+        raw_status = str(status.get("status") or "").upper()
+        if raw_status == "FAILED_HARD_BLOCKER":
+            items.append({
+                "id": f"failure:{product_dir.name}:{status.get('last_run_at') or status.get('completed_at') or 'current'}",
+                "type": "failure", "product_id": product_dir.name,
+                "title": "商品任务需要处理",
+                "message": str(status.get("error_message") or "任务失败，请查看原因后继续"),
+                "product_title": source.get("title_cn") or product_dir.name,
+                "created_at": status.get("last_run_at") or "unknown",
+                "requires_action": True,
+            })
+        elif raw_status == "OZON_READY":
+            items.append({
+                "id": f"review:{product_dir.name}:{status.get('last_run_at') or 'current'}",
+                "type": "review", "product_id": product_dir.name,
+                "title": "商品已经生成完成",
+                "message": "请检查商品资料和图片，然后选择店铺上传",
+                "product_title": source.get("title_cn") or product_dir.name,
+                "created_at": status.get("last_run_at") or "unknown",
+                "requires_action": True,
+            })
+    return {"items": items, "count": len(items), "owner_id": current_operator_id()}
+
+
+@app.post("/api/workbench/products/{product_id}/question/answer")
+async def answer_product_question(product_id: str, request: Request) -> Dict[str, Any]:
+    product_dir = workbench_product_dir(product_id)
+    question_path = product_dir / "input/pending-question.json"
+    question = pending_product_question(product_dir)
+    if not question:
+        raise HTTPException(status_code=409, detail="当前商品没有等待回答的问题")
+    payload = await request.json()
+    answer = str((payload or {}).get("answer") or "").strip() if isinstance(payload, dict) else ""
+    if not answer or len(answer) > 1000:
+        raise HTTPException(status_code=422, detail="回答必须为1至1000个字符")
+    guidance_path = product_dir / "input/operator-guidance.json"
+    guidance = load_optional_json(guidance_path, {"schema_version": "1.0.0", "product_id": product_id, "answers": []})
+    guidance.setdefault("answers", []).append({
+        "question_id": question.get("question_id") or "current",
+        "question": question.get("question") or "unknown",
+        "answer": answer, "answered_at": now_iso(), "answered_by": current_operator_id(),
+    })
+    atomic_write_json(guidance_path, guidance)
+    question.update({"status": "ANSWERED", "answer": answer, "answered_at": now_iso(), "answered_by": current_operator_id()})
+    atomic_write_json(question_path, question)
+    status_path = product_dir / "status.json"
+    status = load_optional_json(status_path)
+    if str(status.get("status") or "").upper() == "FAILED_HARD_BLOCKER":
+        status.update({
+            "status": "STOPPED", "error_code": "unknown", "error_message": "unknown",
+            "next_action": status.get("failed_step") if status.get("failed_step") not in {None, "", "unknown"} else "validate_source",
+            "task_authorized": False, "last_run_at": now_iso(),
+        })
+        atomic_write_json(status_path, status)
+    append_log(product_dir, "operator_question_answered", {"question_id": question.get("question_id"), "answered_by": current_operator_id()})
+    return {"saved": True, "product_id": product_id, "next_action": "run"}
 
 
 @app.put("/api/workbench/products/{product_id}/stores")
@@ -2663,6 +2998,7 @@ def retry_failed_store(product_id: str, store_id: str) -> Dict[str, Any]:
     atomic_write_json(status_path, status)
     try:
         batch = create_batch(ROOT, [product_id], target_store_ids=[store_id], auto_upload=True)
+        save_batch_owner(batch["batch_id"])
         final_snapshot(product_dir, [store_id], batch["batch_id"])
         launched = launch_or_enqueue_batch(batch, "retry_failed_store")
     except Exception:
@@ -2685,7 +3021,7 @@ async def handle_ai_suggestion(product_id: str, suggestion_id: str, request: Req
     path = product_dir / "output/ai-suggestions.json"
     data = load_optional_json(path, {"schema_version": "1.0.0", "product_id": product_id, "items": []})
     items = [item for item in data.get("items") or [] if item.get("id") != suggestion_id]
-    items.append({"id": suggestion_id, "status": action, "updated_at": now_iso(), "updated_by": "local_admin"})
+    items.append({"id": suggestion_id, "status": action, "updated_at": now_iso(), "updated_by": current_operator_id()})
     data.update({"items": items, "updated_at": now_iso()})
     atomic_write_json(path, data)
     append_log(product_dir, "ai_suggestion_action", {"suggestion_id": suggestion_id, "action": action})
@@ -2750,6 +3086,7 @@ async def run_single_workbench_product(product_id: str, request: Request) -> Dic
         select_stores(product_dir, selected_stores, connected_store_ids(), payload.get("overrides") or {})
         materialize_active_experience(ROOT, product_dir, now_iso())
         batch = create_batch(ROOT, [product_id], target_store_ids=selected_stores, auto_upload=auto_upload)
+        save_batch_owner(batch["batch_id"])
         if batch.get("product_count") != 1:
             raise HTTPException(status_code=409, detail="当前商品状态不允许进入任务")
         if auto_upload:
@@ -2779,7 +3116,7 @@ def workbench_batches() -> Dict[str, Any]:
     }
     for path in sorted((ROOT / "batches").glob("B-*/batch.json"), reverse=True):
         batch = load_optional_json(path)
-        if batch:
+        if batch and batch_is_owned(str(batch.get("batch_id") or path.parent.name)):
             result = load_optional_json(path.with_name("batch-result.json"))
             batch["result"] = result
             batch["queue_position"] = queued_positions.get(str(batch.get("batch_id")), 0)
@@ -2809,7 +3146,11 @@ async def create_workbench_batch(request: Request) -> Dict[str, Any]:
     overrides = payload.get("product_store_overrides") or {}
     with BATCH_QUEUE_LOCK:
         reserved = reserved_product_batches()
-        requested_ids = product_ids or [path.name for path in collected_products(ROOT)]
+        requested_ids = product_ids or [path.name for path in collected_products(ROOT) if product_is_owned(path)]
+        requested_ids = [
+            str(value) for value in requested_ids
+            if (PRODUCTS_DIR / str(value)).is_dir() and product_is_owned(PRODUCTS_DIR / str(value))
+        ]
         available_ids = [str(value) for value in requested_ids if str(value) not in reserved]
         if not available_ids:
             return {
@@ -2821,6 +3162,7 @@ async def create_workbench_batch(request: Request) -> Dict[str, Any]:
             ROOT, available_ids, target_store_ids=selected_stores,
             auto_upload=auto_upload, product_store_overrides=overrides,
         )
+        save_batch_owner(batch["batch_id"])
         for entry in batch["products"]:
             product_dir = workbench_product_dir(entry["product_id"])
             stores_for_product = entry.get("target_store_ids") or selected_stores
@@ -2844,6 +3186,7 @@ async def create_workbench_batch(request: Request) -> Dict[str, Any]:
 
 @app.get("/api/workbench/batches/{batch_id}/confirmation")
 def get_workbench_batch_confirmation(batch_id: str) -> Dict[str, Any]:
+    require_owned_batch(batch_id)
     batch = load_optional_json(batch_path(ROOT, batch_id))
     if not batch:
         raise HTTPException(status_code=404, detail="批次不存在")
@@ -2875,6 +3218,7 @@ def _confirmed_dimensions(value: Any, field_name: str) -> Dict[str, float]:
 
 @app.post("/api/workbench/batches/{batch_id}/confirm")
 async def confirm_workbench_batch(batch_id: str, request: Request) -> Dict[str, Any]:
+    require_owned_batch(batch_id)
     payload = await request.json()
     confirmations = payload.get("products") if isinstance(payload, dict) else None
     if not isinstance(confirmations, list):
@@ -2961,6 +3305,7 @@ async def control_batch(request: Request) -> Dict[str, Any]:
     pid = running_batch_pid()
     if action == "cancel_confirmation":
         batch_id = str(payload.get("batch_id") or "")
+        require_owned_batch(batch_id)
         batch_file = batch_path(ROOT, batch_id) if batch_id else None
         batch = load_optional_json(batch_file) if batch_file else {}
         if not batch:
@@ -2981,11 +3326,15 @@ async def control_batch(request: Request) -> Dict[str, Any]:
     if action == "retry_failed":
         if pid is not None:
             raise HTTPException(status_code=409, detail="当前批次仍在运行")
-        failed = [path.name for path in retryable_products(ROOT) if load_optional_json(path / "status.json").get("status") == "FAILED_HARD_BLOCKER"]
+        failed = [
+            path.name for path in retryable_products(ROOT)
+            if product_is_owned(path) and load_optional_json(path / "status.json").get("status") == "FAILED_HARD_BLOCKER"
+        ]
         if not failed:
             return {"status": "empty", "message": "没有可重试的失败商品"}
         selected_stores = validate_target_stores(payload.get("store_ids") or [])
         batch = create_batch(ROOT, failed, target_store_ids=selected_stores, auto_upload=bool(payload.get("auto_upload", False)))
+        save_batch_owner(batch["batch_id"])
         for product_id in failed:
             select_stores(workbench_product_dir(product_id), selected_stores, connected_store_ids())
         launched = launch_or_enqueue_batch(batch, "retry_failed")
@@ -2994,6 +3343,7 @@ async def control_batch(request: Request) -> Dict[str, Any]:
         raise HTTPException(status_code=409, detail="当前没有运行中的批次")
     if action == "stop":
         current = load_optional_json(CURRENT_BATCH_PATH)
+        require_owned_batch(str(current.get("batch_id") or ""))
         atomic_write_json(SAFE_STOP_REQUEST_PATH, {
             "batch_id": current.get("batch_id"), "pid": pid,
             "requested_at": now_iso(), "mode": "interrupt_active_child_preserve_checkpoints",
@@ -3005,6 +3355,8 @@ async def control_batch(request: Request) -> Dict[str, Any]:
     signals = {"pause": signal.SIGSTOP, "continue": signal.SIGCONT}
     if action not in signals:
         raise HTTPException(status_code=422, detail="不支持的批次操作")
+    current = load_optional_json(CURRENT_BATCH_PATH)
+    require_owned_batch(str(current.get("batch_id") or ""))
     os.kill(pid, signals[action])
     return {"status": action, "pid": pid}
 
@@ -3012,7 +3364,7 @@ async def control_batch(request: Request) -> Dict[str, Any]:
 @app.get("/api/workbench/risks")
 def workbench_risks() -> Dict[str, Any]:
     items = []
-    for path in sorted(PRODUCTS_DIR.glob(WORKBENCH_PRODUCT_GLOB), reverse=True):
+    for path in owned_product_dirs():
         if not (path / "status.json").is_file():
             continue
         detail = workbench_product_detail(path.name)
@@ -3034,6 +3386,7 @@ def workbench_risks() -> Dict[str, Any]:
 
 @app.patch("/api/workbench/risk-rules/{rule_id}")
 async def update_workbench_risk_rule(rule_id: str, request: Request) -> Dict[str, Any]:
+    require_owner_role()
     path = ROOT / "config/workbench-risk-rules.json"
     current = workbench_risks()["rules"]
     rule = next((item for item in current if item.get("id") == rule_id), None)
@@ -3054,11 +3407,26 @@ async def update_workbench_risk_rule(rule_id: str, request: Request) -> Dict[str
 @app.get("/api/workbench/shops")
 def workbench_shops() -> Dict[str, Any]:
     registry = load_registry(ROOT)
-    return {"items": list_stores(ROOT), "default_shop": registry.get("default_read_shop")}
+    items = list_stores(ROOT)
+    counts = {str(item.get("id")): {"associated": 0, "pending": 0} for item in items}
+    for product_dir in owned_product_dirs():
+        publications = load_publications(product_dir)
+        for store_id, record in (publications.get("stores") or {}).items():
+            if store_id not in counts:
+                continue
+            if record.get("selected") or str(record.get("status") or "") not in {"", "NOT_SELECTED"}:
+                counts[store_id]["associated"] += 1
+            if str(record.get("status") or "") in {"QUEUED", "UPLOADING", "PENDING_REMOTE", "OZON_MODERATION"}:
+                counts[store_id]["pending"] += 1
+    for item in items:
+        item["associated_product_count"] = counts[str(item.get("id"))]["associated"]
+        item["pending_task_count"] = counts[str(item.get("id"))]["pending"]
+    return {"items": items, "default_shop": registry.get("default_read_shop")}
 
 
 @app.post("/api/workbench/shops")
 async def create_workbench_shop(request: Request) -> Dict[str, Any]:
+    require_owner_role()
     payload = await request.json()
     try:
         item = upsert_store(ROOT, payload)
@@ -3069,6 +3437,7 @@ async def create_workbench_shop(request: Request) -> Dict[str, Any]:
 
 @app.patch("/api/workbench/shops/{store_id}")
 async def edit_workbench_shop(store_id: str, request: Request) -> Dict[str, Any]:
+    require_owner_role()
     payload = await request.json()
     try:
         item = upsert_store(ROOT, payload, store_id=store_id)
@@ -3079,6 +3448,7 @@ async def edit_workbench_shop(store_id: str, request: Request) -> Dict[str, Any]
 
 @app.post("/api/workbench/shops/{store_id}/validate")
 def validate_workbench_shop(store_id: str) -> Dict[str, Any]:
+    require_owner_role()
     try:
         return validate_store_read_only(ROOT, store_id)
     except KeyError as exc:
@@ -3087,6 +3457,7 @@ def validate_workbench_shop(store_id: str) -> Dict[str, Any]:
 
 @app.post("/api/workbench/shops/{store_id}/enabled")
 async def toggle_workbench_shop(store_id: str, request: Request) -> Dict[str, Any]:
+    require_owner_role()
     payload = await request.json()
     try:
         item = set_enabled(ROOT, store_id, bool(payload.get("enabled")))
@@ -3097,6 +3468,7 @@ async def toggle_workbench_shop(store_id: str, request: Request) -> Dict[str, An
 
 @app.delete("/api/workbench/shops/{store_id}")
 def delete_workbench_shop(store_id: str) -> Dict[str, Any]:
+    require_owner_role()
     try:
         delete_store(ROOT, store_id)
     except KeyError as exc:
@@ -3123,7 +3495,7 @@ def workbench_logs(product_id: str = "") -> Dict[str, Any]:
         detail = workbench_product_detail(product_id)
         return {"items": detail["timeline"]}
     items = []
-    for path in sorted(PRODUCTS_DIR.glob(WORKBENCH_PRODUCT_GLOB), reverse=True):
+    for path in owned_product_dirs():
         if not (path / "status.json").is_file():
             continue
         for entry in readable_timeline(load_optional_json(path / "status.json"), path)[:5]:
@@ -3138,7 +3510,7 @@ def export_directory() -> Path:
 
 
 def safe_export_cards() -> List[Dict[str, Any]]:
-    cards = [workbench_card(path) for path in sorted(PRODUCTS_DIR.glob(WORKBENCH_PRODUCT_GLOB)) if (path / "status.json").is_file()]
+    cards = [workbench_card(path) for path in owned_product_dirs() if (path / "status.json").is_file()]
     return [{key: value for key, value in card.items() if key not in {"search_terms"}} for card in cards]
 
 
@@ -3180,6 +3552,17 @@ def export_workbench(export_type: str) -> FileResponse:
                     continue
                 for source in base.rglob("*"):
                     if not source.is_file() or any(part in excluded_names for part in source.parts):
+                        continue
+                    relative = source.relative_to(ROOT)
+                    if relative.parts and relative.parts[0] == "products" and len(relative.parts) > 1:
+                        product_dir = ROOT / "products" / relative.parts[1]
+                        if product_dir.name != ".gitkeep" and product_dir.is_dir() and not product_is_owned(product_dir):
+                            continue
+                    if relative.parts and relative.parts[0] == "batches" and len(relative.parts) > 1:
+                        batch_id = relative.parts[1]
+                        if batch_id.startswith("B-") and not batch_is_owned(batch_id):
+                            continue
+                    if relative.as_posix() in {"config/lan-access.json", "config/operators.json"}:
                         continue
                     if source.name.startswith(".env") or source.suffix in {".log", ".pid"}:
                         continue

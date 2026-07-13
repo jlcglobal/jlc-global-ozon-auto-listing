@@ -157,6 +157,7 @@ class VariantCompatibilityCheckerTests(unittest.TestCase):
         self.assertFalse(platform["platform_can_merge"])
         self.assertEqual(platform["upload_strategy"], "separate_cards")
 
+    @unittest.skipUnless((ROOT / "products/P000005/status.json").is_file(), "optional runtime product fixture is not installed")
     def test_p000005_has_fixed_separate_card_policy_in_status(self):
         status = json.loads((ROOT / "products/P000005/status.json").read_text(encoding="utf-8"))
         grouping = status["platform_grouping"]

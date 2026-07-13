@@ -12,7 +12,7 @@ from typing import Any, Dict, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PIPELINE_CACHE_VERSION = "4"
+PIPELINE_CACHE_VERSION = "5"
 EXTERNAL_IMAGE_ADVISORY_SKILLS = [
     Path.home() / ".codex/skills/ecommerce-branding/SKILL.md",
 ]
@@ -54,10 +54,10 @@ STEP_INPUTS = {
     ],
     "product_positioning": ["output/product-analysis.json"],
     "russian_copy": ["output/product-analysis.json", "output/product-positioning.json"],
-    "style_selector": ["output/product-analysis.json", "output/product-positioning.json"],
+    "style_selector": ["output/product-analysis.json", "output/product-positioning.json", "input/visual-preference.json"],
     "image_plan": [
         "output/product-analysis.json", "output/product-positioning.json", "output/style-profile.json",
-        "output/cost-analysis.json",
+        "output/cost-analysis.json", "input/visual-preference.json",
     ],
     "image_generation": [
         "output/image-plan.json", "output/style-profile.json", "output/product-analysis.json",

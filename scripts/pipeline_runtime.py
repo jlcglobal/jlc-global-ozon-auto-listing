@@ -7,7 +7,7 @@ import uuid
 import urllib.parse
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, List, Optional
 
 PHASE_A_STEPS = [
     "validate_source", "product_analysis", "category_match", "variant_rules",
@@ -160,7 +160,47 @@ def mark_hard_failure(product_dir: Path, step: str, reason: str) -> Dict[str, An
         "reason": reason,
     })
     write_json_atomic(path, status)
+    maybe_create_operator_question(product_dir, step, reason)
     return status
+
+
+def maybe_create_operator_question(product_dir: Path, step: str, reason: str) -> Optional[Dict[str, Any]]:
+    """Pause only for critical product identity ambiguity, never optional fields."""
+    text = str(reason or "")
+    lowered = text.casefold()
+    critical_signals = (
+        "sku对应", "sku mapping", "sku mismatch", "变体对应", "商品结构", "product structure",
+        "配件数量", "accessory count", "错商品", "product identity", "参考图", "reference image",
+        "颜色对应", "color mapping",
+    )
+    ambiguity_signals = (
+        "无法确认", "不能确认", "不明确", "歧义", "缺少", "不一致", "冲突",
+        "unknown", "ambiguous", "missing", "mismatch", "conflict", "cannot determine",
+    )
+    if not any(signal in lowered for signal in critical_signals):
+        return None
+    if not any(signal in lowered for signal in ambiguity_signals):
+        return None
+    path = product_dir / "input/pending-question.json"
+    if path.is_file():
+        current = load_json(path)
+        if str(current.get("status") or "").upper() == "OPEN":
+            return current
+    question = {
+        "schema_version": "1.0.0",
+        "question_id": f"Q-{uuid.uuid4().hex[:12].upper()}",
+        "product_id": product_dir.name,
+        "status": "OPEN",
+        "step": step,
+        "question": "系统无法确认商品结构、SKU对应关系或配件数量。请用简单中文说明正确情况。",
+        "reason": text,
+        "created_at": now(),
+        "answer": "unknown",
+        "answered_at": "unknown",
+        "answered_by": "unknown",
+    }
+    write_json_atomic(path, question)
+    return question
 
 
 def complete_step(product_dir: Path, step: str) -> Dict[str, Any]:

@@ -101,6 +101,7 @@ class PricingEngineTest(unittest.TestCase):
         self.assertEqual(result["value"], 1500)
         self.assertEqual(result["source"], "sku_specification")
 
+    @unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_product_and_package_estimates_are_separate_and_strictly_ordered(self):
         package = build_pricing_package(
             ROOT / "products/P000011", "2026-07-11T00:00:00+00:00"
@@ -113,6 +114,7 @@ class PricingEngineTest(unittest.TestCase):
         self.assertEqual(cost["weight"], cost["package_weight"])
         self.assertEqual(cost["dimensions"], cost["package_dimensions"])
 
+    @unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_shipping_uses_package_measurements(self):
         package = build_pricing_package(
             ROOT / "products/P000011", "2026-07-11T00:00:00+00:00"
@@ -132,6 +134,7 @@ class PricingEngineTest(unittest.TestCase):
             "rate_per_kg_cny": 26.0,
         })
 
+    @unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_real_product_pricing_uses_required_fees_and_no_api(self):
         package = build_pricing_package(
             ROOT / "products/P000004", "2026-07-11T00:00:00+00:00"

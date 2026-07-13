@@ -16,6 +16,7 @@ from scripts.validate_product import validate_product, validate_schema
 PRODUCT_IDS = ("P000004", "P000005", "P000003")
 
 
+@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class Stage35MarketplaceContentTest(unittest.TestCase):
     def test_rules_and_all_new_schemas_parse(self):
         rules = load_json(RULES_PATH)

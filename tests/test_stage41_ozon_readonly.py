@@ -97,6 +97,7 @@ def client(transport):
     )
 
 
+@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class Stage41OzonReadOnlyTest(unittest.TestCase):
     def test_camera_near_synonym_requires_compatible_live_attributes(self):
         offline = {"category_name": "Камера видеонаблюдения"}

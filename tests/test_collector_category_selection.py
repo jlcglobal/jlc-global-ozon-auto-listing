@@ -171,7 +171,7 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertIn(".caf-category { border-top: 1px solid #e5e7eb; padding: 10px 16px; background: #f8fafc; overflow: auto", built)
         self.assertNotIn("collectorApi(`/api/collector/categories/tree", built)
         self.assertIn("请先选择最终Ozon类目", built)
-        self.assertEqual(manifest["version"], "0.4.5")
+        self.assertEqual(manifest["version"], "0.4.6")
 
     def test_production_category_cache_is_complete_chinese_and_bundled_locally(self):
         server_path = PROJECT_ROOT / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"

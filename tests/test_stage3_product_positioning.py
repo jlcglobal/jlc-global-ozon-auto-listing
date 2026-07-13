@@ -16,6 +16,7 @@ from scripts.validate_product import (
 PRODUCT_IDS = ("P000004", "P000005", "P000003")
 
 
+@unittest.skipUnless((ROOT / "products/P000001/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class Stage3ProductPositioningTest(unittest.TestCase):
     def test_real_positioning_files_match_schema_and_evidence_rules(self):
         for product_id in PRODUCT_IDS:

@@ -16,6 +16,7 @@ from scripts.validate_product import (
 PRODUCT_DIR = ROOT / "products" / "P000001"
 
 
+@unittest.skipUnless((ROOT / "products/P000001/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class Stage1ValidationTest(unittest.TestCase):
     def test_example_product_directory_is_valid(self):
         self.assertEqual(validate_product(PRODUCT_DIR), [])

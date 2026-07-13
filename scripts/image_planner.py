@@ -314,6 +314,10 @@ def build_image_plan(
     dimension_annotation = product_dimension_annotation(product_dir)
     copy_path = product_dir / "output" / "copy-ru.json"
     copy = load_json(copy_path) if copy_path.is_file() else {}
+    preference_path = product_dir / "input" / "visual-preference.json"
+    visual_preference = load_json(preference_path) if preference_path.is_file() else {}
+    set_hint = str(visual_preference.get("set_hint") or "").strip()
+    slot_hints = visual_preference.get("slot_hints") if isinstance(visual_preference.get("slot_hints"), dict) else {}
     used_russian_text: set[str] = set()
 
     creative = style_profile.get("creative_direction") or {
@@ -372,6 +376,8 @@ def build_image_plan(
                 else "compose_from_real_images" if image_type in {"comparison", "size_spec"}
                 else "edit_real_image"
             )
+            slot_hint = str(slot_hints.get(slot) or "").strip()
+            preference_direction = "；".join(value for value in (set_hint, slot_hint) if value)
 
             item = {
             "type": "main" if image_type == "main" else "disclaimer" if image_type == "disclaimer" else "detail",
@@ -398,6 +404,7 @@ def build_image_plan(
                 str(creative.get("click_hook") if image_type == "main" else creative.get("hero_scene") or "unknown"),
                 str(creative.get("typography") or "unknown"),
                 str(creative.get("anti_template_rule") or "unknown"),
+                f"用户风格意见：{preference_direction}" if preference_direction else "",
             ]),
             "reference_product_images": item_reference_paths,
             "reference_images": item_reference_paths,
@@ -418,6 +425,7 @@ def build_image_plan(
                     else "Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. "
                 )
                 + "Do not use a plain white background or a reusable category template. Shared images must not imply that multiple SKU variants are included together."
+                + (f" User preference: {preference_direction}." if preference_direction else "")
             ),
             "prompt_brief": f"3:4 product-specific visual · {image_type} · {creative.get('click_hook', 'unknown')}",
             "output_path": path,
@@ -441,6 +449,8 @@ def build_image_plan(
     if (product_dir / "output" / "product-positioning.json").is_file():
         source_refs.append(positioning_ref)
     source_refs.append(style_ref)
+    if preference_path.is_file():
+        source_refs.append(f"products/{product_id}/input/visual-preference.json")
     return {
         "schema_version": "1.0.0",
         "product_id": product_id,

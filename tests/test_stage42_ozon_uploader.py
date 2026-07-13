@@ -185,6 +185,7 @@ def block_main_color_variant_for_mock(product_dir):
     check_path.write_text(json.dumps(check, ensure_ascii=False, indent=2) + "\n")
 
 
+@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class Stage42OzonUploaderTest(unittest.TestCase):
     def test_declined_remote_product_stops_image_channel_without_write(self):
         with tempfile.TemporaryDirectory() as directory:

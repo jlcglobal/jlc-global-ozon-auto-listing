@@ -15,6 +15,7 @@ from scripts.validate_product import validate_product, validate_schema
 P4 = ROOT / "products" / "P000004"
 
 
+@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class Stage34ImageQCTest(unittest.TestCase):
     def test_weights_and_criteria_total_one_hundred(self):
         rules = load_json(RULES_PATH)

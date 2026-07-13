@@ -1,0 +1,13 @@
+{
+  "schema_version": "1.0.0",
+  "operators": [
+    {
+      "id": "studio-owner",
+      "display_name": "工作室负责人",
+      "role": "owner",
+      "enabled": true,
+      "access_code_hash": "",
+      "notes": "通过工作台创建或重置访问码；禁止在模板中填写真实访问码"
+    }
+  ]
+}

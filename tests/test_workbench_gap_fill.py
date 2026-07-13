@@ -251,7 +251,7 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["learning"]["recorded"])
         self.assertTrue((self.root / "cache/image-feedback.json").is_file())
         plan = json.loads((self.product / "output/image-plan.json").read_text())
-        self.assertEqual(plan["main_images"][0]["kept_by"], "local_admin")
+        self.assertEqual(plan["main_images"][0]["kept_by"], "studio-owner")
 
     async def test_33_image_content_replacement_writes_only_selected_slot(self):
         encoded = "data:image/png;base64," + __import__("base64").b64encode(b"new-image").decode()

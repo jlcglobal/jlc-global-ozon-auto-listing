@@ -73,6 +73,7 @@ class Stage3StyleSelectorTest(unittest.TestCase):
         self.assertEqual(policy["shared_detail_min"], 6)
         self.assertEqual(policy["shared_detail_max"], 8)
 
+    @unittest.skipUnless((P4 / "input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_real_electronic_scale_selects_clean_tech(self):
         profile = select_style_profile(
             P4,
@@ -89,6 +90,7 @@ class Stage3StyleSelectorTest(unittest.TestCase):
         )
         self.assertIn("anti_template_rule", profile["creative_direction"])
 
+    @unittest.skipUnless((P3 / "input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_real_artificial_turf_selects_outdoor(self):
         profile = select_style_profile(
             P3,
@@ -115,7 +117,7 @@ class Stage3StyleSelectorTest(unittest.TestCase):
         self.assertEqual(profile["style_family"], "kitchen_warm_home")
         self.assertEqual(
             profile["image_set_structure"],
-            ["main", "benefit", "scene", "problem_solution", "detail", "size_spec", "comparison", "disclaimer"],
+            ["main", "benefit", "problem_solution", "scene", "feature", "detail", "usage"],
         )
 
     def test_locked_chinese_category_selects_style_without_runtime_guessing(self):
@@ -137,6 +139,28 @@ class Stage3StyleSelectorTest(unittest.TestCase):
         self.assertEqual(profile["classification_status"], "selected")
         self.assertEqual(profile["style_family"], "kitchen_warm_home")
 
+    def test_simple_user_style_hint_flows_into_profile_and_every_image(self):
+        source, analysis = kitchen_fixture()
+        source["main_images"] = [{
+            "id": "main-001", "download_status": "downloaded",
+            "local_path": "products/P999999/input/main-images/main.jpg",
+            "original_url": "https://example.test/main.jpg",
+        }]
+        with tempfile.TemporaryDirectory() as directory:
+            product_dir = Path(directory) / "products/P999999"
+            (product_dir / "input").mkdir(parents=True)
+            (product_dir / "output").mkdir(parents=True)
+            (product_dir / "input/visual-preference.json").write_text(json.dumps({
+                "set_hint": "更明亮、更有科技感", "slot_hints": {"detail-001": "产品再大一点"},
+            }), encoding="utf-8")
+            profile = select_style_profile(product_dir, source, analysis, generated_at="2026-07-13T00:00:00+08:00")
+            plan = build_image_plan(product_dir, source, analysis, profile, started_at="2026-07-13T00:00:00+08:00")
+        self.assertIn("更明亮、更有科技感", profile["creative_direction"]["visual_mood"])
+        self.assertTrue(all("更明亮、更有科技感" in item["prompt"] for key in ("main_images", "detail_images") for item in plan[key]))
+        detail = next(item for item in plan["detail_images"] if item["slot"] == "detail-001")
+        self.assertIn("产品再大一点", detail["prompt"])
+
+    @unittest.skipUnless((P4 / "input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_image_planner_uses_selected_structure_and_blocks_unknown_specs(self):
         source = load_json(P4 / "input/source.json")
         analysis = load_json(P4 / "output/product-analysis.json")
@@ -227,10 +251,9 @@ class Stage3StyleSelectorTest(unittest.TestCase):
             ROOT / "products/P999999", source, analysis, profile,
             started_at="2026-07-12T00:00:00+08:00",
         )
-        size = next(item for item in plan["detail_images"] if item["image_type"] == "size_spec")
-        self.assertEqual(size["status"], "needs_review")
-        self.assertIn("禁止使用包装尺寸", size["failure_reason"])
+        self.assertFalse(any(item["image_type"] == "size_spec" for item in plan["detail_images"]))
 
+    @unittest.skipUnless((P3 / "input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_generator_packet_is_style_bound_and_blocks_unverified_durability(self):
         packet = build_prompt_packet(P3, "main-001")
         self.assertEqual(packet["style_family"], "outdoor_rugged_lifestyle")
@@ -239,6 +262,7 @@ class Stage3StyleSelectorTest(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "真实尺寸|product-body dimensions"):
             build_prompt_packet(P3, "detail-005")
 
+    @unittest.skipUnless((P3 / "input/source.json").is_file() and (P4 / "input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_style_schemas_and_integrity_pass(self):
         self.assertEqual(
             validate_schema(P3 / "output/style-profile.json", ROOT / "templates/style-profile.schema.json"),
@@ -254,6 +278,7 @@ class Stage3StyleSelectorTest(unittest.TestCase):
         )
         self.assertEqual(validate_product(P4), [])
 
+    @unittest.skipUnless((P4 / "output/image-plan.json").is_file(), "optional runtime product fixture is not installed")
     def test_style_mismatch_is_rejected_by_full_validator(self):
         original = load_json(P4 / "output/image-plan.json")
         changed = copy.deepcopy(original)

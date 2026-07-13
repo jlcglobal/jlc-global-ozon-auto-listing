@@ -15,10 +15,12 @@
           <div><strong>跨境AI工厂</strong><small>商品生产审核台</small></div>
         </div>
         <nav id="primary-nav" aria-label="主导航">
-          <button class="nav-item active" data-view="inbox"><span>01</span>采集箱</button>
-          <button class="nav-item" data-view="batches"><span>02</span>任务状态</button>
-          <button class="nav-item" data-view="shops"><span>03</span>店铺设置</button>
-          <button class="nav-item" data-view="settings"><span>04</span>系统设置</button>
+          <button class="nav-item active" data-view="inbox"><span>01</span>我的采集箱</button>
+          <button class="nav-item" data-view="attention"><span>02</span>需要我处理 <i id="attention-nav-count"></i></button>
+          <button class="nav-item" data-view="listed"><span>03</span>已上架商品</button>
+          <div class="nav-separator owner-only" data-owner-only></div>
+          <button class="nav-item owner-only" data-owner-only data-view="shops"><span>04</span>店铺设置</button>
+          <button class="nav-item owner-only" data-owner-only data-view="settings"><span>05</span>系统设置</button>
         </nav>
         <div class="sidebar-foot"><span class="service-dot"></span><span>本地服务运行中</span></div>
       </aside>
@@ -26,14 +28,15 @@
       <div class="workspace">
         <header class="topbar">
           <button class="icon-button" id="toggle-sidebar" title="收起导航" aria-label="收起导航">≡</button>
-          <div class="page-heading"><h1 id="page-title">采集箱</h1><span id="page-subtitle">选品后的商品都在这里</span></div>
+          <div class="page-heading"><h1 id="page-title">我的采集箱</h1><span id="page-subtitle">只显示我采集的商品</span></div>
           <label class="search-box"><span>搜索</span><input id="global-search" type="search" placeholder="商品、SKU、任务号"></label>
           <button class="secondary-button" id="refresh-all">刷新</button>
-          <label class="global-mode-switch" title="自动模式开启后，点击运行任务会自动质检并上传；真实性和防重复规则仍然生效">
+          <button class="notification-button" id="enable-notifications" title="开启电脑通知" aria-label="开启电脑通知">通知<span id="notification-count">0</span></button>
+          <label class="global-mode-switch owner-only" data-owner-only title="自动模式开启后，点击运行任务会自动质检并上传；真实性和防重复规则仍然生效">
             <span><strong id="global-mode-label">手动检查</strong><small id="global-mode-note">自动模式已关闭</small></span>
             <input type="checkbox" id="global-auto-mode">
           </label>
-          <div class="operator"><strong>工作室</strong><small>共享工作台</small></div>
+          <div class="operator"><strong id="operator-name">工作室成员</strong><small id="operator-role">只显示我的商品</small></div>
         </header>
 
         <div class="notice hidden" id="notice" role="status"></div>
@@ -49,12 +52,40 @@
       <form id="access-form">
         <div class="form-dialog-head"><div><span>工作室局域网</span><h2 id="access-dialog-title">连接主电脑</h2></div></div>
         <div class="form-dialog-body">
-          <p class="form-help">请输入主电脑生成的工作室访问码。此电脑只需输入一次。</p>
-          <label class="field"><span>工作室访问码</span><input id="access-code-input" type="password" autocomplete="off" required autofocus></label>
+          <p class="form-help">请输入负责人给你的成员访问码。此电脑只需输入一次，你只能看到自己采集的商品。</p>
+          <label class="field"><span>成员访问码</span><input id="access-code-input" type="password" autocomplete="off" required autofocus></label>
           <p id="access-code-error" class="form-help"></p>
         </div>
         <div class="form-dialog-actions"><button class="primary-button" type="submit">连接工作台</button></div>
       </form>
+    </dialog>
+    <dialog id="question-dialog" class="form-dialog" aria-labelledby="question-dialog-title">
+      <form id="question-form">
+        <div class="form-dialog-head"><div><span>只询问关键歧义</span><h2 id="question-dialog-title">商品需要你确认</h2></div><button type="button" class="dialog-close-static" data-close-dialog="question-dialog">×</button></div>
+        <div class="form-dialog-body">
+          <input type="hidden" id="question-product-id">
+          <p id="question-product-title" class="form-help"></p>
+          <div id="question-text" class="question-text"></div>
+          <label class="field"><span>你的回答</span><textarea id="question-answer" rows="5" required maxlength="1000" placeholder="用简单中文说明正确的SKU对应、商品结构或配件数量"></textarea></label>
+        </div>
+        <div class="form-dialog-actions"><button type="button" class="secondary-button" data-close-dialog="question-dialog">稍后处理</button><button class="primary-button" type="submit">保存回答</button></div>
+      </form>
+    </dialog>
+    <dialog id="operator-dialog" class="form-dialog" aria-labelledby="operator-dialog-title">
+      <form id="operator-form">
+        <div class="form-dialog-head"><div><span>每人只看自己的商品</span><h2 id="operator-dialog-title">添加工作室成员</h2></div><button type="button" class="dialog-close-static" data-close-dialog="operator-dialog">×</button></div>
+        <div class="form-dialog-body">
+          <label class="field"><span>成员名称</span><input id="operator-display-name" required maxlength="80" placeholder="例如：小李"></label>
+          <label class="field"><span>成员ID</span><input id="operator-id" required maxlength="48" pattern="[a-z0-9-]+" placeholder="例如：xiaoli"></label>
+          <p class="form-help">保存后只显示一次访问码。负责人只能管理设置，仍不能查看该成员的商品。</p>
+        </div>
+        <div class="form-dialog-actions"><button type="button" class="secondary-button" data-close-dialog="operator-dialog">取消</button><button class="primary-button" type="submit">创建成员</button></div>
+      </form>
+    </dialog>
+    <dialog id="access-code-result-dialog" class="form-dialog" aria-labelledby="access-code-result-title">
+      <div class="form-dialog-head"><div><span>只显示一次</span><h2 id="access-code-result-title">成员访问码</h2></div></div>
+      <div class="form-dialog-body"><p class="form-help">请立即交给对应成员，并让他保存在自己的工作台电脑中。</p><output id="operator-one-time-code" class="one-time-code"></output></div>
+      <div class="form-dialog-actions"><button class="primary-button" type="button" data-close-dialog="access-code-result-dialog">我已保存</button></div>
     </dialog>
     <dialog id="delete-dialog" class="delete-dialog" aria-labelledby="delete-dialog-title">
       <div class="delete-dialog-head">

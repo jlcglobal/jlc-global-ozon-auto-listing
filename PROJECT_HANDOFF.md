@@ -17,6 +17,7 @@
 - 基线提交：`a8f8b58df5f3e06f7f924e45b348a555d3fc0375`
 - 基线标签：`baseline-before-category-selection`
 - 基线提交信息：`baseline: current crossborder-ai-factory before category workflow update`
+- 工作台与成员隔离阶段提交：`a6491560c3033af5b41153b11d89437189774e81`（`feat: simplify workbench and isolate operator data`）。
 - 基线包含327个文件，约166.15 MiB，主要体积来自必须保留的Ozon本地规则/类目缓存。
 - 没有配置远程仓库，没有push，没有上传GitHub。
 
@@ -106,6 +107,7 @@
 - Python语法检查通过。
 - 真实工作台API：服务健康、负责人会话、空商品、空通知、保留店铺均返回正确。
 - 真实浏览器：三个主入口、系统设置、成员区、店铺状态、手机菜单均正常；控制台0错误/警告。
+- 提交`a6491560c3033af5b41153b11d89437189774e81`已在不包含未提交市场情报模块的纯净临时工作区再次启动并验证健康、会话和空商品接口。
 
 ## 尚未完成与商业化判断
 

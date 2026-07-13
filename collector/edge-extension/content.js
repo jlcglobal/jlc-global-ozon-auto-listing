@@ -1,8 +1,9 @@
-const PLUGIN_VERSION = "0.4.5";
+const PLUGIN_VERSION = "0.4.7";
 const MAX_SELECTED_SKUS = 10;
 const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
 let latestDrawerCapture = null;
 let localCategoryTreeCachePromise = null;
+let localCategoryRulesCachePromise = null;
 let pageWindowProductData = [];
 let pageProbeInjected = false;
 const PAGE_PROBE_ATTR = "data-caf-window-product-data";
@@ -1564,6 +1565,69 @@ async function loadLocalCategoryTreeCache() {
   return localCategoryTreeCachePromise;
 }
 
+async function loadLocalCategoryRulesCache() {
+  if (!localCategoryRulesCachePromise) {
+    localCategoryRulesCachePromise = fetch(chrome.runtime.getURL("category-rules-cache.json"))
+      .then((response) => {
+        if (!response.ok) throw new Error(`本地类目规则缓存读取失败：HTTP ${response.status}`);
+        return response.json();
+      })
+      .then((cache) => {
+        if (!cache.rules_by_key || !cache.category_count) throw new Error("本地类目规则缓存格式无效");
+        return cache;
+      });
+  }
+  return localCategoryRulesCachePromise;
+}
+
+function categoryRuleKey(item) {
+  return `${item.category_id}:${item.type_id}`;
+}
+
+function validCategoryRules(item, rules) {
+  return Boolean(
+    rules
+    && Number(rules.category_id) === Number(item.category_id)
+    && Number(rules.type_id) === Number(item.type_id)
+    && Array.isArray(rules.attributes)
+    && rules.attributes.length
+    && rules.rules_snapshot_hash
+  );
+}
+
+async function rememberCategoryRules(item, rules) {
+  if (!validCategoryRules(item, rules)) return;
+  try {
+    const stored = await chrome.storage.local.get(["categoryRulesCache"]);
+    const cache = stored.categoryRulesCache && typeof stored.categoryRulesCache === "object"
+      ? stored.categoryRulesCache
+      : {};
+    cache[categoryRuleKey(item)] = { saved_at: new Date().toISOString(), rules };
+    const ordered = Object.entries(cache).sort((left, right) => String(right[1].saved_at).localeCompare(String(left[1].saved_at)));
+    await chrome.storage.local.set({ categoryRulesCache: Object.fromEntries(ordered.slice(0, 12)) });
+  } catch (_) {
+    // The bundled cache remains available when browser storage is full.
+  }
+}
+
+async function cachedCategoryRules(item) {
+  try {
+    const stored = await chrome.storage.local.get(["categoryRulesCache"]);
+    const remembered = stored.categoryRulesCache?.[categoryRuleKey(item)]?.rules;
+    if (validCategoryRules(item, remembered)) return remembered;
+    const bundled = await loadLocalCategoryRulesCache();
+    const rules = bundled.rules_by_key[categoryRuleKey(item)];
+    if (!validCategoryRules(item, rules)) return null;
+    return {
+      ...rules,
+      category_name_zh: item.name_zh || rules.category_name_zh,
+      category_path_zh: item.path_zh || rules.category_path_zh,
+    };
+  } catch (_) {
+    return null;
+  }
+}
+
 function searchLocalCategoryCache(cache, query, limit = 20) {
   const normalized = String(query || "").trim().toLocaleLowerCase();
   if (!normalized) return [];
@@ -1637,7 +1701,9 @@ function showSkuDrawer(capture, options = {}) {
       .caf-category { border-top: 1px solid #e5e7eb; padding: 10px 16px; background: #f8fafc; overflow: auto; flex: 2 1 0; min-height: 250px; }
       .caf-category-title { font-weight: 700; margin-bottom: 6px; }
       .caf-category-cache-status { margin: -2px 0 6px; color: #047857; font-size: 12px; }
+      .caf-category-search-row { display: grid; grid-template-columns: minmax(0, 1fr) 72px; gap: 6px; }
       .caf-category-search { width: 100%; padding: 8px; border: 1px solid #cbd5e1; border-radius: 6px; }
+      .caf-category-search-button { border: 1px solid #0969da; background: #0969da; color: #fff; border-radius: 6px; cursor: pointer; }
       .caf-category-section-title { margin-top: 7px; color: #475569; font-size: 12px; font-weight: 650; }
       .caf-category-results { display: grid; gap: 5px; max-height: 104px; overflow: auto; margin-top: 5px; }
       .caf-category-item { text-align: left; border: 1px solid #d8dee4; background: #fff; border-radius: 6px; padding: 7px; cursor: pointer; }
@@ -1692,7 +1758,10 @@ function showSkuDrawer(capture, options = {}) {
       <div class="caf-category">
         <div class="caf-category-title">最终 Ozon 类目（必选）</div>
         <div class="caf-category-cache-status">本地中文类目缓存：正在读取…</div>
-        <input class="caf-category-search" placeholder="输入中文、俄文、关键词、category_id 或 type_id">
+        <div class="caf-category-search-row">
+          <input class="caf-category-search" type="search" placeholder="输入中文、俄文、关键词或编号">
+          <button type="button" class="caf-category-search-button">搜索</button>
+        </div>
         <div class="caf-category-shortcuts">
           <button type="button" class="caf-category-recent">最近类目</button>
           <button type="button" class="caf-category-favorites">收藏类目</button>
@@ -1724,6 +1793,7 @@ function showSkuDrawer(capture, options = {}) {
   const message = root.querySelector(".caf-message");
   const list = root.querySelector(".caf-list");
   const categorySearch = root.querySelector(".caf-category-search");
+  const categorySearchButton = root.querySelector(".caf-category-search-button");
   const categoryCacheStatus = root.querySelector(".caf-category-cache-status");
   const categoryResults = root.querySelector(".caf-category-results");
   const categoryTree = root.querySelector(".caf-category-tree");
@@ -1753,14 +1823,22 @@ function showSkuDrawer(capture, options = {}) {
     try {
       categoryRules = await collectorApi("/api/collector/categories/rules", {
         method: "POST",
-        body: JSON.stringify({ category_id: item.category_id, type_id: item.type_id, allow_readonly_fetch: true })
+        body: JSON.stringify({ category_id: item.category_id, type_id: item.type_id, allow_readonly_fetch: false })
       });
-      categorySelected.textContent = `已选：${item.name_zh} · 必填 ${categoryRules.required_attribute_ids.length} · SKU维度 ${categoryRules.aspect_attribute_ids.length}`;
+      await rememberCategoryRules(item, categoryRules);
+      const sourceLabel = categoryRules.offline_fallback ? "本地离线规则" : "完整本地规则";
+      categorySelected.textContent = `已选：${item.name_zh} · 必填 ${categoryRules.required_attribute_ids.length} · SKU维度 ${categoryRules.aspect_attribute_ids.length} · ${sourceLabel}`;
       setMessage("");
     } catch (error) {
-      categoryRules = null;
-      categorySelected.textContent = "规则加载失败，不能完成采集";
-      setMessage(error.message);
+      categoryRules = await cachedCategoryRules(item);
+      if (categoryRules) {
+        categorySelected.textContent = `已选：${item.name_zh} · 必填 ${categoryRules.required_attribute_ids.length} · SKU维度 ${categoryRules.aspect_attribute_ids.length} · 插件离线缓存`;
+        setMessage("主电脑规则接口暂不可用，已自动使用插件本地缓存，不阻断采集。缺失字典值保持unknown。");
+      } else {
+        categoryRules = null;
+        categorySelected.textContent = "规则缓存读取失败，不能完成采集";
+        setMessage(error.message);
+      }
     }
   }
 
@@ -1847,9 +1925,11 @@ function showSkuDrawer(capture, options = {}) {
   }
 
   async function loadCategorySearch(query = "") {
+    const enteredQuery = String(query || "").trim();
+    categoryResults.textContent = enteredQuery ? `正在搜索“${enteredQuery}”…` : "正在读取最近类目…";
     try {
       let limit = 20;
-      if (!query.trim()) {
+      if (!enteredQuery) {
         const prefs = await collectorApi("/api/collector/categories/preferences");
         const combined = [...(prefs.favorites || []), ...(prefs.recent || [])];
         const unique = combined.filter((item, index) => combined.findIndex((other) => other.category_id === item.category_id && other.type_id === item.type_id) === index);
@@ -1867,10 +1947,25 @@ function showSkuDrawer(capture, options = {}) {
     }
   }
 
-  categorySearch.addEventListener("input", () => {
+  function runCategorySearch(delay = 0) {
     window.clearTimeout(categorySearchTimer);
-    categorySearchTimer = window.setTimeout(() => loadCategorySearch(categorySearch.value), 250);
+    categoryResults.textContent = categorySearch.value.trim()
+      ? `正在搜索“${categorySearch.value.trim()}”…`
+      : "请输入中文、俄文、关键词或类目编号";
+    categorySearchTimer = window.setTimeout(() => loadCategorySearch(categorySearch.value), delay);
+  }
+
+  categorySearch.addEventListener("input", () => {
+    runCategorySearch(180);
   });
+  categorySearch.addEventListener("change", () => runCategorySearch());
+  categorySearch.addEventListener("keydown", (event) => {
+    if (event.key === "Enter") {
+      event.preventDefault();
+      runCategorySearch();
+    }
+  });
+  categorySearchButton.addEventListener("click", () => runCategorySearch());
   root.querySelector(".caf-category-recent").addEventListener("click", async () => {
     const prefs = await collectorApi("/api/collector/categories/preferences");
     renderCategoryResults(prefs.recent || []);

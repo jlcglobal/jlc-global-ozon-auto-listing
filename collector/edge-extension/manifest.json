@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "1688 Single Product Collector",
-  "version": "0.4.6",
+  "version": "0.4.7",
   "description": "Capture the current 1688 product page and send it to the local crossborder-ai-factory ingest service.",
   "permissions": ["activeTab", "scripting", "storage"],
   "host_permissions": [
@@ -21,7 +21,7 @@
   ],
   "web_accessible_resources": [
     {
-      "resources": ["page-probe.js", "category-tree.zh-CN.json"],
+      "resources": ["page-probe.js", "category-tree.zh-CN.json", "category-rules-cache.json"],
       "matches": ["https://*.1688.com/*"]
     }
   ]

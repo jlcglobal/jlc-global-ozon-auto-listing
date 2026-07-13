@@ -154,6 +154,23 @@ class LanCollaborationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(cross_site.status_code, 401)
         self.assertEqual(same_origin.status_code, 200)
 
+    async def test_main_computer_1688_collector_can_use_implicit_owner(self):
+        async def accepted(_request):
+            return JSONResponse({"ok": True})
+
+        request = Request({
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+            "method": "POST", "scheme": "http", "path": "/api/collector/categories/rules",
+            "raw_path": b"/api/collector/categories/rules", "query_string": b"",
+            "headers": [
+                (b"origin", b"https://detail.1688.com"),
+                (b"sec-fetch-site", b"cross-site"),
+            ],
+            "client": ("127.0.0.1", 50000), "server": ("127.0.0.1", 8765),
+        })
+        response = await workbench.local_network_only(request, accepted)
+        self.assertEqual(response.status_code, 200)
+
 
 if __name__ == "__main__":
     unittest.main()

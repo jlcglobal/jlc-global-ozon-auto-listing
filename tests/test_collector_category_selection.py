@@ -17,6 +17,7 @@ from scripts.collector_categories import (
     search_categories,
     set_favorite,
 )
+from scripts.build_collector_category_rules_cache import build_cache
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -112,6 +113,34 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertEqual(snapshot["ozon_write_api_calls"], 0)
         self.assertEqual(snapshot["inventory_api_calls"], 0)
 
+    def test_offline_bulk_cache_prevents_category_selection_from_stopping(self):
+        temporary, root = make_root()
+        self.addCleanup(temporary.cleanup)
+        metadata = root / "ozon-adapter/metadata/ozon-rules-2026-07-10"
+        write_json(metadata / "attributes.json", [{
+            "categoryId": "103", "typeId": "203",
+            "attributes": [
+                {"attributeId": "85", "nameRu": "Бренд", "required": True, "values": []},
+                {"attributeId": "10096", "nameRu": "Цвет товара", "required": False, "values": []},
+            ],
+        }])
+        write_json(metadata / "variants.json", [{
+            "categoryId": "103", "typeId": "203",
+            "attributes": [{"attributeId": "10096", "nameRu": "Цвет товара"}],
+        }])
+        write_json(metadata / "version.json", {"version": "fixture-v1", "updatedAt": "2026-07-13"})
+        write_json(root / "collector/edge-extension/category-rules-cache.json", build_cache(metadata))
+        snapshot = prepare_rules(root, 103, 203, "test", allow_fetch=False)
+        self.assertEqual(snapshot["required_attribute_ids"], [85])
+        self.assertEqual(snapshot["aspect_attribute_ids"], [10096])
+        self.assertTrue(snapshot["offline_fallback"])
+        self.assertFalse(snapshot["dictionary_values_complete"])
+        self.assertEqual(snapshot["ozon_read_api_calls"], 0)
+        selection = build_selection(root, {"ozon_category_selection": {
+            "category_id": 103, "type_id": 203, "rules_snapshot": snapshot,
+        }})
+        self.assertEqual(selection["type_id"], 203)
+
     def test_collection_is_blocked_without_final_category_or_rules(self):
         temporary, root = make_root()
         self.addCleanup(temporary.cleanup)
@@ -163,7 +192,16 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertIn("最终 Ozon 类目（必选）", built)
         self.assertIn("/api/collector/categories/rules", built)
         self.assertIn('chrome.runtime.getURL("category-tree.zh-CN.json")', built)
+        self.assertIn('chrome.runtime.getURL("category-rules-cache.json")', built)
         self.assertIn("searchLocalCategoryCache", built)
+        self.assertIn("caf-category-search-button", built)
+        self.assertIn('categorySearch.addEventListener("input"', built)
+        self.assertIn('categorySearch.addEventListener("keydown"', built)
+        self.assertIn('categorySearchButton.addEventListener("click"', built)
+        self.assertIn("正在搜索", built)
+        self.assertIn("rememberCategoryRules", built)
+        self.assertIn("cachedCategoryRules", built)
+        self.assertIn("allow_readonly_fetch: false", built)
         self.assertIn("本地中文类目树（点击逐级展开", built)
         self.assertIn("选择SKU（勾选下方商品）", built)
         self.assertIn("蓝色仅表示筛选，不代表已选SKU", built)
@@ -171,7 +209,9 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertIn(".caf-category { border-top: 1px solid #e5e7eb; padding: 10px 16px; background: #f8fafc; overflow: auto", built)
         self.assertNotIn("collectorApi(`/api/collector/categories/tree", built)
         self.assertIn("请先选择最终Ozon类目", built)
-        self.assertEqual(manifest["version"], "0.4.6")
+        self.assertEqual(manifest["version"], "0.4.7")
+        resources = manifest["web_accessible_resources"][0]["resources"]
+        self.assertIn("category-rules-cache.json", resources)
 
     def test_production_category_cache_is_complete_chinese_and_bundled_locally(self):
         server_path = PROJECT_ROOT / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"

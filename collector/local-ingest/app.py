@@ -264,17 +264,23 @@ def client_ip_allowed(client_host: str, config: Dict[str, Any]) -> bool:
 
 
 def loopback_can_use_implicit_owner(request: Request) -> bool:
-    """Trust the host workbench, but never a cross-site page targeting localhost."""
+    """Trust the host workbench and its 1688 collector, never arbitrary sites."""
     origin = str(request.headers.get("origin") or "").strip()
     fetch_site = str(request.headers.get("sec-fetch-site") or "").strip().lower()
     if not origin:
         return fetch_site not in {"cross-site", "same-site"}
     try:
         parsed = urllib.parse.urlparse(origin)
-        return (
+        if (
             parsed.scheme in {"http", "https"}
             and parsed.hostname in {"127.0.0.1", "localhost", "::1"}
-        )
+        ):
+            return True
+        collector_request = request.url.path.startswith("/api/collector/")
+        extension_origin = parsed.scheme in {"chrome-extension", "ms-browser-extension"}
+        host = str(parsed.hostname or "").lower()
+        trusted_1688_origin = parsed.scheme == "https" and (host == "1688.com" or host.endswith(".1688.com"))
+        return collector_request and (extension_origin or trusted_1688_origin)
     except ValueError:
         return False
 

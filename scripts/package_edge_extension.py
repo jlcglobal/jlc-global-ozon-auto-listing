@@ -36,7 +36,11 @@ def package_extension() -> Path:
             relative = path.relative_to(SOURCE_DIR)
             if any(part in IGNORED_PARTS for part in relative.parts):
                 continue
-            archive.write(path, Path("edge-extension") / relative)
+            archive_path = str(Path("edge-extension") / relative)
+            info = zipfile.ZipInfo(archive_path, date_time=(1980, 1, 1, 0, 0, 0))
+            info.compress_type = zipfile.ZIP_DEFLATED
+            info.external_attr = 0o100644 << 16
+            archive.writestr(info, path.read_bytes())
     temporary.replace(output)
     return output
 

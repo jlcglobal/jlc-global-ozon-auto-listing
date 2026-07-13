@@ -60,6 +60,10 @@ def translated_tree_cache_path(root: Path) -> Path:
     return root / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"
 
 
+def collector_rules_cache_path(root: Path) -> Path:
+    return root / "collector/edge-extension/category-rules-cache.json"
+
+
 def category_key(category_id: int, type_id: int) -> str:
     return f"{category_id}:{type_id}"
 
@@ -305,6 +309,31 @@ def _cache_dir(root: Path, shop_id: str, category_id: int, type_id: int) -> Path
     return root / "ozon-adapter/metadata/live-category-cache" / shop_id / f"category-{category_id}-type-{type_id}"
 
 
+@lru_cache(maxsize=8)
+def _load_collector_rules_cache_cached(cache_file: str, cache_mtime_ns: int) -> Dict[str, Any]:
+    return load_json(Path(cache_file), {})
+
+
+def bundled_collector_rules(root: Path, category_id: int, type_id: int, shop_id: str) -> Optional[Dict[str, Any]]:
+    cache_file = collector_rules_cache_path(root)
+    if not cache_file.is_file():
+        return None
+    cache = _load_collector_rules_cache_cached(str(cache_file), cache_file.stat().st_mtime_ns)
+    rules = (cache.get("rules_by_key") or {}).get(category_key(category_id, type_id))
+    if not isinstance(rules, dict):
+        return None
+    return {
+        **rules,
+        "shop_id": shop_id,
+        "cache_version": cache.get("cache_version") or "unknown",
+        "cache_hit": True,
+        "offline_fallback": True,
+        "ozon_read_api_calls": 0,
+        "ozon_write_api_calls": 0,
+        "inventory_api_calls": 0,
+    }
+
+
 def _raw_attributes(response: Mapping[str, Any]) -> List[Mapping[str, Any]]:
     result = response.get("result")
     if isinstance(result, list):
@@ -339,6 +368,9 @@ def prepare_rules(
     cache_hit = attributes_path.is_file()
     read_calls = 0
     if not cache_hit:
+        bundled = bundled_collector_rules(root, category_id, type_id, shop_id)
+        if bundled is not None:
+            return bundled
         if not allow_fetch:
             raise FileNotFoundError("该类目的官方属性规则尚未缓存，请先执行只读规则加载")
         if client is None:

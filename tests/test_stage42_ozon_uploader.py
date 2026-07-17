@@ -26,7 +26,7 @@ from ozon_uploader.client import OzonUploadApiError  # noqa: E402
 from ozon_uploader.service import (  # noqa: E402
     SCHEMAS, _images_ingested, _is_official_ozon_image_url, _parse_import_result,
     _remote_content_blockers, _remote_terminal_errors, _resolve_rich_content_for_upload, build_import_items,
-    current_image_completeness, load_json, recover_remote_import,
+    build_product_exists_check, current_image_completeness, load_json, recover_remote_import,
     refresh_current_image_check, sync_image_channel_status, validate,
     ozon_weight_grams,
 )
@@ -278,6 +278,82 @@ class OzonPayloadScalarContractTest(unittest.TestCase):
             with self.subTest(value=value):
                 with self.assertRaises(UploadGateError):
                     ozon_weight_grams(value)
+
+    def test_active_payload_contract_contains_no_inventory_fields(self):
+        draft = {
+            "title": "Контейнер для хранения",
+            "description_category_id": 17000001,
+            "type_id": 90001,
+            "skus": [{"source_sku_id": "sku-1", "offer_id": "P000123-sku-1"}],
+        }
+        config = {
+            "sku_prices": [{"source_sku_id": "sku-1", "price": "900.00"}],
+            "sku_colors": [],
+            "package_dimensions": {"length_mm": 300, "width_mm": 200, "height_mm": 150},
+            "package_weight": {"value_g": 449},
+            "brand": {"attribute_id": 31, "dictionary_value_id": 1, "value": "Нет бренда"},
+            "model_name": {"attribute_id": 32, "value": "P000123"},
+            "type": {"attribute_id": 33, "dictionary_value_id": 2, "value": "Контейнер"},
+            "currency_code": "RUB", "vat": "0", "old_price": None,
+        }
+        items = build_import_items(draft, config, ["https://images.example.test/main.png"])
+        self.assertEqual(len(items), 1)
+        self.assertTrue(all("stock" not in item and "warehouse_id" not in item for item in items))
+
+    def test_active_client_rejects_inventory_and_unlisted_endpoints(self):
+        transport = RecordingTransport()
+        uploader = client(transport)
+        for endpoint in ("/v2/products/stocks", "/v1/product/pictures/import", "/v2/product/update"):
+            with self.assertRaisesRegex(ValueError, "uploader allowlist"):
+                uploader._post_json(endpoint, {})
+        self.assertEqual(transport.calls, [])
+
+    def test_active_task_id_blocks_second_write_before_any_product_read(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P000123"
+            output = product / "output"
+            output.mkdir(parents=True)
+            (product / "status.json").write_text(json.dumps({"status": "HANDED_OFF_TO_OZON"}))
+            (output / "ozon-idempotency.json").write_text(json.dumps({
+                "task_id": 70001,
+                "api_write_completed": True,
+            }))
+            transport = RecordingTransport()
+            with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
+                with self.assertRaisesRegex(UploadGateError, "second write is forbidden"):
+                    execute_upload(product, client(transport))
+            self.assertEqual(transport.calls, [])
+
+    def test_active_existing_offer_updates_and_unchanged_content_skips(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = root / "products/P000123"
+            output = product / "output"
+            image = product / "input/main.png"
+            output.mkdir(parents=True)
+            image.parent.mkdir(parents=True)
+            image.write_bytes(b"real-image")
+            draft = {
+                "title": "Контейнер для хранения", "description": "Описание",
+                "description_category_id": 17000001, "type_id": 90001,
+                "images": [{"slot": "main-sku-1", "role": "variant_main", "path": "products/P000123/input/main.png"}],
+                "skus": [{
+                    "source_sku_id": "sku-1", "offer_id": "P000123-sku-1",
+                    "display_name_ru": "3 л",
+                }],
+            }
+            attributes = {"attributes": []}
+            colors = {"variants": [{"sku_id": "sku-1", "image": "products/P000123/input/main.png"}]}
+            config = {"currency_code": "RUB", "sku_prices": [{"source_sku_id": "sku-1", "price": "900.00"}]}
+            live = {"items": [{"offer_id": "P000123-sku-1", "id": 50001}]}
+            first = build_product_exists_check(product, draft, attributes, colors, config, live_response=live)
+            self.assertEqual(first["action"], "update")
+            self.assertEqual(first["offers"][0]["action"], "update")
+            (output / "ozon-last-upload-hashes.json").write_text(
+                json.dumps(first["current_hashes"], ensure_ascii=False)
+            )
+            second = build_product_exists_check(product, draft, attributes, colors, config, live_response=live)
+            self.assertEqual(second["action"], "skip")
 
 
 @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")

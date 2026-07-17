@@ -14,8 +14,53 @@ sys.path.insert(0, str(ROOT / "ozon-uploader"))
 sys.path.insert(0, str(ROOT / "ozon-adapter"))
 
 from ozon_field_completion import build_package, validate_package  # noqa: E402
-from ozon_field_completion.service import _auto_upload_config, build_color_variant_policy  # noqa: E402
+from ozon_field_completion.service import _auto_upload_config, build_color_variant_policy, build_tags  # noqa: E402
 from ozon_uploader.service import build_preflight, load_json  # noqa: E402
+
+
+class ActiveFieldCompletionContractTest(unittest.TestCase):
+    def test_manual_workbench_tags_require_30_unique_russian_hashtags(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "P000123"
+            output = product / "output"
+            output.mkdir(parents=True)
+            tags = [f"#товар_{index}" for index in range(1, 31)]
+            (output / "workbench-draft.json").write_text(
+                json.dumps({"tags": tags}, ensure_ascii=False), encoding="utf-8"
+            )
+            result = build_tags(product)
+            self.assertEqual(result["count"], 30)
+            self.assertEqual(result["tags"], tags)
+            (output / "workbench-draft.json").write_text(
+                json.dumps({"tags": tags[:-1]}, ensure_ascii=False), encoding="utf-8"
+            )
+            with self.assertRaisesRegex(ValueError, "exactly 30"):
+                build_tags(product)
+
+    def test_missing_main_sku_image_blocks_but_optional_missing_only_warns(self):
+        source = {"skus": [
+            {"sku_id": "sku-main", "selection_order": 1},
+            {"sku_id": "sku-other", "selection_order": 2},
+        ]}
+        base = [
+            {"sku_id": "sku-main", "sku_name": "3 л", "status": "mapped", "reason": "ok"},
+            {"sku_id": "sku-other", "sku_name": "5 л", "status": "mapped", "reason": "ok"},
+        ]
+        main_missing = copy.deepcopy(base)
+        main_missing[0].update({"status": "missing", "reason": "没有本SKU真实图片"})
+        blocked = build_color_variant_policy("P000123", source, {"variants": main_missing})
+        self.assertEqual(blocked["status"], "BLOCK")
+        optional_missing = copy.deepcopy(base)
+        optional_missing[1].update({"status": "missing", "reason": "没有本SKU真实图片"})
+        warning = build_color_variant_policy("P000123", source, {"variants": optional_missing})
+        self.assertEqual(warning["status"], "WARNING")
+        self.assertEqual(warning["blocking_variants"], [])
+
+    def test_seller_ui_and_buyer_copy_locales_remain_separate(self):
+        data = load_json(ROOT / "rules/ozon_content_score_benchmarks.json")
+        benchmark = data["benchmarks"][0]
+        self.assertEqual(benchmark["seller_ui_locale"], "zh-CN")
+        self.assertEqual(benchmark["buyer_content_locale"], "ru-RU")
 
 
 @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")

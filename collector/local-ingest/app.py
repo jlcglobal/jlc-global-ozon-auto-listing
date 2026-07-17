@@ -47,6 +47,7 @@ from image_asset_boundaries import (  # noqa: E402
     contract_enabled,
     invalidate_accepted_candidate,
     reject_candidate,
+    validate_accepted_manifest,
     validate_generated_output,
     write_asset_contract,
 )
@@ -154,6 +155,9 @@ DEFAULT_WORKBENCH_SETTINGS = {
     "learning_threshold": 2,
     "fixed_cny_to_rub": 12.0,
     "rub_rounding": 10,
+}
+TERMINAL_PUBLICATION_STATES = {
+    "CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON",
 }
 
 CURRENT_OPERATOR: ContextVar[Optional[Dict[str, Any]]] = ContextVar("current_workbench_operator", default=None)
@@ -1526,7 +1530,7 @@ def read_product_card(product_dir: Path) -> Dict[str, Any]:
     canonical_status = str((canonical or {}).get("aggregate_status") or "")
     if canonical_status:
         status_value = canonical_status
-        canonical_progress = 100 if canonical_status == "CREATED" else 99 if canonical_status == "PENDING_REMOTE" else int(status.get("progress") or 0)
+        canonical_progress = 100 if canonical_status in TERMINAL_PUBLICATION_STATES else 99 if canonical_status == "PENDING_REMOTE" else int(status.get("progress") or 0)
     else:
         status_value = status.get("status") or "unknown"
         canonical_progress = int(status.get("progress") or 0)
@@ -1665,10 +1669,10 @@ def effective_product_status(product_dir: Path, status: Dict[str, Any]) -> Dict[
     if cutover_active(state_root):
         canonical = product_snapshot(state_root, product_dir.name).get("product")
         canonical_status = str((canonical or {}).get("aggregate_status") or "")
-        if canonical_status in {"CREATED", "PARTIAL", "PARTIAL_FAILED", "PENDING_REMOTE", "FAILED"}:
+        if canonical_status in {"CREATED", "PARTIAL", "PARTIAL_FAILED", "PENDING_REMOTE", "FAILED", "HANDED_OFF_TO_OZON"}:
             status = dict(status)
             status["status"] = canonical_status
-            status["progress"] = 100 if canonical_status == "CREATED" else 99 if canonical_status == "PENDING_REMOTE" else status.get("progress", 0)
+            status["progress"] = 100 if canonical_status in TERMINAL_PUBLICATION_STATES else 99 if canonical_status == "PENDING_REMOTE" else status.get("progress", 0)
             status["current_step"] = "ozon_upload"
             status["active_step"] = None
     worker = active_product_worker(product_dir)
@@ -2262,6 +2266,7 @@ async def update_collected_product_category(product_id: str, request: Request) -
     product_dir = PRODUCTS_DIR / product_id
     if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir):
         raise HTTPException(status_code=404, detail="Product not found")
+    ensure_workbench_product_mutable(product_dir)
     payload = await request.json()
     try:
         selection = build_selection(ROOT, {"ozon_category_selection": payload}, preferences_root=PRODUCTS_DIR.parent)
@@ -2336,6 +2341,24 @@ def workbench_product_dir(product_id: str) -> Path:
     if not product_dir.is_dir() or not product_is_owned(product_dir) or product_is_archived(product_dir):
         raise HTTPException(status_code=404, detail="商品不存在")
     return product_dir
+
+
+def ensure_workbench_product_mutable(product_dir: Path) -> None:
+    """Keep submitted products as local read-only records.
+
+    A known Ozon task id is the local terminal handoff.  The operator handles
+    later edits in the Ozon product-card backend, so no workbench endpoint may
+    silently mutate or prepare the same local product for another submission.
+    """
+    status = effective_product_status(
+        product_dir,
+        load_optional_json(product_dir / "status.json"),
+    )
+    if str(status.get("status") or "").upper() in TERMINAL_PUBLICATION_STATES:
+        raise HTTPException(
+            status_code=409,
+            detail="该商品已经提交Ozon，本地记录只读；后续请在Ozon商品卡后台修改",
+        )
 
 
 def public_state(status_name: str) -> str:
@@ -2655,7 +2678,89 @@ def readable_timeline(status: Dict[str, Any], product_dir: Path) -> List[Dict[st
     return sorted(result, key=lambda item: str(item.get("at") or ""), reverse=True)[:80]
 
 
-def calculate_risk(status: Dict[str, Any], category: Dict[str, Any], attributes: Dict[str, Any], qc: Dict[str, Any]) -> Dict[str, Any]:
+def production_contract_state(
+    product_dir: Path,
+    status: Dict[str, Any],
+    plan: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Describe whether this product can still run or upload under today's contract."""
+    raw_status = str(status.get("status") or "unknown").upper()
+    terminal = raw_status in TERMINAL_PUBLICATION_STATES
+    source = load_optional_json(product_dir / "input/source.json")
+    formal_error = None
+    try:
+        validate_formal_product_input(product_dir)
+    except ProductionInputError as exc:
+        formal_error = str(exc)
+    has_image_contract = contract_enabled(product_dir)
+    base = {
+        "formal_input_valid": formal_error is None,
+        "image_contract_present": has_image_contract,
+        "terminal_publication": terminal,
+        "blocking": False,
+        "errors": [],
+    }
+    if terminal:
+        if formal_error or not has_image_contract:
+            return {
+                **base,
+                "state": "legacy_submitted_read_only",
+                "message": "这件商品已在旧流程提交Ozon，只保留查看记录；不会再次上传，也不需要补新版图片确认。",
+                "errors": [formal_error] if formal_error else [],
+            }
+        return {
+            **base,
+            "state": "submitted_read_only",
+            "message": "商品已提交Ozon，后续在Ozon商品卡后台处理，本地不会自动回查或重复提交。",
+        }
+    if formal_error:
+        return {
+            **base,
+            "state": "legacy_contract_blocked",
+            "blocking": True,
+            "message": "这是旧流程商品，缺少当前采集快照或生产合同，已禁止继续运行和再次上传。请重新从工作台采集为新商品。",
+            "errors": [formal_error],
+        }
+    if raw_status in {"OZON_READY", "WAITING_MANUAL_REVIEW"}:
+        expected_count = len(source.get("skus") or []) + 8
+        if not has_image_contract:
+            return {
+                **base,
+                "state": "image_contract_missing",
+                "blocking": True,
+                "message": "商品缺少新版图片确认合同，不能上传；请从图片步骤继续生成。",
+                "errors": ["缺少 output/image-asset-contract.json"],
+            }
+        manifest_errors = validate_accepted_manifest(
+            product_dir,
+            image_plan_items(plan),
+            expected_count=expected_count,
+            revoke_stale=False,
+        )
+        if manifest_errors:
+            return {
+                **base,
+                "state": "awaiting_image_confirmation",
+                "blocking": True,
+                "message": f"图片尚未全部人工确认：必须确认 {len(source.get('skus') or [])} 张SKU主图和8张通用详情图后才能上传。",
+                "errors": manifest_errors,
+            }
+    return {
+        **base,
+        "state": "current_contract",
+        "message": "当前商品使用本次工作台采集和新版生产合同。",
+    }
+
+
+def calculate_risk(
+    status: Dict[str, Any],
+    category: Dict[str, Any],
+    attributes: Dict[str, Any],
+    qc: Dict[str, Any],
+    *,
+    analysis: Optional[Dict[str, Any]] = None,
+    contract_state: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
     items: List[Dict[str, str]] = []
     if "FAIL" in str(status.get("status") or ""):
         error = friendly_pipeline_error(status)
@@ -2671,6 +2776,32 @@ def calculate_risk(status: Dict[str, Any], category: Dict[str, Any], attributes:
         items.append({"level": "high", "code": "required_attributes", "message": f"缺少必填属性：{names}"})
     if qc.get("decision") == "reject":
         items.append({"level": "high", "code": "image_qc", "message": f"图片质检未通过，得分 {qc.get('score', '未知')}"})
+    for index, item in enumerate((analysis or {}).get("risks") or []):
+        message = str(item.get("message") or "").strip()
+        if not message:
+            continue
+        level = str(item.get("level") or "medium").lower()
+        items.append({
+            "level": level if level in {"low", "medium", "high"} else "medium",
+            "code": f"analysis_{item.get('area') or index}",
+            "title": "商品分析风险",
+            "message": message,
+            "blocking": bool(item.get("blocking")),
+        })
+    if (contract_state or {}).get("blocking"):
+        items.append({
+            "level": "high",
+            "code": "production_contract_blocked",
+            "title": "当前生产合同已阻断",
+            "message": str(contract_state.get("message") or "当前商品不能继续运行或上传"),
+        })
+    elif (contract_state or {}).get("state") == "legacy_submitted_read_only":
+        items.append({
+            "level": "medium",
+            "code": "legacy_submitted_read_only",
+            "title": "旧流程提交记录",
+            "message": str(contract_state.get("message")),
+        })
     confidence = category.get("confidence")
     if isinstance(confidence, (int, float)) and confidence < 0.8:
         items.append({"level": "medium", "code": "category_confidence", "message": f"类目置信度较低：{confidence:.0%}"})
@@ -2929,7 +3060,12 @@ def workbench_product_detail(product_id: str) -> Dict[str, Any]:
             "aspect_basis": analysis.get("is_aspect_basis") or category.get("variant_basis") or "以当前类目is_aspect规则为准",
             "image_missing": bool(sku.get("sku_image_missing")),
         })
-    risk = calculate_risk(status, category, attributes, qc)
+    contract_state = production_contract_state(product_dir, status, plan)
+    risk = calculate_risk(
+        status, category, attributes, qc,
+        analysis=analysis,
+        contract_state=contract_state,
+    )
     stores = list_stores(ROOT)
     publications = load_publications(product_dir, [store["id"] for store in stores])
     assessment = prelisting_assessment(pricing, qc, risk)
@@ -2976,6 +3112,7 @@ def workbench_product_detail(product_id: str) -> Dict[str, Any]:
             skus, images, exact_binding=contract_enabled(product_dir),
         ),
         "image_qc": qc,
+        "production_contract": contract_state,
         "rich_content": rich,
         "risk": risk,
         "error": friendly_pipeline_error(status) if str(status.get("status") or "").upper() == "FAILED_HARD_BLOCKER" else None,
@@ -2996,6 +3133,7 @@ def workbench_product_detail(product_id: str) -> Dict[str, Any]:
     detail["primary_action"] = product_primary_action(detail)
     detail["attention_required"] = bool(
         detail["pending_question"]
+        or detail["production_contract"].get("blocking")
         or str(status.get("status") or "").upper() in {"FAILED_HARD_BLOCKER", "OZON_READY", "WAITING_MANUAL_REVIEW"}
     )
     return detail
@@ -3685,6 +3823,7 @@ def workbench_source_image(product_id: str, image_type: str, index: int) -> File
 @app.patch("/api/workbench/products/{product_id}/images/{slot}")
 async def update_workbench_image(product_id: str, slot: str, request: Request) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
     if contract_enabled(product_dir):
         try:
             validate_formal_product_input(product_dir)
@@ -3756,6 +3895,7 @@ async def update_workbench_image(product_id: str, slot: str, request: Request) -
 @app.put("/api/workbench/products/{product_id}/images/{slot}/content")
 async def replace_workbench_image(product_id: str, slot: str, request: Request) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
     plan = load_optional_json(product_dir / "output/image-plan.json")
     _, item = find_image_plan_item(plan, slot)
     payload = await request.json()
@@ -3793,6 +3933,7 @@ async def replace_workbench_image(product_id: str, slot: str, request: Request) 
 @app.delete("/api/workbench/products/{product_id}/images/{slot}")
 def delete_workbench_image(product_id: str, slot: str) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
     plan_path = product_dir / "output/image-plan.json"
     plan = load_optional_json(plan_path)
     _, item = find_image_plan_item(plan, slot)
@@ -3836,6 +3977,7 @@ def delete_workbench_image(product_id: str, slot: str) -> Dict[str, Any]:
 @app.patch("/api/workbench/products/{product_id}/draft")
 async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="草稿内容格式错误")
@@ -3921,6 +4063,7 @@ async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, A
 @app.put("/api/workbench/products/{product_id}/visual-preference")
 async def save_visual_preference(product_id: str, request: Request) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="图片风格意见格式错误")
@@ -4059,6 +4202,7 @@ async def answer_product_question(product_id: str, request: Request) -> Dict[str
 @app.put("/api/workbench/products/{product_id}/stores")
 async def save_product_store_selection(product_id: str, request: Request) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
     payload = await request.json()
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="店铺选择格式错误")
@@ -4183,6 +4327,7 @@ async def retry_failed_stores(product_id: str, request: Request) -> Dict[str, An
 @app.post("/api/workbench/products/{product_id}/suggestions/{suggestion_id}")
 async def handle_ai_suggestion(product_id: str, suggestion_id: str, request: Request) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
     payload = await request.json()
     action = str(payload.get("action") or "") if isinstance(payload, dict) else ""
     if action not in {"accept", "ignore", "mute_similar"}:
@@ -4200,6 +4345,7 @@ async def handle_ai_suggestion(product_id: str, suggestion_id: str, request: Req
 @app.post("/api/workbench/products/{product_id}/images/{slot}/regenerate")
 async def queue_single_image_regeneration(product_id: str, slot: str, request: Request) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
     plan = load_optional_json(product_dir / "output/image-plan.json")
     if not any(str(item.get("slot")) == slot for item in image_plan_items(plan)):
         raise HTTPException(status_code=404, detail="图片槽位不存在")
@@ -4254,6 +4400,7 @@ async def run_single_workbench_product(product_id: str, request: Request) -> Dic
                 "write_api_calls": 0, "inventory_api_calls": 0,
                 "target_store_ids": [],
             }
+    ensure_workbench_product_mutable(product_dir)
     try:
         validate_formal_product_input(product_dir)
     except ProductionInputError as exc:

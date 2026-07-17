@@ -285,10 +285,12 @@ def validate_accepted_manifest(
     planned_items: Iterable[Dict[str, Any]],
     *,
     expected_count: int,
+    revoke_stale: bool = True,
 ) -> List[str]:
     """Verify the user's exact N+8 confirmation set before any upload call."""
     errors: List[str] = []
-    revoke_stale_acceptances(product_dir)
+    if revoke_stale:
+        revoke_stale_acceptances(product_dir)
     manifest = _load_json(accepted_manifest_path(product_dir))
     current = _manifest_base(product_dir)
     if not manifest:

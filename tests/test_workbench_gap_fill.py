@@ -218,6 +218,16 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
             ["P000101"],
         )
 
+    def test_manual_ready_product_without_image_contract_is_blocked_in_ui_contract(self):
+        plan = json.loads((self.product / "output/image-plan.json").read_text(encoding="utf-8"))
+        state = workbench.production_contract_state(
+            self.product,
+            {"status": "WAITING_MANUAL_REVIEW"},
+            plan,
+        )
+        self.assertTrue(state["blocking"])
+        self.assertEqual(state["state"], "image_contract_missing")
+
     def test_21_batch_saves_target_stores(self):
         batch = create_batch(self.root, ["P000101"], target_store_ids=["shop-a", "shop-b"])
         self.assertEqual(batch["target_store_ids"], ["shop-a", "shop-b"])

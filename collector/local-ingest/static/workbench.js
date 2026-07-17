@@ -445,6 +445,18 @@ function renderLiveProgress(product) {
   return `<div class="live-progress" id="live-progress"><div class="live-progress-head"><strong data-progress-step>${escapeHtml(liveProgressText(product))}</strong><span data-progress-value>${progress}%</span></div><div class="progress-track"><span data-progress-bar style="width:${progress}%"></span></div><small data-progress-status>${escapeHtml(statusText)}</small></div>`;
 }
 
+function isTerminalProduct(product = state.currentProduct) {
+  return ["CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON"].includes(
+    String(product?.status?.status || "").toUpperCase()
+  );
+}
+
+function blockTerminalProductMutation() {
+  if (!isTerminalProduct()) return false;
+  toast("该商品已经提交 Ozon，本地记录只读；后续请在 Ozon 商品卡后台修改", "info");
+  return true;
+}
+
 async function renderReview(options = {}) {
   await loadProducts(options.query || "");
   if (options.productId) state.currentProductId = options.productId;
@@ -464,6 +476,8 @@ async function renderReview(options = {}) {
     (product.stores || []).filter((shop) => shop.enabled && shop.connection_status === "connected").forEach((shop) => state.selectedStoreIds.add(shop.id));
   }
   const rawStatus = String(product.status?.status || "").toUpperCase();
+  const terminalPublication = ["CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON"].includes(rawStatus);
+  const contractBlocker = Boolean(product.production_contract?.blocking);
   // 断点状态不是运行状态。只有真实 worker/队列状态才锁定按钮；否则
   // CONTENT_GENERATED 等状态会把“继续生成”误判为正在运行。
   // 只有真实排队/处理/上传状态才锁定按钮；类目修改会把旧 active_step 清掉，
@@ -475,11 +489,13 @@ async function renderReview(options = {}) {
   const blockedSelectedStores = (product.stores || []).filter((shop) =>
     state.selectedStoreIds.has(shop.id) && (!shop.enabled || shop.connection_status !== "connected")
   );
-  const selectedStoreBlocker = blockedSelectedStores.length > 0;
-  const canRunProduct = ["run", "fix", "review_upload"].includes(product.primary_action?.key);
+  const selectedStoreBlocker = !terminalPublication && blockedSelectedStores.length > 0;
+  const canRunProduct = !terminalPublication && !contractBlocker && ["run", "fix", "review_upload"].includes(product.primary_action?.key);
   const needsStoreSelection = true;
   state.currentImageSlot = state.currentImageSlot && product.images.some((item) => item.slot === state.currentImageSlot) ? state.currentImageSlot : product.images[0]?.slot || null;
-  const primaryText = readyToUpload
+  const primaryText = terminalPublication
+    ? "已提交Ozon"
+    : readyToUpload
     ? `确认修改并立即上传（${state.selectedStoreIds.size} 家店铺）`
     : failed
       ? `从${stepLabel(product.status?.failed_step || product.status?.current_step)}继续`
@@ -497,6 +513,7 @@ async function renderReview(options = {}) {
     </header>
     <div class="future-review-alerts">
       ${product.handoff_message ? `<section class="task-summary task-handoff-summary"><div><span class="success-kicker">提交完成</span><h2>已提交Ozon</h2><p>${escapeHtml(product.handoff_message)}</p></div></section>` : ""}
+      ${contractBlocker ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">生产合同已阻断</span><h2>这件商品不能继续运行或上传</h2><p>${escapeHtml(product.production_contract?.message || "请重新从工作台采集为新商品")}</p></div></section>` : ""}
       ${product.pending_question?.question ? `<section class="task-summary"><div><h2>需要你确认一个关键问题</h2><p>${escapeHtml(product.pending_question.question)}</p></div><button class="primary-button" data-primary-action="answer" data-product-id="${product.product_id}">回答问题</button></section>` : ""}
       ${failed ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">${escapeHtml(failure.title)}</span><h2>停在${escapeHtml(stepLabel(product.status?.failed_step || product.status?.current_step))} · ${product.progress}%</h2><p>${escapeHtml(failure.message)}</p><details class="error-technical"><summary>查看技术详情</summary><code>${escapeHtml(failure.technical)}</code></details></div><div class="error-actions"><button class="secondary-button" data-action="edit-error">立即修改</button><button class="primary-button" data-action="run-product">从失败步骤继续</button></div></section>` : ""}
       ${selectedStoreBlocker ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">店铺连接已阻断</span><h2>${blockedSelectedStores.length} 家已选店铺暂时不能上传</h2><p>${escapeHtml(blockedSelectedStores.map((shop) => `${shop.display_name}：${storeConnectionIssue(shop)}`).join("；"))}</p></div><div class="error-actions"><button class="secondary-button" data-future-review-tab="store">查看店铺状态</button></div></section>` : ""}
@@ -508,7 +525,7 @@ async function renderReview(options = {}) {
       ${renderFutureInspector(product)}
     </div>
     <footer class="preview-submit-bar future-command-dock">
-      <div class="future-dock-status"><span class="future-dock-check ph ${selectedStoreBlocker ? "ph-warning" : "ph-check"}" aria-hidden="true"></span><div><strong>${waitingForAi ? "等待联网大模型恢复" : running ? "商品正在制作" : failed ? "商品需要修复" : selectedStoreBlocker ? "先修复店铺连接" : readyToUpload ? "等待确认上传" : "全部步骤完成"}</strong><small>${escapeHtml(stepLabel(product.status?.current_step))} · ${product.progress}% · 库存不会提交</small></div></div>
+      <div class="future-dock-status"><span class="future-dock-check ph ${selectedStoreBlocker || contractBlocker ? "ph-warning" : "ph-check"}" aria-hidden="true"></span><div><strong>${product.handoff_message ? "已提交Ozon" : waitingForAi ? "等待联网大模型恢复" : running ? "商品正在制作" : contractBlocker ? "当前商品已阻断" : failed ? "商品需要修复" : selectedStoreBlocker ? "先修复店铺连接" : readyToUpload ? "等待确认上传" : "全部步骤完成"}</strong><small>${product.handoff_message ? "任务号已保存 · 不再自动回查 · 禁止重复提交" : `${escapeHtml(stepLabel(product.status?.current_step))} · ${product.progress}% · 库存不会提交`}</small></div></div>
       <span id="save-state" class="preview-save-state">${product.draft.saved_at ? `修改已自动保存 v${product.draft.version}` : "当前为AI初稿"}</span>
       <button class="preview-primary" data-action="run-product" ${running || !canRunProduct || selectedStoreBlocker || (needsStoreSelection && !state.selectedStoreIds.size) || state.draftSaveFailed ? "disabled" : ""}><span class="ph ${readyToUpload ? "ph-storefront" : "ph-play"}" aria-hidden="true"></span>${escapeHtml(primaryText)}</button>
     </footer>
@@ -548,6 +565,7 @@ function renderFutureFlow(product) {
 
 function renderFutureImageStage(product) {
   const images = product.images || [];
+  const readOnly = isTerminalProduct(product);
   const image = images.find((item) => item.slot === state.currentImageSlot) || images[0] || null;
   const currentIndex = Math.max(0, images.findIndex((item) => item.slot === image?.slot));
   const currentVisual = image?.url
@@ -559,29 +577,30 @@ function renderFutureImageStage(product) {
       <div class="future-image-meta"><span>${escapeHtml(image?.type || "商品图片")}</span><strong>${escapeHtml(image?.slot || "等待生成")}</strong></div>
       ${currentVisual}
       ${image?.url ? `<button type="button" class="future-image-zoom" data-open-image="${escapeHtml(image.url)}"><span class="ph ph-eye" aria-hidden="true"></span>查看大图</button>` : ""}
-      <input type="file" accept="image/*" data-replace-file hidden>
-      <div class="prompt-editor"><textarea data-prompt-input placeholder="输入本张图片的修改意见">${escapeHtml(image?.prompt || "")}</textarea><button type="button" data-image-action="queue-prompt">应用意见并重生成</button></div>
+      <input type="file" accept="image/*" data-replace-file hidden ${readOnly ? "disabled" : ""}>
+      <div class="prompt-editor"><textarea data-prompt-input placeholder="${readOnly ? "已提交 Ozon，本地只读" : "输入本张图片的修改意见"}" ${readOnly ? "disabled" : ""}>${escapeHtml(image?.prompt || "")}</textarea><button type="button" data-image-action="queue-prompt" ${readOnly ? "disabled" : ""}>应用意见并重生成</button></div>
     </article>
     <div class="future-image-filmstrip">${images.map((item, index) => `<button type="button" class="${item.slot === image?.slot ? "active" : ""}" data-image-select="${escapeHtml(item.slot)}" aria-label="查看${escapeHtml(item.slot)}">${item.url ? `<img src="${escapeHtml(item.url)}" alt="">` : `<span class="ph ph-image" aria-hidden="true"></span>`}<small>${index < 2 ? "主" : String(index - 1).padStart(2, "0")}</small></button>`).join("") || `<span class="future-filmstrip-empty">图片生成后显示在这里</span>`}</div>
     <div class="future-image-commands">
-      <button type="button" data-image-action="prompt" ${image ? "" : "disabled"}><span class="ph ph-sparkle"></span>提示词</button>
-      <button type="button" data-image-action="regenerate" ${image ? "" : "disabled"}><span class="ph ph-arrow-clockwise"></span>单图重做</button>
-      <button type="button" data-image-action="replace" ${image ? "" : "disabled"}><span class="ph ph-upload-simple"></span>替换</button>
-      <button type="button" data-image-action="move-up" ${image ? "" : "disabled"}><span class="ph ph-arrow-line-up"></span>前移</button>
-      <button type="button" data-image-action="keep" ${image?.url ? "" : "disabled"}><span class="ph ph-check-circle"></span>确认使用</button>
+      <button type="button" data-image-action="prompt" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-sparkle"></span>提示词</button>
+      <button type="button" data-image-action="regenerate" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-arrow-clockwise"></span>单图重做</button>
+      <button type="button" data-image-action="replace" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-upload-simple"></span>替换</button>
+      <button type="button" data-image-action="move-up" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-arrow-line-up"></span>前移</button>
+      <button type="button" data-image-action="keep" ${image?.url && !readOnly ? "" : "disabled"}><span class="ph ph-check-circle"></span>确认使用</button>
       <button type="button" data-image-action="copy-url" ${image?.url ? "" : "disabled"}><span class="ph ph-copy"></span>复制URL</button>
-      <button type="button" class="danger-mini" data-image-action="delete" ${image?.url ? "" : "disabled"}><span class="ph ph-x-circle"></span>拒绝此图</button>
+      <button type="button" class="danger-mini" data-image-action="delete" ${image?.url && !readOnly ? "" : "disabled"}><span class="ph ph-x-circle"></span>拒绝此图</button>
     </div>
   </section>`;
 }
 
 function renderImageAssetBuckets(product) {
   const assets = product.image_assets || {};
+  const legacySubmitted = product.production_contract?.state === "legacy_submitted_read_only";
   const groups = [
-    ["original", "原始素材", "只来自本商品本次工作台采集，AI不会覆盖"],
-    ["candidate", "生成候选", "尚未确认，手动模式不能上传"],
+    ["original", "原始素材", legacySubmitted ? "历史商品原始资料，仅供查看" : "只来自本商品本次工作台采集，AI不会覆盖"],
+    ["candidate", "生成候选", legacySubmitted ? "旧流程生成结果，仅供查看，不会再次提交" : "尚未确认，手动模式不能上传"],
     ["rejected", "已拒绝", "不会回流为输入或当前有效图片"],
-    ["accepted", "已确认", "仅这里的完整图片包允许手动上传"],
+    ["accepted", "已确认", legacySubmitted ? "旧流程已经提交，不需要补做新版确认" : "仅这里的完整图片包允许手动上传"],
   ];
   return `<div class="asset-bucket-grid">${groups.map(([key, title, note]) => {
     const items = assets[key] || [];
@@ -595,30 +614,32 @@ function renderFutureInspector(product) {
   const pricing = product.pricing?.sku_pricing || [];
   const score = product.prelisting_assessment || {};
   const riskItems = product.risk?.items || [];
+  const readOnly = isTerminalProduct(product);
+  const disabled = readOnly ? "disabled" : "";
   return `<aside class="future-inspector">
     <nav class="future-inspector-tabs" role="tablist" aria-label="商品资料面板">
       ${[["content","资料"],["images","图片"],["sku","SKU"],["price","价格"],["category","类目"],["store","店铺"],["risk","风险"]].map(([key,label], index) => `<button type="button" role="tab" aria-selected="${index === 0 ? "true" : "false"}" class="${index === 0 ? "active" : ""}" data-future-review-tab="${key}">${label}</button>`).join("")}
     </nav>
     <div class="future-inspector-scroll">
       <section class="future-inspector-pane active" data-future-review-pane="content">
-        <div class="future-pane-heading"><div><span>Product copy</span><h2>商品资料</h2></div><span class="future-save-badge"><span class="ph ph-cloud-check"></span>自动保存</span></div>
-        <label class="future-title-field"><span>俄文实际上传标题</span><input class="preview-title-input" data-draft-field="title_ru" value="${escapeHtml(content.title_ru || product.source.title_cn)}"></label>
+        <div class="future-pane-heading"><div><span>Product copy</span><h2>商品资料</h2></div><span class="future-save-badge"><span class="ph ${readOnly ? "ph-lock" : "ph-cloud-check"}"></span>${readOnly ? "已提交 · 只读" : "自动保存"}</span></div>
+        <label class="future-title-field"><span>俄文实际上传标题</span><input class="preview-title-input" data-draft-field="title_ru" value="${escapeHtml(content.title_ru || product.source.title_cn)}" ${disabled}></label>
         <div class="future-reference-copy"><span>中文参考</span><p>${escapeHtml(content.title_zh_reference || product.source.title_cn)}</p></div>
         ${renderPreviewProductInfo(product)}
-        <label class="future-description-field"><span>俄文实际上传简介</span><textarea data-draft-field="description_ru">${escapeHtml(content.description_ru || "")}</textarea></label>
+        <label class="future-description-field"><span>俄文实际上传简介</span><textarea data-draft-field="description_ru" ${disabled}>${escapeHtml(content.description_ru || "")}</textarea></label>
         <div class="future-reference-copy"><span>中文参考</span><p>${escapeHtml(content.description_zh_reference || "暂无中文参考")}</p></div>
-        <div class="future-tags"><div><span>主题标签</span><strong>${tags.length}/30</strong></div><div class="preview-tags">${tags.map((tag, index) => `<span>${escapeHtml(tag)}<button data-remove-tag="${index}" aria-label="删除标签"><span class="ph ph-x" aria-hidden="true"></span></button></span>`).join("")}</div><div class="tag-add preview-tag-add"><input id="new-tag" maxlength="30" placeholder="输入俄文标签"><button data-action="add-tag">添加</button></div></div>
-        ${renderSuggestions(product.ai_suggestions || [])}
+        <div class="future-tags"><div><span>主题标签</span><strong>${tags.length}/30</strong></div><div class="preview-tags">${tags.map((tag, index) => `<span>${escapeHtml(tag)}<button data-remove-tag="${index}" aria-label="删除标签" ${disabled}><span class="ph ph-x" aria-hidden="true"></span></button></span>`).join("")}</div><div class="tag-add preview-tag-add"><input id="new-tag" maxlength="30" placeholder="${readOnly ? "已提交 Ozon，本地只读" : "输入俄文标签"}" ${disabled}><button data-action="add-tag" ${disabled}>添加</button></div></div>
+        ${renderSuggestions(product.ai_suggestions || [], readOnly)}
       </section>
       <section class="future-inspector-pane hidden" data-future-review-pane="images">
         <div class="future-pane-heading"><div><span>Image package</span><h2>图片包</h2></div><span class="future-count-badge">${product.images?.length || 0} 张</span></div>
-        <div class="visual-preference"><label><span>整套图片风格意见（可选）</span><input id="visual-set-hint" maxlength="120" value="${escapeHtml(product.visual_preference?.set_hint || "")}" placeholder="例如：更明亮、更科技感、户外感更强"></label><button class="secondary-button" data-action="save-visual-preference">应用到整套图片</button></div>
+        <div class="visual-preference"><label><span>整套图片风格意见（可选）</span><input id="visual-set-hint" maxlength="120" value="${escapeHtml(product.visual_preference?.set_hint || "")}" placeholder="${readOnly ? "已提交 Ozon，本地只读" : "例如：更明亮、更科技感、户外感更强"}" ${disabled}></label><button class="secondary-button" data-action="save-visual-preference" ${disabled}>应用到整套图片</button></div>
         <div class="future-safety-note"><span class="ph ph-shield-check"></span><div><strong>保持商品真实性</strong><p>单图重做只生成新版本，不改变结构、颜色、SKU差异或配件数量。</p></div></div>
         ${renderImageAssetBuckets(product)}
       </section>
-      <section class="future-inspector-pane hidden" data-future-review-pane="sku"><div class="future-pane-heading"><div><span>Variants</span><h2>SKU与售价</h2></div><span class="future-count-badge">${product.skus?.length || 0} 个</span></div>${renderPreviewSkus(product)}${renderPerStorePrices(product)}</section>
+      <section class="future-inspector-pane hidden" data-future-review-pane="sku"><div class="future-pane-heading"><div><span>Variants</span><h2>SKU与售价</h2></div><span class="future-count-badge">${product.skus?.length || 0} 个</span></div>${renderPreviewSkus(product, readOnly)}${renderPerStorePrices(product, readOnly)}</section>
       <section class="future-inspector-pane hidden" data-future-review-pane="price"><div class="future-pane-heading"><div><span>Pricing</span><h2>定价与评分</h2></div><span class="future-count-badge">${pricing.length} 个SKU</span></div><div class="future-score-card">${renderPrelistingScore(score)}</div><div class="future-pricing-list">${pricing.map(pricingRows).join("") || `<p class="form-help">尚未生成定价结果</p>`}</div></section>
-      <section class="future-inspector-pane hidden" data-future-review-pane="category"><div class="future-pane-heading"><div><span>Category</span><h2>类目与属性</h2></div><button class="secondary-button" data-action="change-category" ${["COLLECTED", "FAILED_HARD_BLOCKER"].includes(product.status?.status) && Number(product.status?.api_write_count || 0) === 0 ? "" : "disabled"}>修改类目</button></div>${renderPreviewAttributes(product)}</section>
+      <section class="future-inspector-pane hidden" data-future-review-pane="category"><div class="future-pane-heading"><div><span>Category</span><h2>类目与属性</h2></div><button class="secondary-button" data-action="change-category" ${!readOnly && ["COLLECTED", "FAILED_HARD_BLOCKER"].includes(product.status?.status) && Number(product.status?.api_write_count || 0) === 0 ? "" : "disabled"}>修改类目</button></div>${renderPreviewAttributes(product, readOnly)}</section>
       <section class="future-inspector-pane hidden" data-future-review-pane="store"><div class="future-pane-heading"><div><span>Publication</span><h2>店铺发布状态</h2></div><span class="future-count-badge">${product.publication_summary?.selected || 0} 家</span></div>${renderPublicationMatrix(product)}</section>
       <section class="future-inspector-pane hidden" data-future-review-pane="risk"><div class="future-pane-heading"><div><span>Truth guard</span><h2>风险与时间线</h2></div><span class="future-count-badge">${riskItems.length} 项</span></div>${renderAnalysisSummary(product.analysis || {})}<div class="future-risk-list">${riskItems.map((item) => `<article class="future-risk-row ${escapeHtml(item.level || "low")}"><span class="ph ${item.level === "high" ? "ph-warning-circle" : "ph-shield-check"}"></span><div><strong>${escapeHtml(item.title || (item.level === "high" ? "高风险" : "检查项"))}</strong><p>${escapeHtml(item.message)}</p>${item.technical ? `<details class="error-technical"><summary>查看技术详情</summary><code>${escapeHtml(item.technical)}</code></details>` : ""}</div>${item.code === "pipeline_failed" ? `<button class="secondary-button" data-action="edit-error">立即修改</button>` : ""}</article>`).join("") || `<div class="future-safety-note"><span class="ph ph-shield-check"></span><div><strong>没有阻断风险</strong><p>真实性规则、包装关系和库存禁用规则检查通过。</p></div></div>`}</div></section>
     </div>
@@ -667,16 +688,16 @@ function renderPreviewProductInfo(product) {
   </div>`;
 }
 
-function renderPreviewAttributes(product) {
+function renderPreviewAttributes(product, readOnly = false) {
   const attrs = [...(product.attributes?.attributes || [])];
   const required = attrs.filter((item) => item.required);
   const optional = attrs.filter((item) => !item.required);
   const optionalFilled = optional.filter((item) => attributeHasValue(item.value));
   const optionalEmpty = optional.filter((item) => !attributeHasValue(item.value));
-  return `<div class="preview-attribute-group"><h3>必填属性 <span>${required.length}项</span></h3>${required.map(previewAttributeRow).join("") || `<p class="preview-empty-copy">当前类目没有额外必填属性</p>`}</div>
+  return `<div class="preview-attribute-group"><h3>必填属性 <span>${required.length}项</span></h3>${required.map((item) => previewAttributeRow(item, readOnly)).join("") || `<p class="preview-empty-copy">当前类目没有额外必填属性</p>`}</div>
     <details class="preview-more-attributes"><summary>更多属性（已填写 ${optionalFilled.length} / ${optional.length}）</summary><div>
-      ${optionalFilled.map(previewAttributeRow).join("") || `<p class="preview-empty-copy">暂时没有可安全自动填写的可选属性</p>`}
-      ${optionalEmpty.length ? `<details class="preview-empty-attributes"><summary>未提供或不适用（${optionalEmpty.length}项，可手动补充）</summary><div>${optionalEmpty.map(previewAttributeRow).join("")}</div></details>` : ""}
+      ${optionalFilled.map((item) => previewAttributeRow(item, readOnly)).join("") || `<p class="preview-empty-copy">暂时没有可安全自动填写的可选属性</p>`}
+      ${optionalEmpty.length ? `<details class="preview-empty-attributes"><summary>未提供或不适用（${optionalEmpty.length}项${readOnly ? "" : "，可手动补充"}）</summary><div>${optionalEmpty.map((item) => previewAttributeRow(item, readOnly)).join("")}</div></details>` : ""}
     </div></details>`;
 }
 
@@ -703,20 +724,20 @@ function attributeSourceLabel(item) {
   return source === "AI_estimated" && confidence > 0 ? `${label} ${Math.round(confidence * 100)}%` : label;
 }
 
-function previewAttributeRow(item) {
+function previewAttributeRow(item, readOnly = false) {
   const value = attributeDisplayValue(item.value);
   const allowed = item.allowed_values || [];
   const control = allowed.length
-    ? `<select data-attribute-id="${item.attribute_id}"><option value="">请选择</option>${allowed.map((entry) => `<option value="${escapeHtml(entry.value)}" ${String(entry.value) === String(value) ? "selected" : ""}>${escapeHtml(entry.value)}</option>`).join("")}</select>`
-    : `<input data-attribute-id="${item.attribute_id}" value="${escapeHtml(value)}" placeholder="尚未填写">`;
+    ? `<select data-attribute-id="${item.attribute_id}" ${readOnly ? "disabled" : ""}><option value="">请选择</option>${allowed.map((entry) => `<option value="${escapeHtml(entry.value)}" ${String(entry.value) === String(value) ? "selected" : ""}>${escapeHtml(entry.value)}</option>`).join("")}</select>`
+    : `<input data-attribute-id="${item.attribute_id}" value="${escapeHtml(value)}" placeholder="尚未填写" ${readOnly ? "disabled" : ""}>`;
   return `<label class="preview-attribute-row"><span><strong>${escapeHtml(item.attribute_name_zh || item.attribute_name || item.attribute_id)}${item.required ? " *" : ""}</strong><small>${escapeHtml(item.attribute_name || "Ozon字段")}</small></span>${control}<em>${value ? escapeHtml(attributeSourceLabel(item)) : item.required ? "必须填写" : "未提供"}</em></label>`;
 }
 
-function renderPreviewSkus(product) {
-  return `<div class="preview-sku-table"><div class="preview-sku-head"><span>SKU</span><span>规格</span><span>采购价</span><span>人民币售价（可修改）</span><span>约合卢布</span></div>${(product.skus || []).map((sku) => `<div class="preview-sku-row"><strong>${escapeHtml(display(sku.sku_id))}</strong><span>${escapeHtml(display(sku.option_text || sku.name))}</span><span>¥${number(sku.purchase_price_cny, 2)}</span><label>¥<input type="number" min="0.01" step="0.01" data-sku-price="${escapeHtml(sku.sku_id)}" value="${typeof sku.selling_price_cny === "number" ? sku.selling_price_cny : ""}"></label><span>₽${number(sku.selling_price_rub, 0)}</span></div>`).join("")}</div>`;
+function renderPreviewSkus(product, readOnly = false) {
+  return `<div class="preview-sku-table"><div class="preview-sku-head"><span>SKU</span><span>规格</span><span>采购价</span><span>人民币售价${readOnly ? "" : "（可修改）"}</span><span>约合卢布</span></div>${(product.skus || []).map((sku) => `<div class="preview-sku-row"><strong>${escapeHtml(display(sku.sku_id))}</strong><span>${escapeHtml(display(sku.option_text || sku.name))}</span><span>¥${number(sku.purchase_price_cny, 2)}</span><label>¥<input type="number" min="0.01" step="0.01" data-sku-price="${escapeHtml(sku.sku_id)}" value="${typeof sku.selling_price_cny === "number" ? sku.selling_price_cny : ""}" ${readOnly ? "disabled" : ""}></label><span>₽${number(sku.selling_price_rub, 0)}</span></div>`).join("")}</div>`;
 }
 
-function renderPerStorePrices(product) {
+function renderPerStorePrices(product, readOnly = false) {
   const selected = (product.stores || []).filter((shop) => state.selectedStoreIds.has(shop.id));
   if (!selected.length) return "";
   const rate = Number(product.workbench_settings?.fixed_cny_to_rub || state.workbenchSettings.fixed_cny_to_rub || 12);
@@ -725,7 +746,7 @@ function renderPerStorePrices(product) {
     const bySku = Object.fromEntries((publication.sku_publications || []).map((item) => [String(item.sku_id), item]));
     return `<div class="preview-store-price-group"><h3>${escapeHtml(shop.display_name)}</h3>${(product.skus || []).map((sku) => {
       const saved = bySku[String(sku.sku_id)]?.price_override_cny;
-      return `<label><span>${escapeHtml(display(sku.option_text || sku.sku_id))}</span><span>¥ <input type="number" min="0.01" step="0.01" data-store-price-cny="${escapeHtml(shop.id)}" data-store-price-sku="${escapeHtml(sku.sku_id)}" value="${typeof saved === "number" ? saved : ""}" placeholder="统一价 ${number(sku.selling_price_cny, 2)}"><small>${typeof saved === "number" ? `约 ₽${number(saved * rate, 0)}` : "留空使用统一价"}</small></span></label>`;
+      return `<label><span>${escapeHtml(display(sku.option_text || sku.sku_id))}</span><span>¥ <input type="number" min="0.01" step="0.01" data-store-price-cny="${escapeHtml(shop.id)}" data-store-price-sku="${escapeHtml(sku.sku_id)}" value="${typeof saved === "number" ? saved : ""}" placeholder="统一价 ${number(sku.selling_price_cny, 2)}" ${readOnly ? "disabled" : ""}><small>${typeof saved === "number" ? `约 ₽${number(saved * rate, 0)}` : "留空使用统一价"}</small></span></label>`;
     }).join("")}</div>`;
   }).join("")}</details>`;
 }
@@ -749,6 +770,10 @@ function collectStoreOverrides() {
 
 function renderReviewStoreSelector(product) {
   const stores = product.stores || [];
+  const rawStatus = String(product.status?.status || "").toUpperCase();
+  if (["CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON"].includes(rawStatus)) {
+    return `<div class="store-selector store-selector-readonly"><span>已提交至 ${product.publication_summary?.selected || state.selectedStoreIds.size} 家店铺</span><small>只保留记录，不会再次提交</small></div>`;
+  }
   const options = stores.map((shop) => {
     const available = shop.enabled && shop.connection_status === "connected";
     const selected = state.selectedStoreIds.has(shop.id);
@@ -894,8 +919,8 @@ function renderPublicationMatrix(product) {
   return `${retryAll}<div class="publication-matrix">${(product.stores || []).map((shop) => { const publication = product.publications?.stores?.[shop.id] || {}; const sku = publication.sku_publications?.[0] || {}; const failed = publication.status === "FAILED"; const failureReason = publication.last_error && !["unknown", "UNKNOWN"].includes(publication.last_error) ? publication.last_error : "失败原因未记录，请先查看本地日志后再重试"; return `<article class="publication-row"><div class="publication-row-head"><strong>${escapeHtml(shop.display_name)}</strong><span class="status-pill ${failed ? "failed" : publication.status === "NOT_SELECTED" ? "" : "processing"}">${escapeHtml(display(publication.status, "未选择"))}</span></div><p>${escapeHtml(sku.action || "UNKNOWN")} · task ${escapeHtml(display(sku.task_id))} · product ${escapeHtml(display(sku.ozon_product_id))}</p>${failed ? `<p class="publication-error"><strong>失败原因：</strong>${escapeHtml(failureReason)}</p>` : ""}${publication.has_store_overrides ? `<p class="locked">该店铺存在专属修改</p>` : ""}${failed ? `<button class="secondary-button retry-store-button" data-retry-store="${escapeHtml(shop.id)}">只重试这家店</button>` : ""}</article>`; }).join("") || `<p class="form-help">尚未配置店铺</p>`}</div>`;
 }
 
-function renderSuggestions(items) {
-  return items.filter((item) => item.status === "pending").map((item) => `<article class="suggestion-card"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p><div class="suggestion-actions"><button class="primary-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="accept">采纳</button><button class="secondary-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="ignore">忽略</button><button class="ghost-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="mute_similar">以后不提醒</button></div></article>`).join("") || `<p class="form-help">当前没有待处理建议</p>`;
+function renderSuggestions(items, readOnly = false) {
+  return items.filter((item) => item.status === "pending").map((item) => `<article class="suggestion-card"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p>${readOnly ? `<small>已提交 Ozon，仅保留历史建议</small>` : `<div class="suggestion-actions"><button class="primary-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="accept">采纳</button><button class="secondary-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="ignore">忽略</button><button class="ghost-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="mute_similar">以后不提醒</button></div>`}</article>`).join("") || `<p class="form-help">当前没有待处理建议</p>`;
 }
 
 function editField(label, name, value, locked, textarea = false) {
@@ -1795,11 +1820,20 @@ root.addEventListener("input", (event) => {
     return;
   }
   const field = event.target.dataset.draftField;
-  if (field) scheduleDraftSave({[field]: collectDraftField(field, event.target.value)});
+  if (field) {
+    if (blockTerminalProductMutation()) return;
+    scheduleDraftSave({[field]: collectDraftField(field, event.target.value)});
+  }
   const attributeId = event.target.dataset.attributeId;
-  if (attributeId) scheduleDraftSave({attributes: {[attributeId]: event.target.value || "unknown"}});
+  if (attributeId) {
+    if (blockTerminalProductMutation()) return;
+    scheduleDraftSave({attributes: {[attributeId]: event.target.value || "unknown"}});
+  }
   const skuId = event.target.dataset.skuPrice;
-  if (skuId && Number(event.target.value) > 0) scheduleDraftSave({sku_overrides: {[skuId]: {selling_price_cny:Number(event.target.value)}}});
+  if (skuId && Number(event.target.value) > 0) {
+    if (blockTerminalProductMutation()) return;
+    scheduleDraftSave({sku_overrides: {[skuId]: {selling_price_cny:Number(event.target.value)}}});
+  }
 });
 
 root.addEventListener("keydown", (event) => {
@@ -1854,10 +1888,12 @@ root.addEventListener("change", (event) => {
     return;
   }
   if (event.target.id === "auto-advance") {
+    if (blockTerminalProductMutation()) return;
     state.autoAdvance = event.target.checked;
     scheduleDraftSave({auto_advance: state.autoAdvance});
   }
   if (event.target.matches("[data-product-store]")) {
+    if (blockTerminalProductMutation()) return;
     const storeId = event.target.dataset.productStore;
     if (event.target.checked) state.selectedStoreIds.add(storeId); else state.selectedStoreIds.delete(storeId);
     const button = root.querySelector('[data-action="run-product"]');
@@ -1892,6 +1928,7 @@ root.addEventListener("change", (event) => {
     renderInbox();
   }
   if (event.target.matches("[data-replace-file]")) {
+    if (blockTerminalProductMutation()) return;
     const file = event.target.files?.[0];
     const tile = event.target.closest("[data-image-slot]");
     if (!file || !tile) return;
@@ -2126,6 +2163,7 @@ root.addEventListener("click", async (event) => {
   if (nav) return changeProduct(nav.dataset.reviewNav);
   const mode = event.target.closest("[data-review-mode]");
   if (mode) {
+    if (blockTerminalProductMutation()) return;
     state.reviewMode = mode.dataset.reviewMode;
     await saveDraft({review_mode: state.reviewMode});
     document.querySelectorAll("[data-review-mode]").forEach((button) => button.classList.toggle("active", button.dataset.reviewMode === state.reviewMode));
@@ -2134,6 +2172,7 @@ root.addEventListener("click", async (event) => {
   }
   const depth = event.target.closest("[data-review-depth]");
   if (depth) {
+    if (blockTerminalProductMutation()) return;
     state.reviewDepth = depth.dataset.reviewDepth;
     await saveDraft({review_depth: state.reviewDepth});
     return renderReview({productId: state.currentProductId});
@@ -2190,6 +2229,7 @@ root.addEventListener("click", async (event) => {
   }
   const imageAction = event.target.closest("[data-image-action]");
   if (imageAction) {
+    if (imageAction.dataset.imageAction !== "copy-url" && blockTerminalProductMutation()) return;
     const tile = imageAction.closest("[data-image-slot]");
     const slot = tile.dataset.imageSlot;
     state.currentImageSlot = slot;
@@ -2198,6 +2238,7 @@ root.addEventListener("click", async (event) => {
   }
   const removeTag = event.target.closest("[data-remove-tag]");
   if (removeTag) {
+    if (blockTerminalProductMutation()) return;
     const tags = [...(state.currentProduct.content.tags || [])];
     tags.splice(Number(removeTag.dataset.removeTag), 1);
     state.currentProduct.content.tags = tags;
@@ -2234,10 +2275,12 @@ root.addEventListener("click", async (event) => {
     return;
   }
   if (action === "select-all-stores") {
+    if (blockTerminalProductMutation()) return;
     (state.currentProduct.stores || []).filter((shop) => shop.enabled && shop.connection_status === "connected").forEach((shop) => state.selectedStoreIds.add(shop.id));
     return renderReview({productId: state.currentProductId});
   }
   if (action === "save-product-stores") {
+    if (blockTerminalProductMutation()) return;
     try {
       await api(`/api/workbench/products/${state.currentProductId}/stores`, {method:"PUT", body:JSON.stringify({store_ids:[...state.selectedStoreIds], overrides:collectStoreOverrides()})});
       toast(`已保存 ${state.selectedStoreIds.size} 家目标店铺`, "success");
@@ -2245,7 +2288,10 @@ root.addEventListener("click", async (event) => {
     } catch (error) { return toast(error.message, "error"); }
   }
   if (action === "add-shop") return openStoreDialog();
-  if (action === "change-category") return openCategoryDialog();
+  if (action === "change-category") {
+    if (blockTerminalProductMutation()) return;
+    return openCategoryDialog();
+  }
   if (action === "edit-error") {
     try { return await openProductErrorEditor(state.currentProductId); }
     catch (error) { return toast(`打开修改页面失败：${error.message}`, "error"); }
@@ -2285,6 +2331,7 @@ root.addEventListener("click", async (event) => {
     }
   }
   if (action === "add-tag") {
+    if (blockTerminalProductMutation()) return;
     const input = document.getElementById("new-tag");
     let tag = input.value.trim();
     if (!tag) return;
@@ -2299,6 +2346,7 @@ root.addEventListener("click", async (event) => {
   if (action === "skip") return changeProduct("next");
   if (action === "regenerate-current" && state.currentImageSlot) return queueImageRegeneration(state.currentImageSlot);
   if (action === "save-visual-preference") {
+    if (blockTerminalProductMutation()) return;
     const hint = document.getElementById("visual-set-hint")?.value.trim() || "";
     try {
       const result = await api(`/api/workbench/products/${state.currentProductId}/visual-preference`, {method:"PUT", body:JSON.stringify({set_hint:hint})});
@@ -2346,6 +2394,7 @@ root.addEventListener("click", async (event) => {
   }
   const suggestion = event.target.closest("[data-suggestion]");
   if (suggestion) {
+    if (blockTerminalProductMutation()) return;
     try {
       await api(`/api/workbench/products/${state.currentProductId}/suggestions/${encodeURIComponent(suggestion.dataset.suggestion)}`, {method:"POST", body:JSON.stringify({action:suggestion.dataset.suggestionAction})});
       toast("建议状态已保存");
@@ -2406,6 +2455,7 @@ document.getElementById("category-dialog-results").addEventListener("click", asy
   }
 });
 document.getElementById("confirm-category-change").addEventListener("click", async () => {
+  if (blockTerminalProductMutation()) return;
   if (!state.categoryChoice || !state.categoryRules) return;
   if (!confirm("确认修改最终Ozon类目？旧属性、图片策略和上传数据会失效，原始1688资料不会删除。")) return;
   const button = document.getElementById("confirm-category-change");

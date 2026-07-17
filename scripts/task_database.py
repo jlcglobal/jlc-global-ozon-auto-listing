@@ -17,7 +17,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 
-SCHEMA_VERSION = "002"
+SCHEMA_VERSION = "003"
 DEFAULT_DB_RELATIVE_PATH = Path("runtime/task-db.sqlite3")
 CUTOVER_MARKER = Path("runtime/task-db-cutover.json")
 UNKNOWN = {None, "", "unknown", "UNKNOWN", "null", "None"}
@@ -29,6 +29,96 @@ def now() -> str:
 
 def unknown(value: Any) -> bool:
     return value in UNKNOWN or str(value or "").strip().lower() in {"unknown", "null", "none"}
+
+
+def _aggregate_states(states: Iterable[str]) -> str:
+    values = [str(value) for value in states if value not in {"NOT_SELECTED", "SELECTED"}]
+    if not values:
+        return "UNKNOWN"
+    created = values.count("CREATED")
+    pending = values.count("PENDING_REMOTE") + values.count("SUBMITTED")
+    handoff = values.count("HANDED_OFF_TO_OZON")
+    failed = values.count("FAILED")
+    if created == len(values):
+        return "CREATED"
+    if handoff == len(values) or (handoff and not failed):
+        return "HANDED_OFF_TO_OZON"
+    if pending == len(values):
+        return "PENDING_REMOTE"
+    if failed == len(values):
+        return "FAILED"
+    if failed:
+        return "PARTIAL_FAILED"
+    return "PARTIAL"
+
+
+def _migrate_task_ids_to_local_handoff(db: sqlite3.Connection) -> None:
+    """Make a returned Ozon task id the local terminal without remote polling.
+
+    Older P0 projections stored these rows as PENDING_REMOTE and left the UI at
+    99% forever even though the production contract is to hand the item off to
+    the Ozon product-card backend as soon as a task id is recorded.
+    """
+    applied = db.execute(
+        "SELECT 1 FROM schema_migrations WHERE version='003'"
+    ).fetchone()
+    if applied:
+        return
+    changed_at = now()
+    known = "task_id IS NOT NULL AND TRIM(task_id) NOT IN ('', 'unknown', 'UNKNOWN', 'null', 'None')"
+    db.execute(
+        f"UPDATE store_sku_publications SET status='HANDED_OFF_TO_OZON', updated_at=? "
+        f"WHERE {known} AND status IN ('SUBMITTED','PENDING_REMOTE','UPLOADING','QUEUED','OZON_MODERATION')",
+        (changed_at,),
+    )
+    db.execute(
+        f"UPDATE tasks SET status='HANDED_OFF_TO_OZON', next_check_at=NULL, "
+        f"terminal_reason='task_id_local_handoff', updated_at=? "
+        f"WHERE {known} AND status IN ('SUBMITTED','PENDING_REMOTE','UPLOADING','QUEUED','OZON_MODERATION')",
+        (changed_at,),
+    )
+    publication_rows = db.execute(
+        "SELECT id, product_id FROM store_publications WHERE selected=1"
+    ).fetchall()
+    for publication in publication_rows:
+        sku_states = [
+            str(row[0])
+            for row in db.execute(
+                "SELECT status FROM store_sku_publications WHERE publication_id=?",
+                (publication["id"],),
+            ).fetchall()
+        ]
+        if sku_states and all(state in {"CREATED", "HANDED_OFF_TO_OZON"} for state in sku_states):
+            store_status = "CREATED" if all(state == "CREATED" for state in sku_states) else "HANDED_OFF_TO_OZON"
+            db.execute(
+                "UPDATE store_publications SET status=?, updated_at=? WHERE id=?",
+                (store_status, changed_at, publication["id"]),
+            )
+    product_ids = [str(row[0]) for row in db.execute("SELECT product_id FROM products").fetchall()]
+    for product_id in product_ids:
+        states = [
+            str(row[0])
+            for row in db.execute(
+                "SELECT status FROM store_publications WHERE product_id=? AND selected=1",
+                (product_id,),
+            ).fetchall()
+        ]
+        db.execute(
+            "UPDATE products SET aggregate_status=?, created_store_count=?, pending_store_count=?, "
+            "failed_store_count=?, updated_at=? WHERE product_id=?",
+            (
+                _aggregate_states(states),
+                sum(state == "CREATED" for state in states),
+                sum(state in {"SUBMITTED", "PENDING_REMOTE"} for state in states),
+                sum(state == "FAILED" for state in states),
+                changed_at,
+                product_id,
+            ),
+        )
+    db.execute(
+        "INSERT INTO schema_migrations(version, applied_at) VALUES ('003', ?)",
+        (changed_at,),
+    )
 
 
 def database_path(root: Path) -> Path:
@@ -212,9 +302,10 @@ def initialize(root: Path) -> Path:
             """
         )
         db.execute(
-            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
-            (SCHEMA_VERSION, now()),
+            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES ('002', ?)",
+            (now(),),
         )
+        _migrate_task_ids_to_local_handoff(db)
         # Older P0 databases predate next_check_at.  Backfill the schedule
         # without contacting Ozon; existing read counts determine the next
         # read-only delay and no CREATE/UPDATE can be triggered here.
@@ -250,48 +341,39 @@ def _sku_status(sku: Mapping[str, Any], publication_status: str) -> str:
     task_id = sku.get("task_id")
     if not unknown(product_id):
         return "CREATED"
-    if not unknown(task_id) or publication_status in {"SUBMITTED", "PENDING_REMOTE", "UPLOADING", "QUEUED", "OZON_MODERATION", "HANDED_OFF_TO_OZON"}:
-        return "HANDED_OFF_TO_OZON" if publication_status == "HANDED_OFF_TO_OZON" else ("PENDING_REMOTE" if publication_status != "SUBMITTED" else "SUBMITTED")
     if publication_status in {"FAILED", "QUERY_ERROR", "FAILED_HARD_BLOCKER"}:
         return "FAILED"
+    if not unknown(task_id):
+        return "HANDED_OFF_TO_OZON"
+    if publication_status in {"SUBMITTED", "PENDING_REMOTE", "UPLOADING", "QUEUED", "OZON_MODERATION", "HANDED_OFF_TO_OZON"}:
+        return "HANDED_OFF_TO_OZON" if publication_status == "HANDED_OFF_TO_OZON" else ("PENDING_REMOTE" if publication_status != "SUBMITTED" else "SUBMITTED")
     return "NOT_SUBMITTED"
 
 
 def _publication_status(record: Mapping[str, Any]) -> str:
     raw = str(record.get("status") or "NOT_SELECTED").upper()
     skus = list(record.get("sku_publications") or [])
+    if raw in {"FAILED", "QUERY_ERROR", "FAILED_HARD_BLOCKER"}:
+        return "FAILED"
+    if skus and all(not unknown(item.get("ozon_product_id")) for item in skus):
+        return "CREATED"
+    if skus and any(not unknown(item.get("task_id")) for item in skus) and all(
+        not unknown(item.get("task_id")) or not unknown(item.get("ozon_product_id")) for item in skus
+    ):
+        return "HANDED_OFF_TO_OZON"
     if raw in {"SUCCESS", "IMPORTED", "ACTIVE", "UPLOADED"}:
-        return "CREATED" if skus and all(not unknown(item.get("ozon_product_id")) for item in skus) else "PENDING_REMOTE"
+        return "PENDING_REMOTE"
     if raw in {"PENDING_REMOTE", "OZON_MODERATION"}:
         return "PENDING_REMOTE"
     if raw in {"SUBMITTED", "UPLOADING", "QUEUED"}:
         return "SUBMITTED"
     if raw == "HANDED_OFF_TO_OZON":
         return "HANDED_OFF_TO_OZON"
-    if raw in {"FAILED", "QUERY_ERROR", "FAILED_HARD_BLOCKER"}:
-        return "FAILED"
     return "NOT_SELECTED" if raw == "NOT_SELECTED" else "SELECTED"
 
 
 def _aggregate(states: Iterable[str]) -> str:
-    values = [str(value) for value in states if value not in {"NOT_SELECTED", "SELECTED"}]
-    if not values:
-        return "UNKNOWN"
-    created = values.count("CREATED")
-    pending = values.count("PENDING_REMOTE") + values.count("SUBMITTED")
-    handoff = values.count("HANDED_OFF_TO_OZON")
-    failed = values.count("FAILED")
-    if created == len(values):
-        return "CREATED"
-    if handoff == len(values) or (handoff and not failed):
-        return "HANDED_OFF_TO_OZON"
-    if pending == len(values):
-        return "PENDING_REMOTE"
-    if failed == len(values):
-        return "FAILED"
-    if failed:
-        return "PARTIAL_FAILED"
-    return "PARTIAL"
+    return _aggregate_states(states)
 
 
 def _upsert_product(db: sqlite3.Connection, product_dir: Path, publications: Mapping[str, Any], status: Mapping[str, Any]) -> None:
@@ -396,7 +478,8 @@ def sync_publications_json(root: Path, product_dir: Path, publications: Optional
                             str(task_id), product_dir.name, str(store_id), publication_id,
                             str(sku.get("action") or "CREATE").upper(), task_status,
                             int(record.get("api_write_count") or 0), 0, sku.get("payload_hash"),
-                            record.get("last_submitted_at"), record.get("next_check_at") or _after_seconds(60),
+                            record.get("last_submitted_at"),
+                            None if task_status == "HANDED_OFF_TO_OZON" else record.get("next_check_at") or _after_seconds(60),
                             record.get("last_checked_at"), now(),
                         ),
                     )

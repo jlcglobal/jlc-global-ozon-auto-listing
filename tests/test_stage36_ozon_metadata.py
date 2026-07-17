@@ -38,7 +38,6 @@ EXPECTED = {
 }
 
 
-@unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
 class Stage36OzonMetadataTest(unittest.TestCase):
     def test_profiles_rules_and_schemas_parse(self):
         profiles = load_json(PROFILES_PATH)
@@ -53,6 +52,7 @@ class Stage36OzonMetadataTest(unittest.TestCase):
         for path in (CATEGORY_SCHEMA_PATH, ATTRIBUTES_SCHEMA_PATH, DRAFT_SCHEMA_PATH):
             self.assertIsInstance(load_json(path), dict)
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_three_real_metadata_packages_match_schemas(self):
         for product_id in EXPECTED:
             product_dir = ROOT / "products" / product_id
@@ -68,6 +68,7 @@ class Stage36OzonMetadataTest(unittest.TestCase):
                     f"{product_id}/{filename}",
                 )
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_category_recommendations_and_offline_confidence_cap(self):
         cap = load_json(PROFILES_PATH)["confidence_cap_without_live_ozon_metadata"]
         for product_id, expected in EXPECTED.items():
@@ -77,6 +78,7 @@ class Stage36OzonMetadataTest(unittest.TestCase):
             self.assertLessEqual(category["confidence"], cap)
             self.assertEqual(category["metadata_source"], "offline_semantic_profiles")
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_surveillance_camera_uses_its_own_profile(self):
         package = build_metadata_package(ROOT / "products" / "P000014")
         category = package["ozon-category.json"]
@@ -91,6 +93,7 @@ class Stage36OzonMetadataTest(unittest.TestCase):
         compatible = load_json(PROFILES_PATH)["profiles"]["surveillance_cameras"]["compatible_live_types"]
         self.assertEqual(compatible[0]["name_ru"], "Комплект охранной системы для дома")
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_attribute_counts_and_sensitive_unknowns(self):
         for product_id, expected in EXPECTED.items():
             attributes = build_metadata_package(ROOT / "products" / product_id)["ozon-attributes.json"]
@@ -107,6 +110,7 @@ class Stage36OzonMetadataTest(unittest.TestCase):
                 for item in attributes["required_attributes"]
             ))
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_drafts_are_updated_but_upload_remains_blocked(self):
         for product_id, expected in EXPECTED.items():
             draft = build_metadata_package(ROOT / "products" / product_id)["ozon-draft.json"]
@@ -118,6 +122,7 @@ class Stage36OzonMetadataTest(unittest.TestCase):
             self.assertEqual(draft["preflight"]["status"], "failed")
             self.assertGreater(len(draft["attribute_warnings"]), 0)
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_rebuild_is_deterministic(self):
         for product_id, expected in EXPECTED.items():
             package = build_metadata_package(ROOT / "products" / product_id)
@@ -135,6 +140,7 @@ class Stage36OzonMetadataTest(unittest.TestCase):
                 imported.add(node.module.split(".")[0])
         self.assertTrue(imported.isdisjoint({"openai", "requests", "httpx", "urllib", "aiohttp"}))
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_unified_product_validator_includes_stage36_outputs(self):
         for product_id in ("P000004", "P000003"):
             self.assertEqual(validate_product(ROOT / "products" / product_id), [], product_id)

@@ -9,12 +9,14 @@ from contextlib import closing
 from pathlib import Path
 
 from scripts.task_database import (
+    database,
     due_pending_store_ids,
     initialize,
     migrate_all,
     product_snapshot,
     record_remote_check,
     remote_backoff_seconds,
+    sync_publications_json,
 )
 
 
@@ -69,13 +71,13 @@ class P0TaskDatabaseTest(unittest.TestCase):
             snapshot = product_snapshot(root, "P000001")
             self.assertEqual(snapshot["product"]["target_store_count"], 10)
             self.assertEqual(snapshot["product"]["created_store_count"], 7)
-            self.assertEqual(snapshot["product"]["pending_store_count"], 2)
+            self.assertEqual(snapshot["product"]["pending_store_count"], 0)
             self.assertEqual(snapshot["product"]["failed_store_count"], 1)
             self.assertEqual(snapshot["product"]["aggregate_status"], "PARTIAL_FAILED")
             self.assertEqual(len(snapshot["stores"]), 10)
             self.assertEqual(len(snapshot["sku_publications"]), 30)
 
-    def test_remote_status_backoff_and_private_database_permissions(self) -> None:
+    def test_task_id_is_terminal_and_no_remote_status_poll_is_scheduled(self) -> None:
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             product = root / "products/P000001"
@@ -90,13 +92,38 @@ class P0TaskDatabaseTest(unittest.TestCase):
             mode = (root / "runtime/task-db.sqlite3").stat().st_mode & 0o777
             self.assertEqual(mode, 0o600)
             self.assertEqual(due_pending_store_ids(root, "P000001"), [])
-            with closing(sqlite3.connect(root / "runtime/task-db.sqlite3")) as db:
-                with db:
-                    db.execute("UPDATE tasks SET next_check_at=?", (datetime(2000, 1, 1, tzinfo=timezone.utc).isoformat(),))
-            self.assertEqual(due_pending_store_ids(root, "P000001"), ["store-a"])
             record_remote_check(root, "P000001", ["store-a"])
             self.assertEqual(due_pending_store_ids(root, "P000001"), [])
             with closing(sqlite3.connect(root / "runtime/task-db.sqlite3")) as db:
-                row = db.execute("SELECT read_query_count, next_check_at FROM tasks WHERE task_id='task-a'").fetchone()
-            self.assertEqual(row[0], 1)
-            self.assertTrue(row[1])
+                row = db.execute("SELECT status, read_query_count, next_check_at FROM tasks WHERE task_id='task-a'").fetchone()
+                publication = db.execute("SELECT status FROM store_publications WHERE product_id='P000001'").fetchone()
+                product_state = db.execute("SELECT aggregate_status FROM products WHERE product_id='P000001'").fetchone()
+            self.assertEqual(tuple(row), ("HANDED_OFF_TO_OZON", 0, None))
+            self.assertEqual(publication[0], "HANDED_OFF_TO_OZON")
+            self.assertEqual(product_state[0], "HANDED_OFF_TO_OZON")
+
+    def test_existing_pending_rows_are_upgraded_to_local_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = root / "products/P000001"
+            _write(product / "input/source.json", {"product_id": "P000001", "skus": [{"sku_id": "sku-1"}]})
+            _write(product / "status.json", {})
+            _write(product / "output/store-publications.json", {"stores": {
+                "store-a": {"selected": True, "status": "PENDING_REMOTE", "api_write_count": 1,
+                            "sku_publications": [{"sku_id": "sku-1", "task_id": "task-a"}]},
+            }})
+            sync_publications_json(root, product)
+            with database(root) as db:
+                db.execute("UPDATE store_publications SET status='PENDING_REMOTE'")
+                db.execute("UPDATE store_sku_publications SET status='PENDING_REMOTE'")
+                db.execute("UPDATE tasks SET status='PENDING_REMOTE', next_check_at=?", (datetime(2000, 1, 1, tzinfo=timezone.utc).isoformat(),))
+                db.execute("UPDATE products SET aggregate_status='PENDING_REMOTE', pending_store_count=1")
+                db.execute("DELETE FROM schema_migrations WHERE version='003'")
+            initialize(root)
+            snapshot = product_snapshot(root, "P000001")
+            self.assertEqual(snapshot["product"]["aggregate_status"], "HANDED_OFF_TO_OZON")
+            self.assertEqual(snapshot["stores"][0]["status"], "HANDED_OFF_TO_OZON")
+            self.assertEqual(snapshot["sku_publications"][0]["status"], "HANDED_OFF_TO_OZON")
+            with database(root) as db:
+                task = db.execute("SELECT status,next_check_at,terminal_reason FROM tasks WHERE task_id='task-a'").fetchone()
+            self.assertEqual(tuple(task), ("HANDED_OFF_TO_OZON", None, "task_id_local_handoff"))

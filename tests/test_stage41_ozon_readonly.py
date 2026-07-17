@@ -100,7 +100,6 @@ def client(transport):
     )
 
 
-@unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
 class Stage41OzonReadOnlyTest(unittest.TestCase):
     def test_camera_near_synonym_requires_compatible_live_attributes(self):
         offline = {"category_name": "Камера видеонаблюдения"}
@@ -232,6 +231,7 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
         self.assertEqual(child["parent_id"], 40000)
         self.assertEqual(child["path"], ["Товары", "Раздел 41001", "Весы для багажа"])
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_live_fetch_caches_raw_aspect_metadata(self):
         with tempfile.TemporaryDirectory() as directory:
             product_dir = Path(directory) / "P000004"
@@ -240,6 +240,7 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
             package = build_live_metadata_package(product_dir, client(transport), cache_aspect_rules=False)
             self.assertIn("ozon-category-attributes.json", package)
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_shared_metadata_cache_avoids_repeating_tree_attributes_and_values(self):
         with tempfile.TemporaryDirectory() as directory:
             cache_root = Path(directory) / "metadata-cache"
@@ -259,6 +260,7 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
             self.assertGreater(first_call_count, 0)
             self.assertEqual(len(transport.calls), first_call_count)
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_three_products_receive_real_ids_from_mock_contract(self):
         for product_id, (category_id, type_id, category_name) in PRODUCTS.items():
             transport = FakeOzonTransport()
@@ -279,6 +281,7 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
             self.assertFalse(package["ozon-preflight.json"]["upload_allowed"])
             self.assertFalse(package["ozon-draft.json"]["upload_allowed"])
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_unknown_material_and_brand_are_not_inferred(self):
         package = build_live_metadata_package(
             ROOT / "products/P000004",
@@ -310,6 +313,7 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
             "unknown",
         )
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_mock_package_writes_atomically_and_matches_all_schemas(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             product_dir = Path(temp_dir) / "P000004"
@@ -323,6 +327,7 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
                 self.assertEqual(validate_schema(output / filename, schema_path), [], filename)
             self.assertEqual(package["ozon-preflight.json"]["status"], "failed")
 
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
     def test_repeated_refresh_does_not_drift_to_a_previous_alternative(self):
         with tempfile.TemporaryDirectory() as temp_dir:
             product_dir = Path(temp_dir) / "P000004"

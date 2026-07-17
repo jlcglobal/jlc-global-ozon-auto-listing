@@ -112,6 +112,65 @@ class WorkbenchTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(card["workflow_bucket"], "生成中")
             self.assertEqual(detail["images"][1]["state"], "GENERATING")
 
+    def test_sqlite_handoff_overrides_stale_99_percent_status(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            stale = json.loads((product / "status.json").read_text(encoding="utf-8"))
+            stale.update({"status": "FAILED_HARD_BLOCKER", "progress": 95, "current_step": "ozon_upload"})
+            with patch.object(workbench, "cutover_active", return_value=True), \
+                 patch.object(workbench, "product_snapshot", return_value={"product": {"aggregate_status": "HANDED_OFF_TO_OZON"}}), \
+                 patch.object(workbench, "active_product_worker", return_value=None):
+                effective = workbench.effective_product_status(product, stale)
+            self.assertEqual(effective["status"], "HANDED_OFF_TO_OZON")
+            self.assertEqual(effective["progress"], 100)
+
+    def test_old_contract_is_blocked_before_submit_but_readonly_after_handoff(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            plan = json.loads((product / "output/image-plan.json").read_text(encoding="utf-8"))
+            blocked = workbench.production_contract_state(product, {"status": "COLLECTED"}, plan)
+            readonly = workbench.production_contract_state(product, {"status": "HANDED_OFF_TO_OZON"}, plan)
+            self.assertTrue(blocked["blocking"])
+            self.assertEqual(blocked["state"], "legacy_contract_blocked")
+            self.assertFalse(readonly["blocking"])
+            self.assertEqual(readonly["state"], "legacy_submitted_read_only")
+
+    async def test_handed_off_product_rejects_all_local_content_mutations(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            status = json.loads((product / "status.json").read_text(encoding="utf-8"))
+            status.update({"status": "HANDED_OFF_TO_OZON", "progress": 100})
+            write_json(product / "status.json", status)
+            with patch.object(workbench, "ROOT", root), patch.object(workbench, "PRODUCTS_DIR", root / "products"):
+                with self.assertRaises(HTTPException) as draft_error:
+                    await workbench.save_workbench_draft(
+                        "P000101", FakeRequest({"title_ru": "Нельзя изменить"})
+                    )
+                with self.assertRaises(HTTPException) as image_error:
+                    await workbench.queue_single_image_regeneration(
+                        "P000101", "main-001", FakeRequest({"prompt": "Нельзя изменить"})
+                    )
+                with self.assertRaises(HTTPException) as store_error:
+                    await workbench.save_product_store_selection(
+                        "P000101", FakeRequest({"store_ids": []})
+                    )
+            self.assertEqual(draft_error.exception.status_code, 409)
+            self.assertEqual(image_error.exception.status_code, 409)
+            self.assertEqual(store_error.exception.status_code, 409)
+            self.assertFalse((product / "output/image-regeneration-request.json").exists())
+
+    def test_analysis_risks_are_not_hidden_by_empty_runtime_risk_list(self):
+        risk = workbench.calculate_risk(
+            {"status": "COLLECTED"}, {}, {"missing_required_attributes": []}, {},
+            analysis={"risks": [{"area": "category_consistency", "level": "high", "message": "类目与商品语义不一致", "blocking": False}]},
+            contract_state={"state": "current_contract", "blocking": False},
+        )
+        self.assertEqual(risk["level"], "high")
+        self.assertEqual(risk["items"][0]["code"], "analysis_category_consistency")
+
     def test_summary_and_product_list_use_real_product_directories(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -283,6 +342,10 @@ class WorkbenchTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("data-card-product", script)
         self.assertIn("从失败步骤继续", script)
         self.assertIn("每个已选SKU必须且只能有1张自己的主图", script)
+        self.assertIn("生产合同已阻断", script)
+        self.assertIn("任务号已保存 · 不再自动回查 · 禁止重复提交", script)
+        self.assertIn("已提交 · 只读", script)
+        self.assertIn("该商品已经提交 Ozon，本地记录只读", script)
         self.assertIn("确认彻底删除", html)
         self.assertIn("不会删除、撤回或下架Ozon后台商品", html)
         self.assertRegex(html, r"workbench\.js\?v=[^\"]+")

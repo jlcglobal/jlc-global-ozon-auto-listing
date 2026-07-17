@@ -1769,6 +1769,16 @@ def execute_upload(
     require_production_mode()
     product_dir = product_dir.resolve()
     output = product_dir / "output"
+    # A returned task id is the terminal local handoff.  The workbench never
+    # performs a second import or post-upload readback for the same submission;
+    # later changes belong in the Ozon product-card backend.
+    idempotency_path = output / "ozon-idempotency.json"
+    idempotency = load_json(idempotency_path) if idempotency_path.is_file() else {}
+    if idempotency.get("api_write_completed") is True and idempotency.get("task_id"):
+        raise UploadGateError(
+            "The previous Ozon import task is still pending or already handed off; "
+            "a second write is forbidden."
+        )
     # Never trust a historical final-upload-check PASS.  Rebuild the image
     # gate from the current image-plan and filesystem before any remote call,
     # especially before CREATE/UPDATE can be reached.
@@ -1782,17 +1792,6 @@ def execute_upload(
         validate_formal_product_input(product_dir)
     except ProductionInputError as exc:
         raise UploadGateError(f"正式生产输入门禁失败：{exc}") from exc
-    idempotency_path = output / "ozon-idempotency.json"
-    idempotency = load_json(idempotency_path) if idempotency_path.is_file() else {}
-    current_status = str(load_json(product_dir / "status.json").get("status") or "")
-    if (
-        current_status == "PENDING_REMOTE"
-        and idempotency.get("api_write_completed") is True
-        and idempotency.get("task_id")
-    ):
-        raise UploadGateError(
-            "The previous Ozon import task is still pending; only read-only status sync is allowed."
-        )
     payload = build_upload_payload(product_dir, mode="production")
     assert_production_allowed(product_dir, payload)
     offer_ids = [item["offer_id"] for item in payload["variants"]]

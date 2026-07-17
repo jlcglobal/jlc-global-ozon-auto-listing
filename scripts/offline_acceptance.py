@@ -59,6 +59,7 @@ def audit(case_id: str) -> Dict[str, Any]:
         errors.append("manual source contains a formal-product or generated-output reference")
 
     rejected = sorted((manual_output / "rejected-generation").rglob("*.png"))
+    rejected_prior = sorted((manual_output / "rejected-generation" / "2026-07-16-prior-run").rglob("*.png"))
     candidates = sorted((manual_output / "generated-images").rglob("*.png"))
     accepted = sorted((manual_output / "accepted-images").rglob("*.png"))
     return {
@@ -72,8 +73,10 @@ def audit(case_id: str) -> Dict[str, Any]:
         "user_provided_main_images": 0,
         "user_provided_detail_images": 0,
         "candidate_images": len(candidates),
+        "candidate_image_paths": [str(path.relative_to(ROOT)) for path in candidates],
         "accepted_images": len(accepted),
-        "rejected_prior_outputs": len(rejected),
+        "rejected_outputs": len(rejected),
+        "rejected_prior_outputs": len(rejected_prior),
         "production_stages_proven": [],
         "still_required": [
             "connected Codex product analysis",
@@ -82,7 +85,10 @@ def audit(case_id: str) -> Dict[str, Any]:
             "N SKU mains plus 8 shared detail candidates",
             "technical QC and one human review",
         ],
-        "quality_status": "WAITING_FOR_REAL_CONNECTED_CODEX_PRODUCTION_TEST",
+        "quality_status": (
+            "WAITING_FOR_HUMAN_SAMPLE_REVIEW"
+            if candidates else "WAITING_FOR_REAL_CONNECTED_CODEX_PRODUCTION_TEST"
+        ),
         "errors": errors,
         "ozon_write_calls": 0,
         "ozon_read_calls": 0,

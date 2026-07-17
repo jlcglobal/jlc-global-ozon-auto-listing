@@ -52,51 +52,51 @@
       "sku_scope": "shared"
     },
     {
-      "role_id": "scene_3l",
-      "image_type": "scene",
-      "commercial_purpose": "3L使用场景",
-      "buyer_question": "3L适合放什么？",
-      "operation": "edit_real_image",
+      "role_id": "material_pp5",
+      "image_type": "feature",
+      "commercial_purpose": "三款通用材质与透明度",
+      "buyer_question": "盒体是什么材质，是否便于查看内容物？",
+      "operation": "compose_from_real_images",
       "russian_text": [
-        "3 Л · ДЛЯ НЕБОЛЬШИХ ПОРЦИЙ",
-        "КОМПАКТНО НА ПОЛКЕ"
-      ],
-      "source_references": [
-        "test-data/manual-input/P900002/sku-images/sku-3l.png"
-      ],
-      "must_prove": "3L小号款和已确认尺寸",
-      "sku_scope": "shared"
-    },
-    {
-      "role_id": "scene_5l",
-      "image_type": "usage",
-      "commercial_purpose": "5L使用场景",
-      "buyer_question": "5L在冰箱里如何使用？",
-      "operation": "edit_real_image",
-      "russian_text": [
-        "5 Л · ДЛЯ ОВОЩЕЙ И УПАКОВОК",
-        "УДОБНО ДОСТАВАТЬ ЗА РУЧКУ"
+        "МАТЕРИАЛ PP5",
+        "ПРОЗРАЧНЫЙ КОРПУС"
       ],
       "source_references": [
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
-      "must_prove": "5L中号款和已确认尺寸",
+      "must_prove": "PP5材质与透明盒体为三款共用事实",
       "sku_scope": "shared"
     },
     {
-      "role_id": "scene_6l",
-      "image_type": "problem_solution",
-      "commercial_purpose": "6L使用场景",
-      "buyer_question": "6L如何解决大份食材收纳？",
+      "role_id": "front_handle_action",
+      "image_type": "usage",
+      "commercial_purpose": "三款通用前置把手抽取动作",
+      "buyer_question": "放在冰箱层架上是否方便拿取？",
       "operation": "edit_real_image",
       "russian_text": [
-        "6 Л · ДЛЯ ОБЪЁМНЫХ ПРОДУКТОВ",
-        "БОЛЬШЕ ПОРЯДКА ВНУТРИ"
+        "ПЕРЕДНЯЯ РУЧКА",
+        "УДОБНО ВЫДВИГАТЬ С ПОЛКИ"
+      ],
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "must_prove": "三款都具有前置把手，画面只用一款作为通用动作示例",
+      "sku_scope": "shared"
+    },
+    {
+      "role_id": "shared_usage_scene",
+      "image_type": "scene",
+      "commercial_purpose": "三款通用冰箱食品分类场景",
+      "buyer_question": "这类收纳盒可以怎样整理冰箱食品？",
+      "operation": "edit_real_image",
+      "russian_text": [
+        "ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК",
+        "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ"
       ],
       "source_references": [
         "test-data/manual-input/P900002/sku-images/sku-6l.png"
       ],
-      "must_prove": "6L大号款和已确认尺寸",
+      "must_prove": "食品分类收纳场景为三款通用，不出现单个SKU容量和尺寸",
       "sku_scope": "shared"
     },
     {
@@ -129,11 +129,9 @@
         "ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ"
       ],
       "source_references": [
-        "test-data/manual-input/P900002/sku-images/sku-3l.png",
-        "test-data/manual-input/P900002/sku-images/sku-5l.png",
-        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
-      "must_prove": "每单1个并提醒核对尺寸",
+      "must_prove": "每单1个并提醒核对尺寸；只用一款作通用示例，不重复SKU差异",
       "sku_scope": "shared"
     }
   ]

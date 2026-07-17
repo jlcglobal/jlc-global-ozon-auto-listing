@@ -1,71 +1,146 @@
 {
+  "schema_version": "1.0.0",
+  "product_id": "P900002",
+  "source_kind": "manual_test",
+  "category": {
+    "schema_version": "1.0.0",
+    "selection_source": "user_confirmed_offline_acceptance",
+    "category_id": 17027933,
+    "type_id": 970742618,
+    "name_ru": "Органайзер для холодильника",
+    "name_zh": "冰箱收纳盒",
+    "path_ru": [
+      "Дом и сад",
+      "Хранение продуктов",
+      "Органайзер для холодильника"
+    ],
+    "path_zh": [
+      "家居园艺",
+      "食品储藏",
+      "冰箱收纳盒"
+    ],
+    "provenance": "collector/edge-extension/category-rules-cache.json#rules_by_key[17027933:970742618]",
+    "category_name_zh": "冰箱收纳盒",
+    "category_name_ru": "Органайзер для холодильника",
+    "category_path_zh": [
+      "家居园艺",
+      "食品储藏",
+      "冰箱收纳盒"
+    ],
+    "category_path": [
+      "Дом и сад",
+      "Хранение продуктов",
+      "Органайзер для холодильника"
+    ],
+    "locked_for_batch": true,
+    "allow_runtime_rematch": false
+  },
   "attributes": [
-    {
-      "attribute_name": "Бренд",
-      "value": "Нет бренда",
-      "source": "project_rule"
-    },
     {
       "attribute_name": "Тип",
       "value": "Органайзер для холодильника",
-      "source": "locked_category"
+      "value_kind": "fact",
+      "source_refs": [
+        "test-data/manual-input/P900002/category-selection.json"
+      ]
     },
     {
       "attribute_name": "Материал",
-      "value": "полипропилен (PP5)",
-      "source": "user_confirmed"
+      "value": "полипропилен PP5",
+      "value_kind": "fact",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/product_attributes"
+      ]
     },
     {
       "attribute_name": "Цвет",
       "value": "прозрачный",
-      "source": "user_confirmed"
-    },
-    {
-      "attribute_name": "Объем",
-      "value": [
-        "3 л",
-        "5 л",
-        "6 л"
-      ],
-      "source": "user_confirmed_skus"
-    },
-    {
-      "attribute_name": "Форма",
-      "value": "прямоугольная",
-      "source": "visible_inference"
+      "value_kind": "fact",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/product_attributes"
+      ]
     },
     {
       "attribute_name": "Количество в комплекте",
       "value": 1,
-      "source": "user_confirmed"
+      "value_kind": "fact",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/product_attributes"
+      ]
     },
     {
-      "attribute_name": "Особенности",
-      "value": [
-        "с крышкой",
-        "с ручкой"
-      ],
-      "source": "user_confirmed"
+      "attribute_name": "Бренд",
+      "value": "unknown",
+      "value_kind": "unknown_high_risk",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/unknowns"
+      ]
     },
     {
-      "attribute_name": "Назначение",
-      "value": "хранение продуктов в холодильнике",
-      "source": "user_confirmed"
-    },
-    {
-      "attribute_name": "Страна-изготовитель",
-      "value": "Китай",
-      "source": "project_rule"
-    },
-    {
-      "attribute_name": "Комплектация",
-      "value": "органайзер выбранного объёма — 1 шт.",
-      "source": "user_confirmed"
-    },
-    {
-      "attribute_name": "Вид выпуска товара",
-      "value": "фабричное производство",
-      "source": "source_platform"
+      "attribute_name": "Сертификация, гарантия и таможенный код",
+      "value": "unknown",
+      "value_kind": "unknown_high_risk",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/unknowns"
+      ]
     }
+  ],
+  "sku_plan": [
+    {
+      "sku_id": "fridge-organizer-3l",
+      "name_ru": "Органайзер для холодильника, 3 л",
+      "difference_ru": "объём 3 л, размер 14,5 × 14,5 × 12 см",
+      "specification": {
+        "capacity_ml": 3000,
+        "external_dimensions_cm": {
+          "length": 14.5,
+          "width": 14.5,
+          "height": 12
+        },
+        "color": "прозрачный",
+        "material": "PP5"
+      },
+      "source_image": "test-data/manual-input/P900002/sku-images/sku-3l.png"
+    },
+    {
+      "sku_id": "fridge-organizer-5l",
+      "name_ru": "Органайзер для холодильника, 5 л",
+      "difference_ru": "объём 5 л, размер 29 × 15,5 × 12 см",
+      "specification": {
+        "capacity_ml": 5000,
+        "external_dimensions_cm": {
+          "length": 29,
+          "width": 15.5,
+          "height": 12
+        },
+        "color": "прозрачный",
+        "material": "PP5"
+      },
+      "source_image": "test-data/manual-input/P900002/sku-images/sku-5l.png"
+    },
+    {
+      "sku_id": "fridge-organizer-6l",
+      "name_ru": "Органайзер для холодильника, 6 л",
+      "difference_ru": "объём 6 л, размер 29 × 15,5 × 15,5 см",
+      "specification": {
+        "capacity_ml": 6000,
+        "external_dimensions_cm": {
+          "length": 29,
+          "width": 15.5,
+          "height": 15.5
+        },
+        "color": "прозрачный",
+        "material": "PP5"
+      },
+      "source_image": "test-data/manual-input/P900002/sku-images/sku-6l.png"
+    }
+  ],
+  "unknown_high_risk_facts": [
+    "бренд",
+    "сертификация",
+    "гарантия",
+    "температурный диапазон",
+    "вес товара и упаковки",
+    "таможенный код"
   ]
 }

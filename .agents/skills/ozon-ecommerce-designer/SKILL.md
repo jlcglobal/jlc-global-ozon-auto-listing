@@ -1,6 +1,6 @@
 ---
 name: ozon-ecommerce-designer
-description: Turn one source-grounded product analysis into the complete Russian Ozon listing and ecommerce image sales design before any image is generated.
+description: Analyze one source-grounded product and make the complete Russian Ozon listing plus product-specific commercial art direction for every SKU main and shared detail image before generation. Use whenever AI Factory needs listing copy, selling points, image prompts, visual strategy or image regeneration; never fill a reusable visual template.
 ---
 
 # Ozon Ecommerce Designer
@@ -13,6 +13,10 @@ image production. It uses the current connected Codex model. It must not use a
 local fallback, generic template, another product's facts, or a credentialed
 OpenAI/third-party API. If the connected Codex service is unavailable, preserve
 the current checkpoint and wait for recovery.
+
+Read `references/product-specific-image-standard.md` before making any image
+decision. Treat it as the seller's quality and reasoning standard, not as a
+palette or layout template.
 
 ## Required evidence
 
@@ -72,7 +76,9 @@ decision:
    fields;
 9. Russian SKU names and exact SKU differences;
 10. one SKU-bound main-image design for every selected SKU;
-11. exactly eight shared-detail designs in one buyer-decision sequence.
+11. exactly eight shared-detail designs in one buyer-decision sequence;
+12. a complete per-image art direction and exact model-native typography plan
+    that the image model can execute in the same call as the final scene.
 
 The production image contract is always `N SKU main images + 8 shared detail
 images`, where `N` is the current selected SKU count from 1 through 10. Each
@@ -82,13 +88,59 @@ once for the whole product group and may claim only facts shared by all selected
 SKUs. SKU differences belong in one deterministic comparison image using the
 real SKU references, never in duplicated per-SKU detail sets.
 
+Plan the entire `N+8` image set in one connected-model execution and write one
+atomic design artifact. Complete every slot's commercial purpose, art
+direction, exact Russian copy, overlay plan and final prompt before returning.
+Never alternate design and generation one image at a time. Image generation is
+a later stage and cannot start while even one planned slot is incomplete.
+
 Every image design must include: layout type, commercial purpose, buyer
 question, exact source references, exact Russian overlay copy, complete visual
-prompt, deterministic overlay modules and immutable product features. Supported
-layout types are `sku_main`, `core_benefit`, `structure_callout`, `usage_scene`,
-`sku_comparison`, and `purchase_notice`. Multi-SKU products use all six. A
-single-SKU product uses the other five and replaces comparison with another
-source-grounded detail role; it must never fabricate a variant comparison.
+prompt, immutable product features, design rationale, per-image art direction
+and an exact overlay plan. `layout_type` names the buyer-decision job only; it
+never selects a visual template. Supported jobs are `sku_main`, `core_benefit`,
+`structure_callout`, `usage_scene`, `sku_comparison`, and `purchase_notice`.
+Multi-SKU products use all six. A single-SKU product uses the other five and
+replaces comparison with another source-grounded detail role; it must never
+fabricate a variant comparison.
+
+## Mandatory creative sequence
+
+Do not choose a layout before completing these decisions for the current
+product:
+
+1. identify the exact product, use situation, visible structure, SKU
+   differences and factual boundaries;
+2. identify the Russian buyer, search intent, purchase motivation, objections
+   and return risks;
+3. choose three to six concrete source-backed selling points and rank them;
+4. define the buyer-decision sequence for the SKU mains plus eight shared
+   details;
+5. for every slot independently decide the scene, composition, product scale
+   and position, background, palette, lighting, typography, icon logic,
+   information hierarchy, natural negative space and premium/value signal;
+6. map every exact Russian text item to one model-native typography instruction
+   with its own normalized box, hierarchy, colors, alignment and background
+   treatment for the same final-image call;
+7. write the final image prompt from those decisions, then validate the whole
+   design before any image is generated.
+
+Record those seven stages, in order, in `decision_trace`: `product_evidence`,
+`buyer_analysis`, `selling_point_ranking`, `image_sequence`,
+`per_slot_art_direction`, `prompt_completion`, and
+`pre_generation_validation`. Each stage must be `completed` with evidence.
+Only `compliance_status=PASS` with no violations may leave this Skill.
+
+If the contract reports any missing, reordered or non-compliant stage or slot,
+do not patch in a template and do not continue to `image_plan`. Mark the whole
+current `ecommerce_design` attempt retryable and regenerate the complete `N+8`
+design artifact from product evidence in one pass. Do not replay already
+validated upstream collection, category, measurement or pricing work.
+
+The designer must explain in `design_rationale` why the visual treatment fits
+this product and buyer question. Eight shared details must not repeat the same
+composition with different copy or background. SKU mains may share one visual
+language for consistency, but remain bound to their own SKU facts and images.
 
 ## Image design rules
 
@@ -105,20 +157,29 @@ reference. Regeneration or replacement invalidates the corresponding accepted
 copy without overwriting the source asset.
 
 The final visual is not a photo with two giant lines at the top. Design a real
-ecommerce information hierarchy: product name, SKU/capacity badge, parameter or
-dimension callouts where relevant, benefit sections, icons/arrows and clear
-Russian copy. Choose palette, light, composition and mood for the exact product.
+ecommerce information hierarchy for this exact product. Product name,
+SKU/capacity, dimensions, benefits, icons and notices are optional visual
+elements selected by the designer, not mandatory fixed boxes. Choose palette,
+light, composition, product scale, typography and iconography from this
+product's value proposition.
 
-AI reference editing is permitted only for faithful scene/base visuals. Exact
-Russian text, badges, dimension lines, icons and information modules are added
-by the deterministic ecommerce layout renderer. SKU comparison, dimensions,
-structure and package contents use real-image deterministic composition; AI
-must not redraw the product. Preserve shape, color, transparency/material
-appearance, structure, proportions, SKU differences and accessory quantity.
+The built-in image model must create the faithful product scene and every exact
+Russian text line in one final-image call. `overlay_plan` is a model-native
+typography instruction set for that call, not a request for later local
+rendering. Never create or expose a text-free intermediate and never call a
+post-generation overlay executor. SKU comparison, dimensions, structure and
+package contents use the real SKU references in the same final composition;
+AI must not turn the product into another model. Preserve product type, color,
+transparency/material appearance, visible structure, believable overall
+proportions, SKU differences and accessory quantity; pixel-for-pixel identity
+is not required.
 
-Forbid plain white catalog defaults, generic/repeated templates, Chinese or
-garbled text, supplier labels/watermarks, browser controls, incorrect Russian,
-invented accessories and changed SKU proportions.
+Forbid plain white catalog defaults, generic/repeated templates, fixed
+dashboard/card layouts, Chinese or garbled text, supplier labels/watermarks,
+browser controls, incorrect Russian, invented accessories and changed SKU
+proportions. If Russian is missing, garbled, misspelled or unreadable, retry
+only that image slot once. If per-image art direction or typography instructions
+are missing, fail the design step; never let a legacy renderer fill the gap.
 
 ## Materialization and handoff
 
@@ -130,8 +191,9 @@ This validation-only projector writes the existing compatibility artifacts
 (`copy-ru.json`, title/description/tags, ecommerce creative brief) from the
 already completed design. It never invents content and never calls Ozon.
 
-`image_plan` consumes the design and its projected artifacts. `image_generation`
-must not reanalyse the product or rewrite prompts. In manual mode, successful
+`image_plan` consumes the design and its projected artifacts without adding a
+fallback prompt or visual choice. `image_generation` must not reanalyse the
+product, rewrite prompts or replace `overlay_plan`. In manual mode, successful
 generation and hard QC end at `WAITING_MANUAL_REVIEW` with workbench text
 `等待人工检查`; do not open a preview automatically and do not upload. Automatic
 mode follows the existing explicit global switch.

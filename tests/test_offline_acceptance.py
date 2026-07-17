@@ -39,13 +39,22 @@ class OfflineAcceptanceTests(unittest.TestCase):
         self.assertEqual(self.result["user_provided_detail_images"], 0)
 
     def test_old_generated_images_are_rejected_not_candidates(self):
-        self.assertEqual(self.result["candidate_images"], 0)
+        self.assertFalse(any(
+            "2026-07-16-prior-run" in path or "/stage3.4/" in path
+            for path in self.result["candidate_image_paths"]
+        ))
+        self.assertTrue(all(
+            "/generated-images/quality-test-" in path
+            for path in self.result["candidate_image_paths"]
+        ))
         self.assertEqual(self.result["accepted_images"], 0)
         self.assertEqual(self.result["rejected_prior_outputs"], 11)
-        self.assertEqual(
-            self.result["quality_status"],
-            "WAITING_FOR_REAL_CONNECTED_CODEX_PRODUCTION_TEST",
+        expected_status = (
+            "WAITING_FOR_HUMAN_SAMPLE_REVIEW"
+            if self.result["candidate_images"]
+            else "WAITING_FOR_REAL_CONNECTED_CODEX_PRODUCTION_TEST"
         )
+        self.assertEqual(self.result["quality_status"], expected_status)
 
     def test_fixture_tool_does_not_claim_production_or_call_ozon(self):
         self.assertEqual(self.result["production_stages_proven"], [])

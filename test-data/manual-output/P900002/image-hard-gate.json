@@ -1,0 +1,93 @@
+{
+  "schema_version": "1.0",
+  "case_id": "P900002",
+  "source_kind": "manual_test",
+  "mode": "hard_failures_only",
+  "checked_slots": [
+    "main-fridge-organizer-3l",
+    "main-fridge-organizer-5l",
+    "main-fridge-organizer-6l",
+    "detail-001-core-storage",
+    "detail-002-seal-odor",
+    "detail-003-structure",
+    "detail-004-material-pp5",
+    "detail-005-front-handle",
+    "detail-006-shared-food-zones",
+    "detail-007-sku-comparison",
+    "detail-008-purchase-notice"
+  ],
+  "checks": {
+    "planned_slot_count": "PASS_11_OF_11",
+    "single_pass_scene_product_and_text": "PASS",
+    "source_product_fidelity": "PASS",
+    "sku_capacity_and_dimensions": "PASS",
+    "russian_copy_complete": "PASS",
+    "text_legibility": "PASS",
+    "product_specific_art_direction": "PASS",
+    "product_prominence": "PASS",
+    "aspect_ratio_3_4": "PASS_11_OF_11",
+    "minimum_dimensions": "PASS_11_OF_11",
+    "unique_image_bytes": "PASS_11_OF_11",
+    "no_excessive_glow": "PASS",
+    "input_output_isolation": "PASS"
+  },
+  "critical_failures": [],
+  "issues": [
+    "The image model uses conventional lowercase 'см' in some main-image dimensions; numbers and meaning remain correct.",
+    "Three image-service network failures were isolated to missing slots; completed images were never regenerated.",
+    "The first SKU comparison candidate was 1024 x 1536 (2:3), was copied to rejected-generation, and was replaced by a 1086 x 1448 (3:4) targeted retry."
+  ],
+  "images": [
+    {"slot": "main-fridge-organizer-3l", "path": "generated-images/quality-test-20260717/variant-main/fridge-organizer-3l.png", "width": 1086, "height": 1448, "sha256": "6cf21115c84e98d4aec4ff9a3cad47bdbf0118dcd352bf73fe2de352bb510253", "hard_gate": "PASS"},
+    {"slot": "main-fridge-organizer-5l", "path": "generated-images/quality-test-20260717/variant-main/fridge-organizer-5l.png", "width": 1086, "height": 1448, "sha256": "952adb0db92186ae390a652bd0b5dc870939dce7fef494a43369f6fb501bb190", "hard_gate": "PASS", "seller_accepted": true},
+    {"slot": "main-fridge-organizer-6l", "path": "generated-images/quality-test-20260717/variant-main/fridge-organizer-6l.png", "width": 1086, "height": 1448, "sha256": "99feab61cfd6bfc7929f9a814cfb5f59c7baed09c50b4b59cc8c14a8b33293c1", "hard_gate": "PASS"},
+    {"slot": "detail-001-core-storage", "path": "generated-images/quality-test-20260717/detail/detail-001.png", "width": 1086, "height": 1448, "sha256": "fb3d5952d25654820f9a86098b6c891d9f52f4bcace004d77955727138b78b3d", "hard_gate": "PASS"},
+    {"slot": "detail-002-seal-odor", "path": "generated-images/quality-test-20260717/detail/detail-002.png", "width": 1086, "height": 1448, "sha256": "359cca82139a8042afb7c0555181888888b9da86c01bef657ea35433fb74b619", "hard_gate": "PASS"},
+    {"slot": "detail-003-structure", "path": "generated-images/quality-test-20260717/detail/detail-003.png", "width": 1086, "height": 1448, "sha256": "72919207c14799b2efd33be8a08d57d487c7746062e3092ebd0c92ae370bde31", "hard_gate": "PASS"},
+    {"slot": "detail-004-material-pp5", "path": "generated-images/quality-test-20260717/detail/detail-004.png", "width": 1086, "height": 1448, "sha256": "889222cd7ab8294b692a2f1f3896c0c4d50a2d5589d3e9de56c32504ad0ad3fa", "hard_gate": "PASS"},
+    {"slot": "detail-005-front-handle", "path": "generated-images/quality-test-20260717/detail/detail-005.png", "width": 1086, "height": 1448, "sha256": "27aba60daf81a7d90b4aa73d70697d19ed5bd1dfd5e5645154ce14dc15b419d9", "hard_gate": "PASS"},
+    {"slot": "detail-006-shared-food-zones", "path": "generated-images/quality-test-20260717/detail/detail-006.png", "width": 1086, "height": 1448, "sha256": "fbdc3934779787cdc360b8704eb20f89290c6e3f9b167ca41516b9c28365c779", "hard_gate": "PASS"},
+    {"slot": "detail-007-sku-comparison", "path": "generated-images/quality-test-20260717/detail/detail-007.png", "width": 1086, "height": 1448, "sha256": "8bd2ec211aa7ccbdb4bfa776fa3806909edebf665c4729af6b72bf42d8e590c2", "hard_gate": "PASS_AFTER_RATIO_RETRY"},
+    {"slot": "detail-008-purchase-notice", "path": "generated-images/quality-test-20260717/detail/detail-008.png", "width": 1086, "height": 1448, "sha256": "4991bbcac5bff97cdbf736389e3d8f4771cbce242b01da169647bdac9ec42553", "hard_gate": "PASS"}
+  ],
+  "sample_acceptance": {
+    "slot": "main-fridge-organizer-5l",
+    "accepted_by_user": true,
+    "accepted_at": "2026-07-17T20:19:51+08:00",
+    "scope": "P900002_5L_visual_standard_only"
+  },
+  "full_set_acceptance": {
+    "accepted_by_user": true,
+    "accepted_at": "2026-07-17T21:02:05+08:00",
+    "scope": "P900002_complete_3_sku_mains_plus_8_shared_details_visual_standard",
+    "formal_product_upload_authorized": false
+  },
+  "accepted_slots": [
+    "main-fridge-organizer-3l",
+    "main-fridge-organizer-5l",
+    "main-fridge-organizer-6l",
+    "detail-001-core-storage",
+    "detail-002-seal-odor",
+    "detail-003-structure",
+    "detail-004-material-pp5",
+    "detail-005-front-handle",
+    "detail-006-shared-food-zones",
+    "detail-007-sku-comparison",
+    "detail-008-purchase-notice"
+  ],
+  "pending_manual_review_slots": [],
+  "status": "TEST_SET_ACCEPTED",
+  "full_set_accepted_by_user": true,
+  "remaining_images_generated": true,
+  "upload_forbidden": true,
+  "external_calls": {
+    "model_calls_for_layout": 0,
+    "image_generation_calls_total_including_earlier_rejected_attempts": 17,
+    "successful_current_single_pass_images": 11,
+    "rejected_current_single_pass_images": 1,
+    "network_failed_calls": 3,
+    "ozon_read_calls": 0,
+    "ozon_write_calls": 0,
+    "inventory_calls": 0
+  }
+}

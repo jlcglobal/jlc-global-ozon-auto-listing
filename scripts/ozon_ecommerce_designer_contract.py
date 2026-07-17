@@ -34,6 +34,16 @@ LAYOUT_TYPES = {
     "sku_comparison", "purchase_notice",
 }
 DETERMINISTIC_LAYOUTS = {"structure_callout", "sku_comparison", "purchase_notice"}
+CREATIVE_PLACEHOLDERS = {"", "unknown", "generic", "template", "default", "通用", "默认", "固定模板"}
+DECISION_STEP_ORDER = [
+    "product_evidence",
+    "buyer_analysis",
+    "selling_point_ranking",
+    "image_sequence",
+    "per_slot_art_direction",
+    "prompt_completion",
+    "pre_generation_validation",
+]
 
 
 def project_root_for(product_dir: Path) -> Path:
@@ -68,6 +78,49 @@ def sku_image(sku: Dict[str, Any]) -> str:
     return str(sku.get("variant_local_image_path") or sku.get("local_image_path") or "").strip()
 
 
+def creative_decision_errors(item: Dict[str, Any]) -> List[str]:
+    """Reject incomplete art direction before a renderer can invent a template."""
+    slot = str(item.get("slot") or "unknown")
+    errors: List[str] = []
+    art = item.get("art_direction") or {}
+    for key in (
+        "concept", "scene", "composition", "product_position", "background",
+        "lighting", "typography", "iconography", "negative_space",
+        "value_signal", "slot_differentiation",
+    ):
+        value = str(art.get(key) or "").strip()
+        if value.casefold() in CREATIVE_PLACEHOLDERS:
+            errors.append(f"{slot} art_direction.{key} is a generic placeholder")
+
+    russian_text = [str(value).strip() for value in item.get("russian_text") or []]
+    prompt = str(item.get("prompt") or "").strip()
+    prompt_folded = prompt.casefold()
+    forbidden_two_stage_markers = (
+        "text-free", "without lettering", "generate no text", "do not add text",
+        "no generated typography", "rendered later", "added after generation",
+        "无字底图", "后置叠字",
+    )
+    if any(marker in prompt_folded for marker in forbidden_two_stage_markers):
+        errors.append(f"{slot} prompt requests a forbidden text-free or post-overlay workflow")
+    missing_prompt_copy = [text for text in russian_text if text and text not in prompt]
+    if missing_prompt_copy:
+        errors.append(f"{slot} prompt must include every exact Russian text item for single-pass generation")
+    overlay_plan = item.get("overlay_plan") or []
+    overlay_text = [str(value.get("text") or "").strip() for value in overlay_plan]
+    if overlay_text != russian_text:
+        errors.append(f"{slot} overlay_plan must map every russian_text item exactly and in order")
+    priorities = [value.get("priority") for value in overlay_plan]
+    if len(priorities) != len(set(priorities)):
+        errors.append(f"{slot} overlay_plan priorities must be unique")
+    for index, value in enumerate(overlay_plan, start=1):
+        box = value.get("box") or []
+        if len(box) == 4:
+            x, y, width, height = box
+            if width <= 0 or height <= 0 or x + width > 1 or y + height > 1:
+                errors.append(f"{slot} overlay_plan[{index}] box must stay inside the 3:4 canvas")
+    return errors
+
+
 def validate_design(product_dir: Path, design: Dict[str, Any] | None = None) -> List[str]:
     design = design or load_json(product_dir / "output/ozon-ecommerce-design.json")
     source = load_json(product_dir / "input/source.json")
@@ -84,6 +137,12 @@ def validate_design(product_dir: Path, design: Dict[str, Any] | None = None) -> 
         errors.append("selected SKU count must be between 1 and 10")
     if design.get("product_id") != product_dir.name:
         errors.append("design product_id does not match product directory")
+    decision_trace = design.get("decision_trace") or {}
+    actual_steps = [str(item.get("name") or "") for item in decision_trace.get("steps") or []]
+    if actual_steps != DECISION_STEP_ORDER:
+        errors.append("ecommerce design decision steps were not completed in the required order")
+    if decision_trace.get("compliance_status") != "PASS" or decision_trace.get("violations"):
+        errors.append("ecommerce design decision trace is not compliant; retry ecommerce_design")
     for ref in design.get("source_refs") or []:
         try:
             validate_current_product_trace_ref(product_dir, ref)
@@ -131,6 +190,7 @@ def validate_design(product_dir: Path, design: Dict[str, Any] | None = None) -> 
             validate_product_reference(product_dir, expected_image)
         except ValueError as exc:
             errors.append(f"SKU {expected_id} real reference is invalid: {exc}")
+        errors.extend(creative_decision_errors(item))
 
     current_collection_id = str(source.get("collection_id") or "")
     if design.get("collection_id") != current_collection_id:
@@ -154,6 +214,13 @@ def validate_design(product_dir: Path, design: Dict[str, Any] | None = None) -> 
                 errors.append(f"detail source reference is invalid: {exc}")
         if item.get("layout_type") in DETERMINISTIC_LAYOUTS and item.get("operation") != "compose_from_real_images":
             errors.append(f"{item.get('slot')} must use deterministic real-image composition")
+        errors.extend(creative_decision_errors(item))
+    detail_compositions = {
+        str((item.get("art_direction") or {}).get("composition") or "").strip().casefold()
+        for item in details
+    }
+    if len(detail_compositions) < 6:
+        errors.append("eight shared details require at least six distinct product-specific compositions")
     used_layouts = {str(item.get("layout_type") or "") for item in [*mains, *details]}
     required_layouts = LAYOUT_TYPES if len(skus) > 1 else LAYOUT_TYPES - {"sku_comparison"}
     missing_layouts = sorted(required_layouts - used_layouts)

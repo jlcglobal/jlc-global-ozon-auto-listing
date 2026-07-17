@@ -46,22 +46,56 @@ def keyword(text: str, source_ref: str) -> dict:
 
 
 def image_role(slot: str, layout: str, refs: list[str], operation: str, sku_id: str | None = None) -> dict:
+    russian_text = ["ПОНЯТНАЯ ПОЛЬЗА", "ТОЧНЫЕ ХАРАКТЕРИСТИКИ"]
     value = {
         "slot": slot,
         "layout_type": layout,
         "commercial_purpose": "Помочь покупателю принять решение",
         "buyer_question": "Почему этот товар подходит покупателю?",
         "source_references": refs,
-        "russian_text": ["ПОНЯТНАЯ ПОЛЬЗА", "ТОЧНЫЕ ХАРАКТЕРИСТИКИ"],
+        "russian_text": russian_text,
         "prompt": (
             "Create a source-grounded 3:4 Ozon ecommerce visual with the real product dominant, "
             "a distinct buyer-decision purpose, natural scene, faithful proportions, exact SKU identity, "
-            "and reserved space for deterministic Russian text, badges, icons and callout modules. "
+            "and render the complete final Russian typography in this same image-model call. "
+            "Render these exact lines once, correctly and legibly: ПОНЯТНАЯ ПОЛЬЗА; ТОЧНЫЕ ХАРАКТЕРИСТИКИ. "
             "Never redraw the product or invent accessories."
         ),
         "operation": operation,
         "overlay_modules": ["product_name", "benefit_section", "icon_chips"],
         "must_preserve": ["shape", "color", "SKU differences"],
+        "design_rationale": f"This product-specific treatment makes {slot} answer its buyer question without using a reusable category template.",
+        "art_direction": {
+            "concept": f"Product-specific decision concept for {slot}",
+            "scene": f"Source-grounded real usage scene created only for {slot}",
+            "composition": f"Distinct asymmetrical composition created for slot {slot}",
+            "product_scale_percent": 55,
+            "product_position": "lower centre",
+            "background": "quiet real-life environment with natural depth",
+            "palette": ["#F6F1E8", "#202A30", "#55705E"],
+            "lighting": "soft natural directional light",
+            "typography": "clear Cyrillic hierarchy with restrained contrast",
+            "iconography": "minimal source-backed marks",
+            "information_hierarchy": ["product purpose", "verified benefit"],
+            "negative_space": "calm upper-left area reserved for exact copy",
+            "value_signal": "real context and evidence-led hierarchy create buyer trust",
+            "slot_differentiation": f"The composition and decision job are unique to {slot}",
+        },
+        "overlay_plan": [{
+            "role": "headline" if index == 0 else "benefit",
+            "text": text,
+            "box": [0.05, 0.06 + index * 0.16, 0.62, 0.12],
+            "font_size_ratio": 0.045 if index == 0 else 0.027,
+            "font_weight": "bold",
+            "text_color": "#202A30",
+            "accent_color": "#55705E",
+            "background_style": "none",
+            "background_color": "#F6F1E8",
+            "accent_style": "top_line" if index == 0 else "left_line",
+            "align": "left",
+            "vertical_align": "middle",
+            "priority": index + 1,
+        } for index, text in enumerate(russian_text)],
     }
     if sku_id:
         value["sku_id"] = sku_id
@@ -122,13 +156,28 @@ def build_design(product: Path, skus: list[dict]) -> dict:
             "difference_ru": f"Размер {index}", "specification": {"index": index},
             "source_image": item["local_image_path"],
         } for index, item in enumerate(skus, start=1)],
-        "visual_system": {"style": "product-specific"},
+        "visual_system": {
+            "style_name": "product-specific",
+            "value_impression": "Real context and visible evidence create practical value.",
+            "palette_logic": "Colors come from this product and its real use environment.",
+            "scene_logic": "Every image answers a different buyer question in a real scene.",
+            "typography_logic": "Exact Russian copy follows the current slot hierarchy.",
+            "consistency_rule": "SKU mains share a language while details use distinct compositions.",
+            "anti_template_rule": "No default header, badge, benefit rail, palette or reusable product layout.",
+        },
         "main_images": [image_role(
             f"main-{item['sku_id']}", "sku_main", [item["local_image_path"]],
             "edit_real_image", item["sku_id"],
         ) for item in skus],
         "detail_images": details,
         "forbidden": ["invented facts", "cross-product references", "generated output as input"],
+        "decision_trace": {
+            "steps": [{"name": name, "status": "completed", "evidence": [f"evidence for {name}"]} for name in (
+                "product_evidence", "buyer_analysis", "selling_point_ranking", "image_sequence",
+                "per_slot_art_direction", "prompt_completion", "pre_generation_validation",
+            )],
+            "compliance_status": "PASS", "violations": [], "attempt": 1,
+        },
         "processing": {
             "step": "ecommerce_design", "status": "completed", "model_mode": "connected_codex",
             "generated_at": "2026-07-16T12:10:00+08:00", "error": None,
@@ -160,6 +209,27 @@ class OzonEcommerceDesignerContractTests(unittest.TestCase):
             design["detail_images"][0]["source_references"] = [str(generated)]
             errors = validate_design(product, design)
             self.assertTrue(any("product reference" in item or "output" in item for item in errors), errors)
+
+    def test_missing_art_direction_or_broken_step_order_requires_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product, skus = make_product(Path(directory), "P000938", 2)
+            design = build_design(product, skus)
+            design["main_images"][0].pop("art_direction")
+            design["decision_trace"]["steps"][0], design["decision_trace"]["steps"][1] = (
+                design["decision_trace"]["steps"][1], design["decision_trace"]["steps"][0]
+            )
+            errors = validate_design(product, design)
+            self.assertTrue(any("art_direction" in item for item in errors), errors)
+            self.assertTrue(any("required order" in item for item in errors), errors)
+
+    def test_text_free_or_missing_russian_prompt_requires_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product, skus = make_product(Path(directory), "P000937", 2)
+            design = build_design(product, skus)
+            design["main_images"][0]["prompt"] = "Create a faithful text-free product scene. Generate no text."
+            errors = validate_design(product, design)
+            self.assertTrue(any("forbidden text-free" in item for item in errors), errors)
+            self.assertTrue(any("every exact Russian text" in item for item in errors), errors)
 
 
 if __name__ == "__main__":

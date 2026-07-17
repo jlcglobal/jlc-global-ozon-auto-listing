@@ -115,6 +115,27 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
     russian_text = item.get("russian_text", [])
     if not russian_text or any(str(value).strip().lower() == "unknown" for value in russian_text):
         raise ValueError(f"Image slot {slot} is blocked: Russian image text is unknown")
+    art_direction = item.get("art_direction") or {}
+    overlay_plan = item.get("overlay_plan") or []
+    if not art_direction or not overlay_plan:
+        raise ValueError(f"Image slot {slot} has no product-specific art direction; fixed-template fallback is forbidden")
+    slot_prompt = str(item.get("prompt") or item.get("prompt_brief") or "")
+    prompt_folded = slot_prompt.casefold()
+    forbidden_two_stage_markers = (
+        "text-free", "without lettering", "generate no text", "do not add text",
+        "no generated typography", "rendered later", "added after generation",
+        "无字底图", "后置叠字",
+    )
+    if any(marker in prompt_folded for marker in forbidden_two_stage_markers):
+        raise ValueError(f"Image slot {slot} requests a forbidden text-free or post-overlay workflow")
+    if any(str(text).strip() not in slot_prompt for text in russian_text):
+        raise ValueError(f"Image slot {slot} prompt must include every exact Russian text item")
+    if [str(value.get("text") or "").strip() for value in overlay_plan] != [str(value).strip() for value in russian_text]:
+        raise ValueError(f"Image slot {slot} overlay plan does not match its exact Russian text")
+    if not plan["generator_contract"].get("fixed_template_fallback_forbidden"):
+        raise ValueError("Image plan must explicitly forbid fixed-template fallback")
+    if plan["generator_contract"].get("overlay_strategy") != "single_pass_model_native_typography":
+        raise ValueError("Image plan must use single-pass model-native typography")
 
     image_type_contract = IMAGE_TYPE_REQUIREMENTS[item["image_type"]]
     operation = str(item.get("operation") or "needs_human_input")
@@ -134,12 +155,7 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
         "slot": slot,
         "aspect_ratio": "3:4",
         "style_family": profile["style_family"],
-        "style_direction": {
-            "tone": profile["tone"],
-            "color_direction": profile["color_direction"],
-            "composition_style": profile["composition_style"],
-            "text_style": profile["text_style"],
-        },
+        "style_direction": art_direction,
         "creative_direction": profile.get("creative_direction") or plan.get("creative_direction") or {},
         "ecommerce_creative_brief": load_json(product_dir / "output/ecommerce-creative-brief.json") if (product_dir / "output/ecommerce-creative-brief.json").is_file() else {},
         "learned_image_preferences": plan.get("learned_image_preferences") or [],
@@ -162,6 +178,9 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
             "selling_goal": item["selling_goal"],
             "scene": item["scene"],
             "russian_text": item["russian_text"],
+            "design_rationale": item["design_rationale"],
+            "art_direction": art_direction,
+            "overlay_plan": overlay_plan,
             "measurement_annotation": measurement_annotation,
             "style_direction": item["style_direction"],
             "visual_direction": item["visual_direction"],
@@ -184,6 +203,9 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
                 if operation == "compose_from_real_images"
                 else "built-in reference image editing"
             ),
+            "single_pass_required": True,
+            "post_generation_overlay_forbidden": True,
+            "fixed_template_fallback_forbidden": True,
             "forbidden_shortcuts": [
                 "plain white-background optimization only",
                 "fixed category template reused across different products",
@@ -216,11 +238,11 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
             if operation == "compose_from_real_images"
             else "Use the built-in image editor with the supplied real product references. Preserve product identity, color, structure, proportions, markings and accessories while creating the requested scene. "
         ) + (
-            "Reject low-resolution thumbnails instead of enlarging them. Generate the visual without lettering, then add only the exact verified Russian text. "
+            "Reject low-resolution thumbnails instead of enlarging them. In one built-in image-model call, create the final product scene and render every exact verified Russian text line from this slot's overlay_plan. Do not create a text-free intermediate and do not call any post-generation overlay script. "
             "Use natural negative space instead of a blank rounded rectangle, empty text box, placeholder card, bordered panel or decorative empty frame. "
-            "Reject Chinese text and seller watermarks, and never imply that all selectable SKU variants are included in one order."
+            "Do not add a default header, badge, benefit rail, palette or card layout. Reject missing, garbled, misspelled or unreadable Russian, Chinese text and seller watermarks, and never imply that all selectable SKU variants are included in one order. Product type, color, visible structure, accessory count and believable overall proportions must stay correct; pixel-for-pixel identity is not required."
         ),
-        "slot_prompt": item.get("prompt") or item.get("prompt_brief"),
+        "slot_prompt": slot_prompt,
     }
 
 

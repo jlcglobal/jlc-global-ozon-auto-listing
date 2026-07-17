@@ -39,7 +39,7 @@ Compare all selected SKU references once and record the confirmed differences in
 
 Follow each slot's `operation` in `image-plan.json`:
 
-- `compose_from_real_images`: required for SKU comparison, dimensions, color-accuracy, package-content and other exact-evidence images. Use deterministic crop, mask and layout from the real source images. AI must not redraw the product. Labels and Russian text may be added separately.
+- `compose_from_real_images`: required for SKU comparison, dimensions, color-accuracy, package-content and other exact-evidence images. Pass the real references to one built-in image composition/editing call that returns the final image with its exact Russian copy. AI must not redesign the product, and no later text pass is allowed.
 - `edit_real_image`: allowed for SKU main images and lifestyle/benefit/scene/detail images. Pass the actual local reference images to the built-in image editor. Preserve product identity, proportions, color, transparency, structure, openings, hardware, markings and accessory count. The scene may change; the product may not become a different model.
 - `needs_human_input`: stop that slot. Do not substitute another SKU, generic product or invented reference.
 
@@ -49,7 +49,7 @@ Generate exactly one SKU-specific main image for every selected SKU, then genera
 
 Generate all SKU main images before any detail image. Save each image immediately so it appears progressively in the workbench. The whole set targets five minutes; do not spend time producing alternative main candidates or a second full-set review.
 
-Every image has one different buyer-decision job. Do not reuse the same composition with only a background change. Main images must use a distinctive, truthful atmosphere and exactly one short, large Russian sales message. Detail images may use more copy and information. Plain white-background product images, generic posters and reusable product templates are forbidden.
+Every image has one different buyer-decision job. Do not reuse the same composition with only a background change. The number and hierarchy of main/detail messages are determined only by the current slot's validated `overlay_plan`; the generator must not force a one-line headline, top caption, capacity box or three-card benefit row. Plain white-background product images, generic posters and reusable product templates are forbidden.
 
 Use `references/manual-ozon-flow-2026-07-12/` only as the seller's ecommerce-quality baseline: a coherent Russian-language main-plus-detail set with a prominent product, real usage context, SKU choice, structure and purchase guidance. Never copy that reference product's facts into the current product. A technical preview, white-background cutout, isolated product rendering, or repeated card layout is not a completed ecommerce image.
 
@@ -59,7 +59,9 @@ The `size_spec` image reads only `output/cost-analysis.json -> product_dimension
 
 All final images are portrait 3:4 PNG, at least 900×1200. Reject Chinese text, seller watermarks, 1688 decorations, false parameters, false certification, invented accessories, wrong SKU colors and visibly deformed product structures.
 
-Use the exact `russian_text` from the plan. For text accuracy, generate the visual without lettering and then render the exact copy with `python3 scripts/image_text_overlay.py --input <final.png> --output <final.png> --text '<exact text>' --kind <main|detail>`. Reserve only natural negative space integrated into the scene. Never ask the image model to draw an empty typography container: blank rounded rectangles, empty text boxes, placeholder cards, bordered empty panels and decorative empty frames are forbidden. The overlay is adaptive to the image and must not use a fixed black panel. A non-size detail image with `russian_text=unknown` is blocked before generation.
+Use the exact `russian_text`, `art_direction` and `overlay_plan` from the plan. Every slot gets exactly one built-in image-model call that must produce the faithful product scene and the complete final Russian typography together. Include every `russian_text` line verbatim and in order in the prompt; translate the validated `overlay_plan` into model-native hierarchy, placement, color and treatment instructions for that same call. Never save, display or approve an intermediate text-free base. Never call `designer_directed_overlay.py`, the legacy generic overlay or the ecommerce layout renderer. Never ask the image model to draw an empty typography container: blank rounded rectangles, empty text boxes, placeholder cards, bordered empty panels and decorative empty frames are forbidden. A non-size detail image with `russian_text=unknown` or incomplete art direction is blocked before generation.
+
+Product acceptance is semantic: the final image must preserve the product type, color, visible structure, lid/handle/openings, accessory count, SKU differences and believable overall proportions. Pixel-for-pixel identity is not required. Missing, garbled, misspelled or unreadable Russian is a hard failure; retry only that slot once with a targeted correction.
 
 ## Per-image hard gate only
 

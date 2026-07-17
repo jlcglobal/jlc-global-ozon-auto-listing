@@ -8,7 +8,7 @@
     "schema_version", "product_id", "collection_id", "source_kind", "source_refs", "product_understanding",
     "buyer_strategy", "listing", "attribute_plan", "sku_plan",
     "visual_system", "main_images", "detail_images", "forbidden",
-    "processing"
+    "decision_trace", "processing"
   ],
   "properties": {
     "schema_version": {"const": "1.0.0"},
@@ -53,10 +53,24 @@
     },
     "attribute_plan": {"type": "array", "items": {"type": "object"}},
     "sku_plan": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"$ref": "#/$defs/sku"}},
-    "visual_system": {"type": "object"},
+    "visual_system": {"$ref": "#/$defs/visualSystem"},
     "main_images": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"$ref": "#/$defs/image"}},
     "detail_images": {"type": "array", "minItems": 8, "maxItems": 8, "items": {"$ref": "#/$defs/image"}},
     "forbidden": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "decision_trace": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["steps", "compliance_status", "violations", "attempt"],
+      "properties": {
+        "steps": {
+          "type": "array", "minItems": 7, "maxItems": 7,
+          "items": {"$ref": "#/$defs/decisionStep"}
+        },
+        "compliance_status": {"const": "PASS"},
+        "violations": {"type": "array", "maxItems": 0},
+        "attempt": {"type": "integer", "minimum": 1}
+      }
+    },
     "processing": {
       "type": "object", "additionalProperties": false,
       "required": ["step", "status", "model_mode", "generated_at", "error"],
@@ -106,7 +120,8 @@
       "required": [
         "slot", "layout_type", "commercial_purpose", "buyer_question",
         "source_references", "russian_text", "prompt", "operation",
-        "overlay_modules", "must_preserve"
+        "overlay_modules", "must_preserve", "design_rationale",
+        "art_direction", "overlay_plan"
       ],
       "properties": {
         "slot": {"type": "string", "minLength": 1},
@@ -119,7 +134,96 @@
         "prompt": {"type": "string", "minLength": 120},
         "operation": {"type": "string", "enum": ["edit_real_image", "compose_from_real_images"]},
         "overlay_modules": {"type": "array", "minItems": 2, "items": {"type": "string", "enum": ["product_name", "capacity_badge", "benefit_section", "icon_chips", "callout_arrows", "dimension_lines", "sku_labels", "purchase_notice"]}},
-        "must_preserve": {"type": "array", "minItems": 3, "items": {"type": "string"}}
+        "must_preserve": {"type": "array", "minItems": 3, "items": {"type": "string"}},
+        "design_rationale": {"type": "string", "minLength": 30},
+        "art_direction": {"$ref": "#/$defs/artDirection"},
+        "overlay_plan": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/$defs/overlayInstruction"}}
+      }
+    },
+    "visualSystem": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "style_name", "value_impression", "palette_logic", "scene_logic",
+        "typography_logic", "consistency_rule", "anti_template_rule"
+      ],
+      "properties": {
+        "style_name": {"type": "string", "minLength": 4},
+        "value_impression": {"type": "string", "minLength": 12},
+        "palette_logic": {"type": "string", "minLength": 12},
+        "scene_logic": {"type": "string", "minLength": 12},
+        "typography_logic": {"type": "string", "minLength": 12},
+        "consistency_rule": {"type": "string", "minLength": 12},
+        "anti_template_rule": {"type": "string", "minLength": 12}
+      }
+    },
+    "artDirection": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "concept", "scene", "composition", "product_scale_percent",
+        "product_position", "background", "palette", "lighting",
+        "typography", "iconography", "information_hierarchy",
+        "negative_space", "value_signal", "slot_differentiation"
+      ],
+      "properties": {
+        "concept": {"type": "string", "minLength": 12},
+        "scene": {"type": "string", "minLength": 12},
+        "composition": {"type": "string", "minLength": 12},
+        "product_scale_percent": {"type": "integer", "minimum": 20, "maximum": 85},
+        "product_position": {"type": "string", "minLength": 4},
+        "background": {"type": "string", "minLength": 8},
+        "palette": {
+          "type": "array", "minItems": 3, "maxItems": 5,
+          "items": {"type": "string", "minLength": 3}
+        },
+        "lighting": {"type": "string", "minLength": 8},
+        "typography": {"type": "string", "minLength": 8},
+        "iconography": {"type": "string", "minLength": 4},
+        "information_hierarchy": {
+          "type": "array", "minItems": 2, "maxItems": 6,
+          "items": {"type": "string", "minLength": 2}
+        },
+        "negative_space": {"type": "string", "minLength": 8},
+        "value_signal": {"type": "string", "minLength": 12},
+        "slot_differentiation": {"type": "string", "minLength": 12}
+      }
+    },
+    "overlayInstruction": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "role", "text", "box", "font_size_ratio", "font_weight",
+        "text_color", "accent_color", "background_style",
+        "background_color", "accent_style", "align", "vertical_align", "priority"
+      ],
+      "properties": {
+        "role": {"type": "string", "enum": ["headline", "subheadline", "sku_badge", "benefit", "specification", "callout", "notice"]},
+        "text": {"type": "string", "minLength": 2},
+        "box": {
+          "type": "array", "minItems": 4, "maxItems": 4,
+          "items": {"type": "number", "minimum": 0, "maximum": 1}
+        },
+        "font_size_ratio": {"type": "number", "minimum": 0.02, "maximum": 0.12},
+        "font_weight": {"type": "string", "enum": ["regular", "bold"]},
+        "text_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "accent_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "background_style": {"type": "string", "enum": ["none", "solid", "translucent", "pill", "circle"]},
+        "background_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
+        "accent_style": {"type": "string", "enum": ["none", "top_line", "left_line", "underline", "check_icon"]},
+        "align": {"type": "string", "enum": ["left", "center", "right"]},
+        "vertical_align": {"type": "string", "enum": ["top", "middle", "bottom"]},
+        "priority": {"type": "integer", "minimum": 1, "maximum": 6}
+      }
+    },
+    "decisionStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name", "status", "evidence"],
+      "properties": {
+        "name": {"type": "string", "minLength": 3},
+        "status": {"const": "completed"},
+        "evidence": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 2}}
       }
     }
   }

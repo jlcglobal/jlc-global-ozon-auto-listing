@@ -1,10 +1,10 @@
 #!/usr/bin/env python3
-"""Render deterministic Ozon ecommerce information layouts.
+"""Render legacy deterministic layouts for isolated P9 regression fixtures.
 
-The connected model owns the commercial plan and exact Russian copy.  An image
-editor owns a faithful scene/base visual.  This renderer owns only deterministic
-typography, badges, icons, arrows, dimensions and multi-SKU composition.  It
-never calls a model or Ozon and never invents product facts.
+This fixed renderer is intentionally disabled for formal production. Current
+products use one built-in image-model call for the faithful scene, product and
+exact Russian typography; no reusable template or post-generation overlay may
+own the layout.
 """
 from __future__ import annotations
 
@@ -29,12 +29,16 @@ ROOT = Path(__file__).resolve().parents[1]
 CANVAS = (1080, 1440)
 FONT_REGULAR = Path("/System/Library/Fonts/Supplemental/Arial.ttf")
 FONT_BOLD = Path("/System/Library/Fonts/Supplemental/Arial Bold.ttf")
-NAVY = (19, 55, 92, 255)
-BLUE = (42, 126, 201, 255)
+NAVY = (8, 31, 58, 255)
+BLUE = (0, 119, 255, 255)
 ICE = (229, 244, 252, 238)
 WHITE = (255, 255, 255, 245)
 GREEN = (51, 150, 115, 255)
 INK = (18, 34, 50, 255)
+AMBER = (255, 176, 0, 255)
+WARM_WHITE = (255, 250, 242, 238)
+CHARCOAL = (24, 30, 35, 255)
+COPPER = (184, 105, 43, 255)
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -68,7 +72,9 @@ def fit_cover(image: Image.Image, size: tuple[int, int] = CANVAS) -> Image.Image
 
 def soft_base(image: Image.Image) -> Image.Image:
     base = fit_cover(image)
-    return ImageEnhance.Color(ImageEnhance.Contrast(base).enhance(0.96)).enhance(0.92).convert("RGBA")
+    base = ImageEnhance.Contrast(base).enhance(1.08)
+    base = ImageEnhance.Color(base).enhance(1.03)
+    return base.convert("RGBA")
 
 
 def rounded(draw: ImageDraw.ImageDraw, box: tuple[int, int, int, int], fill: tuple[int, int, int, int], radius: int = 24, outline=None, width: int = 1) -> None:
@@ -84,37 +90,60 @@ def draw_lines(draw: ImageDraw.ImageDraw, lines: Sequence[str], xy: tuple[int, i
 
 
 def header(draw: ImageDraw.ImageDraw, text: str, eyebrow: str = "ОРГАНИЗАЦИЯ ХРАНЕНИЯ") -> None:
-    rounded(draw, (48, 44, 1032, 274), WHITE, 30)
-    draw.rounded_rectangle((76, 72, 188, 82), radius=5, fill=BLUE)
-    draw.text((76, 96), eyebrow, font=font(25, True), fill=BLUE)
-    face = font(57, True)
-    lines = wrap(draw, text, face, 880)[:2]
-    draw_lines(draw, lines, (76, 139), face, INK, 5)
+    # A quiet editorial masthead keeps the product looking premium.  Contrast
+    # comes from typography and whitespace instead of dashboard-like cards.
+    draw.rectangle((0, 0, 1080, 304), fill=WARM_WHITE)
+    draw.rounded_rectangle((58, 54, 154, 61), radius=3, fill=COPPER)
+    draw.text((58, 78), eyebrow, font=font(22, True), fill=COPPER)
+    face = font(49, True)
+    lines = wrap(draw, text, face, 680)[:2]
+    draw_lines(draw, lines, (56, 119), face, CHARCOAL, 2)
 
 
-def capacity_badge(draw: ImageDraw.ImageDraw, text: str, xy: tuple[int, int] = (746, 305)) -> None:
-    rounded(draw, (xy[0], xy[1], xy[0] + 286, xy[1] + 112), BLUE, 32)
-    draw.text((xy[0] + 30, xy[1] + 22), text, font=font(55, True), fill=(255, 255, 255, 255))
+def capacity_badge(draw: ImageDraw.ImageDraw, text: str, xy: tuple[int, int] = (812, 92)) -> None:
+    rounded(draw, (xy[0], xy[1], xy[0] + 208, xy[1] + 104), AMBER, 22)
+    face = font(51, True)
+    bbox = draw.textbbox((0, 0), text, font=face)
+    text_width = bbox[2] - bbox[0]
+    draw.text((xy[0] + (208 - text_width) // 2, xy[1] + 23), text, font=face, fill=CHARCOAL)
+
+
+def specification_badge(draw: ImageDraw.ImageDraw, text: str, xy: tuple[int, int] = (746, 216)) -> None:
+    """Place a verified SKU specification below the capacity badge."""
+    rounded(draw, (xy[0], xy[1], 1020, xy[1] + 60), (255, 255, 255, 205), 16, outline=COPPER, width=2)
+    face = font(24, True)
+    lines = wrap(draw, text, face, 238)[:1]
+    draw_lines(draw, lines, (xy[0] + 19, xy[1] + 17), face, CHARCOAL, 0)
 
 
 def benefit_chips(draw: ImageDraw.ImageDraw, values: Sequence[str]) -> None:
     values = [value for value in values if value][:3]
     if not values:
         return
-    gap = 14
+    draw.rectangle((0, 1236, 1080, 1440), fill=WARM_WHITE)
+    draw.rectangle((0, 1236, 1080, 1244), fill=AMBER)
     total_width = 984
-    chip_width = (total_width - gap * (len(values) - 1)) // len(values)
+    chip_width = total_width // len(values)
     x = 48
-    y = 1242
-    icons = ["✓", "↗", "◉"]
+    y = 1244
     for index, value in enumerate(values):
-        rounded(draw, (x, y, x + chip_width, 1394), WHITE, 26)
-        rounded(draw, (x + 18, y + 24, x + 70, y + 76), BLUE if index != 1 else GREEN, 16)
-        draw.text((x + 31, y + 28), icons[index], font=font(28, True), fill=(255, 255, 255, 255))
-        face = font(27, True)
-        lines = wrap(draw, value, face, chip_width - 105)[:2]
-        draw_lines(draw, lines, (x + 84, y + 25), face, INK, 6)
-        x += chip_width + gap
+        if index:
+            draw.line((x, y + 26, x, 1410), fill=(184, 105, 43, 80), width=2)
+        rounded(draw, (x + 18, y + 34, x + 64, y + 80), CHARCOAL, 23)
+        # Draw the tick as geometry instead of a font glyph so Cyrillic-only
+        # system fonts can never render it as a missing-character square.
+        draw.line((x + 29, y + 57, x + 38, y + 67), fill=AMBER, width=4)
+        draw.line((x + 38, y + 67, x + 54, y + 46), fill=AMBER, width=4)
+        face_size = 25
+        while True:
+            face = font(face_size, True)
+            lines = wrap(draw, value, face, chip_width - 94)
+            if len(lines) <= 3 or face_size <= 20:
+                break
+            face_size -= 1
+        lines = lines[:3]
+        draw_lines(draw, lines, (x + 80, y + 35), face, CHARCOAL, 6)
+        x += chip_width
 
 
 def callout(draw: ImageDraw.ImageDraw, anchor: tuple[int, int], box: tuple[int, int, int, int], title: str, value: str = "") -> None:
@@ -201,7 +230,9 @@ def render_layout(
     header(draw, title, eyebrow)
     if layout == "sku_main":
         capacity_badge(draw, text[1] if len(text) > 1 else "ВЫБЕРИТЕ ОБЪЁМ")
-        benefit_chips(draw, text[2:] or ["ПРОЗРАЧНЫЙ КОРПУС", "КРЫШКА И РУЧКА"])
+        if len(text) > 2:
+            specification_badge(draw, text[2])
+        benefit_chips(draw, text[3:] or ["ПРОЗРАЧНЫЙ КОРПУС", "КРЫШКА И РУЧКА", "1 ШТ."])
     elif layout == "structure_callout":
         callout(draw, (390, 600), (48, 925, 470, 1065), text[1] if len(text) > 1 else "ПРОЗРАЧНЫЙ КОРПУС", text[2] if len(text) > 2 else "Содержимое видно сразу")
         callout(draw, (705, 505), (610, 1010, 1032, 1150), text[3] if len(text) > 3 else "КРЫШКА", text[4] if len(text) > 4 else "Для аккуратного хранения")
@@ -247,14 +278,39 @@ def main() -> int:
     parser.add_argument("--slot", required=True)
     parser.add_argument("--base", required=True, help="Faithful AI scene/base or real-image composition")
     parser.add_argument("--output", required=True)
+    parser.add_argument("--manual-test", action="store_true", help="Render an isolated P9 manual-test fixture")
     args = parser.parse_args()
     product_dir = Path(args.product_dir).resolve()
-    validate_formal_product_input(product_dir)
-    project_root = project_root_for(product_dir)
-    design = load_json(product_dir / "output/ozon-ecommerce-design.json")
+    if args.manual_test:
+        if product_dir.parent != (ROOT / "test-data/manual-output").resolve():
+            raise ValueError("manual-test renderer requires test-data/manual-output/P9xxxxx")
+        if not product_dir.name.startswith("P9"):
+            raise ValueError("manual-test renderer requires a reserved P9xxxxx identity")
+        manual_input = ROOT / "test-data/manual-input" / product_dir.name
+        design = load_json(product_dir / "ozon-ecommerce-design.json")
+        source = load_json(manual_input / "source.json")
+        if design.get("source_kind") != "manual_test" or source.get("source_kind") != "manual_test":
+            raise ValueError("manual-test design and source must both use source_kind=manual_test")
+        if design.get("collection_id") != source.get("collection_id"):
+            raise ValueError("manual-test design collection does not match source")
+        reference_root = manual_input.resolve()
+    else:
+        raise ValueError(
+            "fixed ecommerce layout renderer is disabled for formal production; "
+            "use single-pass built-in generation with the validated overlay_plan"
+        )
     role = find_role(design, args.slot)
-    refs = [Image.open(validate_product_reference(product_dir, value)).convert("RGB") for value in role.get("source_references") or []]
-    source = load_json(product_dir / "input/source.json")
+    refs = []
+    for value in role.get("source_references") or []:
+        if args.manual_test:
+            candidate = (ROOT / value).resolve()
+            if reference_root not in candidate.parents or candidate.parent.name != "sku-images":
+                raise ValueError(f"manual-test product reference escapes its SKU input: {value}")
+            if not candidate.is_file():
+                raise ValueError(f"manual-test product reference is missing: {value}")
+        else:
+            candidate = validate_product_reference(product_dir, value)
+        refs.append(Image.open(candidate).convert("RGB"))
     sku_by_id = {str(item.get("sku_id")): item for item in source.get("skus") or []}
     labels: List[str] = []
     specs: List[str] = []
@@ -269,7 +325,13 @@ def main() -> int:
             )
     base = Image.open(Path(args.base)).convert("RGB")
     result = render_layout(role, base, refs, labels, specs)
-    output = validate_generated_output(product_dir, args.output)
+    if args.manual_test:
+        output = Path(args.output).resolve()
+        output_root = (product_dir / "generated-images").resolve()
+        if output_root not in output.parents:
+            raise ValueError("manual-test output must stay below its generated-images directory")
+    else:
+        output = validate_generated_output(product_dir, args.output)
     save_atomic(result, output)
     print(json.dumps({
         "slot": args.slot, "layout_type": role.get("layout_type"),
@@ -277,7 +339,7 @@ def main() -> int:
         # The faithful base must already have been produced by the requested
         # operation.  This process adds only deterministic ecommerce modules.
         "executed_operation": role.get("operation"),
-        "overlay_operation": "deterministic_ecommerce_layout",
+        "overlay_operation": "legacy_manual_test_layout_only",
         "output": str(output), "model_calls": 0, "ozon_calls": 0,
     }, ensure_ascii=False))
     return 0

@@ -29,6 +29,7 @@ STEP_OUTPUTS = {
     "offer_exists_check": ["output/offer-id-precheck.json"],
     "upload_feasibility": ["output/upload-feasibility.json"],
     "product_positioning": ["output/product-positioning.json"],
+    "ecommerce_design": ["output/ozon-ecommerce-design.json", "output/ecommerce-creative-brief.json"],
     "russian_copy": [
         "output/copy-ru.json", "output/marketplace-content-input.json",
         "output/keyword-research-ru.json",
@@ -57,10 +58,16 @@ STEP_INPUTS = {
         "output/ozon-category-attributes.json", "output/ozon-attributes.json", "output/offer-id-precheck.json",
     ],
     "product_positioning": ["output/product-analysis.json"],
+    "ecommerce_design": [
+        "output/product-analysis.json", "output/product-positioning.json",
+        "output/ozon-category.json", "output/ozon-category-attributes.json",
+        "output/cost-analysis.json", "output/pricing-result.json",
+        "output/platform-grouping-result.json", "input/visual-preference.json",
+    ],
     "russian_copy": ["output/product-analysis.json", "output/product-positioning.json"],
     "style_selector": ["output/product-analysis.json", "output/product-positioning.json", "input/visual-preference.json"],
     "image_plan": [
-        "output/product-analysis.json", "output/product-positioning.json", "output/style-profile.json",
+        "output/ozon-ecommerce-design.json", "output/product-analysis.json", "output/product-positioning.json", "output/style-profile.json",
         "output/cost-analysis.json", "output/title-ru.json", "output/description-ru.json",
         "output/ozon-tags.json", "output/ozon-attributes-final.json", "output/pricing-result.json",
         "output/platform-grouping-result.json", "input/visual-preference.json",
@@ -100,13 +107,20 @@ ROOT_RULE_INPUTS = {
     "variant_rules": ["ozon-adapter/metadata/live-aspect-rules"],
     "measurements": ["pricing-engine/pricing_rules.json", "pricing-engine/shipping_rules.xlsx"],
     "style_selector": ["rules/style_selector_rules.json", "rules/image_structure_rules.json"],
+    "ecommerce_design": [
+        ".agents/skills/ozon-ecommerce-designer/SKILL.md",
+        ".agents/skills/ozon-ecommerce-designer/references/product-specific-image-standard.md",
+        "scripts/ozon_ecommerce_designer_contract.py",
+        "templates/ozon-ecommerce-design.schema.json",
+    ],
     "image_plan": [
         "rules/image_structure_rules.json", "scripts/image_planner.py",
         "templates/image-plan.schema.json", "config/pipeline-settings.json",
     ],
     "image_generation": [
         ".agents/skills/image-generator/SKILL.md", "scripts/image_generator_contract.py",
-        "scripts/locked_product_compositor.py", "scripts/image_slot_scheduler.py",
+        "scripts/locked_product_compositor.py",
+        "scripts/image_slot_scheduler.py",
         "config/pipeline-settings.json", *EXTERNAL_IMAGE_ADVISORY_SKILLS,
     ],
     "image_qc": ["rules/image_qc_rules.json", "scripts/image_qc.py"],

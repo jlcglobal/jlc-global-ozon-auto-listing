@@ -507,14 +507,10 @@ def build_image_plan(
     brief_roles = list(design.get("detail_images") or [])
     design_mains = {str(item["sku_id"]): item for item in design.get("main_images") or []}
 
-    creative = style_profile.get("creative_direction") or {
-        "product_visual_thesis": style_profile.get("composition_style", "unknown"),
-        "click_hook": positioning.get("core_sales_angle", "unknown"),
-        "hero_scene": positioning.get("recommended_visual_direction", "unknown"),
-        "typography": style_profile.get("text_style", "unknown"),
-        "consistency_rule": "整套视觉语气一致，每张图回答不同购买问题。",
-        "anti_template_rule": "不得使用普通白底或固定类目模板。",
-    }
+    # The connected ecommerce designer is the only creative decision-maker.
+    # style-profile remains a compatibility classification and must never
+    # replace the product-specific visual system with a category default.
+    creative = design["visual_system"]
 
     detail_role_index = 0
     for image_type in expected_structure:
@@ -538,6 +534,14 @@ def build_image_plan(
             role_design = design_mains.get(str(source_sku_id)) if main_spec else brief_role
             if not role_design:
                 raise ValueError(f"unified ecommerce design has no image role for {source_sku_id or image_type}")
+            art_direction = role_design.get("art_direction") or {}
+            overlay_plan = role_design.get("overlay_plan") or []
+            role_prompt = str(role_design.get("prompt") or "").strip()
+            if not art_direction or not overlay_plan or not role_prompt:
+                raise ValueError(
+                    f"unified ecommerce design has incomplete art direction for {role_design.get('slot') or image_type}; "
+                    "fixed-template fallback is forbidden"
+                )
             # A disclaimer is a commercial detail role, not a ninth image.
             # Keep it in detail_images so the upload gate always sees exactly
             # eight shared details, while preserving its semantic image_type.
@@ -605,8 +609,6 @@ def build_image_plan(
             )
             if status != "needs_review":
                 operation = str(role_design.get("operation") or operation)
-            slot_hint = str(slot_hints.get(slot) or "").strip()
-            preference_direction = "；".join(value for value in (set_hint, slot_hint) if value)
             variant_prompt = (
                 f"This exact SKU is {main_spec['source_sku_id']} / {main_spec['variant_value']}."
                 if main_spec else
@@ -635,26 +637,26 @@ def build_image_plan(
             "fallback_reason": fallback_reason,
             "layout_type": str(role_design.get("layout_type") or "unknown"),
             "overlay_modules": list(role_design.get("overlay_modules") or []),
+            "design_rationale": str(role_design.get("design_rationale") or ""),
+            "art_direction": art_direction,
+            "overlay_plan": overlay_plan,
             "purchase_reason": str(role_design.get("commercial_purpose") or "").strip() or purchase_reason_for(image_type, positioning, objections),
-            "visual_goal": f"{contract['selling_goal']}；服务于核心销售角度：{positioning.get('core_sales_angle', 'unknown')}",
-            "scene_description": "；".join([
-                positioning.get("recommended_visual_direction", "unknown"),
-                *style_profile["usage_scene"],
-            ]),
+            "visual_goal": str(art_direction.get("concept") or ""),
+            "scene_description": str(art_direction.get("scene") or ""),
             "style_direction": "；".join([
-                str(creative.get("product_visual_thesis") or "unknown"),
-                str(creative.get("consistency_rule") or "unknown"),
+                " / ".join(str(value) for value in art_direction.get("palette") or []),
+                str(art_direction.get("lighting") or ""),
+                str(art_direction.get("typography") or ""),
             ]),
             "purpose": str(role_design.get("commercial_purpose") or "").strip() or contract["selling_goal"],
             "buyer_question": str(role_design.get("buyer_question") or "").strip() or contract["buyer_question"],
             "selling_goal": contract["selling_goal"],
-            "scene": "；".join(style_profile["usage_scene"]),
+            "scene": str(art_direction.get("scene") or ""),
             "russian_text": russian_text,
             "visual_direction": "；".join([
-                str(creative.get("click_hook") if image_type == "main" else creative.get("hero_scene") or "unknown"),
-                str(creative.get("typography") or "unknown"),
-                str(creative.get("anti_template_rule") or "unknown"),
-                f"用户风格意见：{preference_direction}" if preference_direction else "",
+                str(art_direction.get("composition") or ""),
+                str(art_direction.get("value_signal") or ""),
+                str(art_direction.get("slot_differentiation") or ""),
             ]),
             "reference_product_images": item_reference_paths,
             "reference_images": item_reference_paths,
@@ -665,26 +667,9 @@ def build_image_plan(
             "variant_kind": main_spec["variant_kind"] if main_spec else "not_applicable",
             "variant_value": main_spec["variant_value"] if main_spec else "shared",
             "operation": operation,
-            "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-            "prompt": str(role_design.get("prompt") or "") or (
-                f"Create a polished, product-specific 3:4 Ozon ecommerce {image_type} visual from the final listing data. "
-                f"Final Russian listing title: {listing_title}. "
-                f"This image must answer one buyer question: {role_design.get('buyer_question') or contract['buyer_question']}. "
-                f"Its single decision job is: {contract['selling_goal']}. "
-                f"The exact Russian marketing message that the visual must prove is: {' / '.join(russian_text)}. "
-                f"Verified listing facts available for visual evidence: {listing_facts}. "
-                f"{variant_prompt} Visual thesis: {creative.get('product_visual_thesis', 'unknown')}. "
-                + (
-                    "Use deterministic crop, mask and layout from the real reference images; AI must not redraw any product. "
-                    if operation == "compose_from_real_images"
-                    else "Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. "
-                )
-                + "Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. "
-                + "Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. "
-                + "Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together."
-                + (f" User preference: {preference_direction}." if preference_direction else "")
-            ),
-            "prompt_brief": f"3:4 product-specific visual · {role_design.get('slot') or image_type} · {creative.get('click_hook', 'unknown')}",
+            "source_text_policy": "single_pass_scene_product_exact_russian_and_reject_all_chinese_text_or_seller_watermarks",
+            "prompt": role_prompt,
+            "prompt_brief": f"3:4 product-specific visual · {role_design.get('slot') or image_type} · {art_direction.get('concept')}",
             "output_path": path,
             "status": status,
             "failure_reason": failure_reason,
@@ -760,7 +745,7 @@ def build_image_plan(
             "image_slot_concurrency": max(1, min(int(pipeline_settings.get("image_slot_concurrency", 3)), 4)),
             "image_qc_same_execution": bool(pipeline_settings.get("merge_image_generation_and_qc", True)),
             "product_pixel_lock_required": False,
-            "composition_tool": "ecommerce_layout_renderer",
+            "composition_tool": "built_in_image_editor_single_pass",
             "source_preflight_ref": f"products/{product_id}/output/image-source-preflight.json",
             "generation_strategy": "product_specific_visual_story",
             "deterministic_image_types": ["comparison", "size_spec", "detail", "disclaimer"],
@@ -771,12 +756,14 @@ def build_image_plan(
             "main_images_first": True,
             "target_total_seconds": 300,
             "quality_gate": "hard_failures_only",
-            "typography_strategy": "adaptive_exact_russian_without_fixed_box",
+            "typography_strategy": "model_native_exact_russian_single_pass",
             "prompt_first_required": True,
             "empty_placeholder_panels_forbidden": True,
             "exact_shared_detail_count": 8,
             "creative_brief_required": True,
             "ecommerce_design_required": True,
+            "fixed_template_fallback_forbidden": True,
+            "overlay_strategy": "single_pass_model_native_typography",
         },
         "creative_direction": creative,
         "learned_image_preferences": style_profile.get("learned_image_preferences") or [],

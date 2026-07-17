@@ -1,32 +1,25 @@
 {
   "schema_version": "1.0.0",
   "product_id": "P900002",
+  "collection_id": "MANUAL-P900002-20260716",
+  "source_kind": "manual_test",
   "source_refs": [
     "test-data/manual-input/P900002/source.json",
+    "test-data/manual-input/P900002/category-selection.json",
     "test-data/manual-output/P900002/product-analysis.json",
     "test-data/manual-output/P900002/product-positioning.json",
-    "test-data/manual-output/P900002/style-profile.json",
-    "test-data/manual-output/P900002/ecommerce-creative-brief.json",
-    "test-data/manual-output/P900002/title-ru.json",
-    "test-data/manual-output/P900002/description-ru.json",
-    "test-data/manual-output/P900002/ozon-tags.json",
-    "test-data/manual-output/P900002/ozon-attributes-final.json",
-    "test-data/manual-output/P900002/platform-grouping-result.json"
+    "test-data/manual-input/P900002/sku-images/sku-3l.png",
+    "test-data/manual-input/P900002/sku-images/sku-5l.png",
+    "test-data/manual-input/P900002/sku-images/sku-6l.png"
   ],
   "style_profile_ref": "test-data/manual-output/P900002/style-profile.json",
   "creative_brief_ref": "test-data/manual-output/P900002/ecommerce-creative-brief.json",
+  "ecommerce_design_ref": "test-data/manual-output/P900002/ozon-ecommerce-design.json",
   "style_family": "fresh_fridge_organization",
-  "image_structure_rule_ref": "dynamic:product-specific-buyer-decision-sequence",
+  "image_structure_rule_ref": "manual-test:N-sku-mains-plus-8-shared-details",
   "image_set_structure": [
-    "main",
-    "benefit",
-    "detail",
-    "feature",
-    "scene",
-    "usage",
-    "problem_solution",
-    "comparison",
-    "disclaimer"
+    "one_main_per_sku",
+    "exactly_eight_shared_details"
   ],
   "variant_image_strategy": {
     "mode": "sku_specific_main_shared_details",
@@ -37,228 +30,198 @@
     "shared_detail_count": 8,
     "shared_disclaimer_count": 0
   },
-  "buyer_objections": [
-    "unknown"
-  ],
+  "creative_direction": {
+    "style_name": "Премиальная редакционная система для Ozon",
+    "palette": [
+      "тёплый молочно-белый",
+      "глубокий графитовый",
+      "сдержанный медный",
+      "точечный янтарный акцент"
+    ],
+    "lighting": "чистый естественный свет холодильника, прозрачный товар отделён от фона без искусственного свечения",
+    "composition": "крупный реальный товар, спокойная тёплая зона заголовка, компактный акцент объёма, точный размер и единая нижняя информационная полоса вместо карточек интерфейса",
+    "mood": "дорого, чисто, уверенно и заметно в ленте Ozon без визуального шума",
+    "typography": "крупная графитовая кириллица на тёплом светлом поле, медные и янтарные акценты, аккуратная журнальная иерархия без ощущения ERP-интерфейса",
+    "shared_rule": "Детальные изображения объясняют только общие свойства всех трёх вариантов; различия показываются один раз в сравнении SKU.",
+    "value_impression": "Чистый организованный холодильник и прозрачный товар должны выглядеть практично, аккуратно и дороже обычного контейнера.",
+    "palette_logic": "Молочно-белая база поддерживает чистоту холодильника, графит создаёт читаемость, а медный и янтарный используются только как точечные акценты.",
+    "scene_logic": "Каждый кадр показывает правдоподобное хранение в холодильнике или доказательную крупную деталь реального органайзера.",
+    "typography_logic": "Крупная кириллица сообщает назначение, компактные спецификации помогают выбрать SKU, а короткие подписи объясняют видимые преимущества.",
+    "consistency_rule": "Все SKU используют один визуальный язык, а восемь деталей отвечают на разные вопросы и меняют композицию по коммерческой задаче.",
+    "anti_template_rule": "Запрещены одинаковый заголовочный блок, три карточки преимуществ и одна палитра для разных товаров; решения относятся только к этому органайзеру."
+  },
   "listing_context": {
     "ready": true,
     "offline_acceptance_fixture": true,
-    "pricing_status": "not_required_for_offline_image_acceptance",
-    "source_refs": [
-      "test-data/manual-output/P900002/title-ru.json",
-      "test-data/manual-output/P900002/description-ru.json",
-      "test-data/manual-output/P900002/ozon-tags.json",
-      "test-data/manual-output/P900002/ozon-attributes-final.json",
-      "test-data/manual-output/P900002/platform-grouping-result.json"
-    ],
     "title_ru": "Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л",
-    "description_summary_ru": "Прозрачный органайзер помогает распределить продукты по зонам холодильника и сразу видеть содержимое. Корпус, крышка и передняя ручка образуют удобный формат для повседневного хранения.\n\nВыберите объём под свои задачи: компактные 3 л для небольших порций, 5 л для овощей и упаковок среднего размера или 6 л для более объёмных продуктов. Точные внешние размеры каждого варианта указаны в карточке и на сравнительном изображении.\n\nЗакрытая крышка помогает уменьшить смешивание запахов между продуктами. Перед покупкой измерьте свободное место на полке холодильника и выберите подходящий размер. В компл",
+    "description_ru": "Прозрачный органайзер с крышкой и передней ручкой помогает аккуратно распределить продукты по зонам холодильника. Через стенки хорошо видно содержимое, поэтому нужные овощи, фрукты или закрытые упаковки проще найти без лишних поисков.\n\nТри варианта отличаются объёмом и внешними размерами. Компактный органайзер 3 л подходит для небольших порций; удлинённый вариант 5 л — для овощей и закрытых упаковок; более высокий вариант 6 л — для объёмных продуктов. Примеры наполнения на изображениях не входят в комплект.\n\nПрозрачная крышка закрывает содержимое и помогает уменьшить взаимное влияние запахов. Передняя ручка упрощает извлечение органайзера с полки. Все варианты изготовлены из полипропилена PP5 и имеют одинаковую конструкцию: прозрачный корпус, прозрачную крышку и одну переднюю ручку.\n\nВыберите объём 3, 5 или 6 л и сравните точные внешние размеры со свободным местом в холодильнике. Поставьте органайзер на ровную полку, поместите продукты внутрь, закройте крышку и выдвигайте контейнер за предусмотренную ручку.\n\nВ комплект входит один органайзер выбранного объёма. Перед покупкой измерьте ширину, глубину и высоту полки. Данные о температурном диапазоне, гарантии, сертификации, весе товара и упаковки не подтверждены и поэтому не заявляются.",
     "tags": [
-      "#органайзер_для_холодильника",
-      "#контейнер_для_холодильника",
+      "#органайзер_холодильника",
+      "#контейнер_холодильника",
       "#контейнер_для_продуктов",
       "#прозрачный_контейнер",
       "#контейнер_с_крышкой",
       "#контейнер_с_ручкой",
       "#ящик_для_холодильника",
-      "#бокс_для_хранения_продуктов",
-      "#контейнер_3_л",
-      "#контейнер_5_л",
-      "#контейнер_6_л",
+      "#хранение_продуктов",
+      "#порядок_в_холодильнике",
+      "#организация_хранения",
+      "#кухонный_органайзер",
+      "#контейнер_3л",
+      "#контейнер_5л",
+      "#контейнер_6л",
+      "#органайзер_3л",
+      "#органайзер_5л",
+      "#органайзер_6л",
       "#хранение_овощей",
       "#хранение_фруктов",
-      "#организация_холодильника",
-      "#контейнер_для_кухни",
-      "#пищевой_контейнер",
-      "#контейнер_для_овощей",
-      "#контейнер_для_фруктов",
-      "#контейнер_для_круп",
-      "#контейнер_для_упаковок",
-      "#прозрачный_органайзер",
-      "#органайзер_с_крышкой",
+      "#хранение_упаковок",
+      "#прозрачный_ящик",
+      "#ящик_с_крышкой",
       "#ящик_с_ручкой",
-      "#порядок_в_холодильнике",
-      "#система_хранения_продуктов",
+      "#органайзер_для_кухни",
       "#контейнер_прямоугольный",
-      "#кухонный_органайзер",
-      "#органайзер_3_литра",
-      "#органайзер_5_литров",
-      "#органайзер_6_литров"
+      "#система_хранения",
+      "#полка_холодильника",
+      "#контейнер_пп5",
+      "#ёмкость_для_продуктов",
+      "#выбор_объёма"
     ],
     "attributes": [
       {
-        "name": "Бренд",
-        "value": "Нет бренда",
-        "source": "project_rule",
-        "confidence": null
-      },
-      {
-        "name": "Тип",
+        "attribute_name": "Тип",
         "value": "Органайзер для холодильника",
-        "source": "locked_category",
-        "confidence": null
+        "value_kind": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/category-selection.json"
+        ]
       },
       {
-        "name": "Материал",
-        "value": "полипропилен (PP5)",
-        "source": "user_confirmed",
-        "confidence": null
+        "attribute_name": "Материал",
+        "value": "полипропилен PP5",
+        "value_kind": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/product_attributes"
+        ]
       },
       {
-        "name": "Цвет",
+        "attribute_name": "Цвет",
         "value": "прозрачный",
-        "source": "user_confirmed",
-        "confidence": null
+        "value_kind": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/product_attributes"
+        ]
       },
       {
-        "name": "Объем",
-        "value": [
-          "3 л",
-          "5 л",
-          "6 л"
-        ],
-        "source": "user_confirmed_skus",
-        "confidence": null
-      },
-      {
-        "name": "Форма",
-        "value": "прямоугольная",
-        "source": "visible_inference",
-        "confidence": null
-      },
-      {
-        "name": "Количество в комплекте",
+        "attribute_name": "Количество в комплекте",
         "value": 1,
-        "source": "user_confirmed",
-        "confidence": null
+        "value_kind": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/product_attributes"
+        ]
       },
       {
-        "name": "Особенности",
-        "value": [
-          "с крышкой",
-          "с ручкой"
-        ],
-        "source": "user_confirmed",
-        "confidence": null
+        "attribute_name": "Бренд",
+        "value": "unknown",
+        "value_kind": "unknown_high_risk",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/unknowns"
+        ]
       },
       {
-        "name": "Назначение",
-        "value": "хранение продуктов в холодильнике",
-        "source": "user_confirmed",
-        "confidence": null
-      },
-      {
-        "name": "Страна-изготовитель",
-        "value": "Китай",
-        "source": "project_rule",
-        "confidence": null
-      },
-      {
-        "name": "Комплектация",
-        "value": "органайзер выбранного объёма — 1 шт.",
-        "source": "user_confirmed",
-        "confidence": null
-      },
-      {
-        "name": "Вид выпуска товара",
-        "value": "фабричное производство",
-        "source": "source_platform",
-        "confidence": null
+        "attribute_name": "Сертификация, гарантия и таможенный код",
+        "value": "unknown",
+        "value_kind": "unknown_high_risk",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/unknowns"
+        ]
       }
     ],
     "sku_variants": [
       {
         "sku_id": "fridge-organizer-3l",
-        "name": "3L小号款",
-        "option_values": [
-          {
-            "name_cn": "容量",
-            "value_cn": "3L",
-            "source": "user_confirmed"
+        "name_ru": "Органайзер для холодильника, 3 л",
+        "difference_ru": "объём 3 л, размер 14,5 × 14,5 × 12 см",
+        "specification": {
+          "capacity_ml": 3000,
+          "external_dimensions_cm": {
+            "length": 14.5,
+            "width": 14.5,
+            "height": 12
           },
-          {
-            "name_cn": "颜色",
-            "value_cn": "透明",
-            "source": "user_confirmed"
-          }
-        ],
-        "selling_price_rub": null
+          "color": "прозрачный",
+          "material": "PP5"
+        },
+        "source_image": "test-data/manual-input/P900002/sku-images/sku-3l.png"
       },
       {
         "sku_id": "fridge-organizer-5l",
-        "name": "5L中号款",
-        "option_values": [
-          {
-            "name_cn": "容量",
-            "value_cn": "5L",
-            "source": "user_confirmed"
+        "name_ru": "Органайзер для холодильника, 5 л",
+        "difference_ru": "объём 5 л, размер 29 × 15,5 × 12 см",
+        "specification": {
+          "capacity_ml": 5000,
+          "external_dimensions_cm": {
+            "length": 29,
+            "width": 15.5,
+            "height": 12
           },
-          {
-            "name_cn": "颜色",
-            "value_cn": "透明",
-            "source": "user_confirmed"
-          }
-        ],
-        "selling_price_rub": null
+          "color": "прозрачный",
+          "material": "PP5"
+        },
+        "source_image": "test-data/manual-input/P900002/sku-images/sku-5l.png"
       },
       {
         "sku_id": "fridge-organizer-6l",
-        "name": "6L大号款",
-        "option_values": [
-          {
-            "name_cn": "容量",
-            "value_cn": "6L",
-            "source": "user_confirmed"
+        "name_ru": "Органайзер для холодильника, 6 л",
+        "difference_ru": "объём 6 л, размер 29 × 15,5 × 15,5 см",
+        "specification": {
+          "capacity_ml": 6000,
+          "external_dimensions_cm": {
+            "length": 29,
+            "width": 15.5,
+            "height": 15.5
           },
-          {
-            "name_cn": "颜色",
-            "value_cn": "透明",
-            "source": "user_confirmed"
-          }
-        ],
-        "selling_price_rub": null
+          "color": "прозрачный",
+          "material": "PP5"
+        },
+        "source_image": "test-data/manual-input/P900002/sku-images/sku-6l.png"
       }
     ],
-    "variant_decision": "size_or_measurement",
-    "upload_strategy": "single_card_variants"
+    "upload_forbidden": true
   },
+  "buyer_objections": [
+    "подойдёт ли размер к полке холодильника",
+    "какой объём выбрать",
+    "что именно входит в комплект",
+    "не изменён ли товар на рекламных изображениях"
+  ],
   "generator_contract": {
     "must_follow_style_profile": true,
     "style_profile_ref": "test-data/manual-output/P900002/style-profile.json",
     "allowed_structure": [
-      "main",
-      "benefit",
-      "detail",
-      "feature",
-      "scene",
-      "usage",
-      "problem_solution",
-      "comparison",
-      "disclaimer"
+      "one_main_per_sku",
+      "exactly_eight_shared_details"
     ],
     "aspect_ratio": "3:4",
-    "deviation_requires_review": false,
+    "deviation_requires_review": true,
     "advisory_skills_required": [],
     "advisory_scope": "none",
     "project_rules_take_precedence": true,
-    "image_slot_concurrency": 3,
+    "image_slot_concurrency": 1,
     "image_qc_same_execution": true,
     "product_pixel_lock_required": false,
-    "composition_tool": "deterministic_layout_for_comparison_and_measurement_only",
+    "composition_tool": "built_in_image_editor_single_pass",
     "source_preflight_ref": "test-data/manual-output/P900002/image-source-preflight.json",
     "generation_strategy": "product_specific_visual_story",
     "deterministic_image_types": [
       "comparison",
-      "size_spec"
+      "detail",
+      "disclaimer"
     ],
     "ai_reference_edit_image_types": [
       "main",
       "benefit",
-      "scene",
-      "problem_solution",
-      "feature",
-      "detail",
-      "usage"
+      "scene"
     ],
     "raw_1688_image_direct_upload_forbidden": true,
     "final_chinese_text_forbidden": true,
@@ -266,91 +229,63 @@
     "main_images_first": true,
     "target_total_seconds": 300,
     "quality_gate": "hard_failures_only",
-    "typography_strategy": "adaptive_exact_russian_without_fixed_box",
+    "typography_strategy": "model_native_exact_russian_single_pass",
     "prompt_first_required": true,
     "empty_placeholder_panels_forbidden": true,
     "exact_shared_detail_count": 8,
-    "creative_brief_required": true
+    "creative_brief_required": true,
+    "ecommerce_design_required": true,
+    "fixed_template_fallback_forbidden": true,
+    "overlay_strategy": "single_pass_model_native_typography"
   },
-  "creative_direction": {
-    "product_visual_thesis": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。",
-    "target_buyer": "希望让冰箱更整齐、快速看到食材并按容量选择收纳盒的俄罗斯家庭用户。",
-    "click_hook": "透明可视，3L/5L/6L按需选择",
-    "hero_scene": "明亮真实的冰箱层架，食材整洁但不过度摆拍",
-    "buyer_tension": "冰箱内食材堆放杂乱、内容物不易看清、尺寸选错后难以放入层架",
-    "visual_mood": "清新、明亮、可信、有生活温度",
-    "palette_logic": "透明商品配冷白和浅蓝，蔬果提供自然绿色与红色点缀。",
-    "lighting": "柔和冷白侧光，突出透明材质边缘并保留真实反射",
-    "composition": "每张图只回答一个购买问题，主图突出商品，详情图交替使用场景、结构和对比",
-    "typography": "俄文短标题加一行利益点，不使用固定黑框或空白卡片",
-    "consistency_rule": "整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-    "anti_template_rule": "禁止纯白底、孤立抠图、通用海报、重复构图和只换背景"
-  },
-  "learned_image_preferences": [],
   "reference_images": [
     {
-      "id": "main-001",
-      "path": "test-data/manual-input/P900002/main-images/main-001.png",
-      "role": "main",
-      "usable": true,
-      "notes": "真实采集商品图；生成前仍需检查Logo、文字和SKU一致性。"
-    },
-    {
-      "id": "main-002",
-      "path": "test-data/manual-input/P900002/main-images/main-002.png",
-      "role": "main",
-      "usable": true,
-      "notes": "真实采集商品图；生成前仍需检查Logo、文字和SKU一致性。"
-    },
-    {
-      "id": "main-003",
-      "path": "test-data/manual-input/P900002/main-images/main-003.png",
-      "role": "main",
-      "usable": true,
-      "notes": "真实采集商品图；生成前仍需检查Logo、文字和SKU一致性。"
-    },
-    {
-      "id": "sku-001",
+      "id": "sku-3l",
       "path": "test-data/manual-input/P900002/sku-images/sku-3l.png",
       "role": "sku",
       "usable": true,
-      "notes": "仅关联真实SKU fridge-organizer-3l；生图前清晰度检查通过。"
+      "notes": "Manual-test original SKU reference; generated outputs are never eligible inputs."
     },
     {
-      "id": "sku-002",
+      "id": "sku-5l",
       "path": "test-data/manual-input/P900002/sku-images/sku-5l.png",
       "role": "sku",
       "usable": true,
-      "notes": "仅关联真实SKU fridge-organizer-5l；生图前清晰度检查通过。"
+      "notes": "Manual-test original SKU reference; generated outputs are never eligible inputs."
     },
     {
-      "id": "sku-003",
+      "id": "sku-6l",
       "path": "test-data/manual-input/P900002/sku-images/sku-6l.png",
       "role": "sku",
       "usable": true,
-      "notes": "仅关联真实SKU fridge-organizer-6l；生图前清晰度检查通过。"
+      "notes": "Manual-test original SKU reference; generated outputs are never eligible inputs."
     }
   ],
   "buyer_analysis": {
     "who_buys": [
-      "希望让冰箱更整齐、快速看到食材并按容量选择收纳盒的俄罗斯家庭用户。"
+      "Покупатель в России, который хочет быстрее находить продукты и аккуратно распределить их по зонам холодильника."
     ],
     "why_buy": [
-      "透明可视、带盖和前置把手，按3L/5L/6L选择适合冰箱空间的容量。"
+      "видеть содержимое без открывания контейнера",
+      "разделить продукты по категориям",
+      "удобно выдвигать органайзер за переднюю ручку",
+      "подобрать объём под свободное место на полке"
     ],
-    "main_pain_point": "冰箱内食材堆放杂乱、内容物不易看清、尺寸选错后难以放入层架",
-    "strongest_selling_point": "看得见、抽得出、按容量分区收纳。",
+    "main_pain_point": "подойдёт ли размер к полке холодильника",
+    "strongest_selling_point": "Прозрачный корпус позволяет быстро увидеть содержимое.",
     "selling_points": [
-      "透明盒体让内容物一目了然。",
-      "盖子闭合后减少不同食品气味互相影响。",
-      "前置把手便于从冰箱层架抽取。",
-      "3L、5L、6L三种容量适配不同食材和空间。"
+      "Прозрачный корпус позволяет быстро увидеть содержимое.",
+      "Крышка помогает уменьшить взаимное влияние запахов продуктов.",
+      "Передняя ручка упрощает извлечение органайзера с полки.",
+      "Три объёма помогают подобрать вариант под продукты и свободное место."
     ],
     "proof_strategy": [
-      "unknown",
-      "fridge_lifestyle",
-      "transparent_structure",
-      "capacity_choice"
+      "сразу показать тип товара и объём",
+      "объяснить пользу прозрачного корпуса и крышки",
+      "показать конструкцию и ручку",
+      "дать реальные сценарии хранения",
+      "сравнить три объёма и точные размеры",
+      "уточнить комплектацию и необходимость измерить полку"
     ]
   },
   "main_images": [
@@ -360,19 +295,181 @@
       "image_type": "main",
       "requested_image_type": "main",
       "fallback_reason": "unknown",
-      "purchase_reason": "透明可视、带盖和前置把手，按3L/5L/6L选择适合冰箱空间的容量。",
-      "visual_goal": "在3秒内说明产品、核心收益和使用场景；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "在3秒内说明产品、核心收益和使用场景",
-      "buyer_question": "这是什么，为什么值得看？",
-      "selling_goal": "在3秒内说明产品、核心收益和使用场景",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "sku_main",
+      "overlay_modules": [
+        "product_name",
+        "capacity_badge",
+        "dimension_lines",
+        "benefit_section",
+        "icon_chips",
+        "purchase_notice"
+      ],
+      "design_rationale": "Компактный SKU показывается крупно внутри реального холодильника; тёплая редакционная типографика и короткие доказательные подписи повышают ценность без ощущения программного интерфейса.",
+      "art_direction": {
+        "concept": "Компактный прозрачный органайзер как аккуратное решение для небольших порций",
+        "scene": "Светлая полка современного холодильника с ягодами и закрытыми молочными упаковками внутри одного органайзера",
+        "composition": "Крупный товар немного ниже центра, название в естественном светлом пространстве сверху слева, SKU и размер сверху справа, преимущества вдоль нижнего края",
+        "product_scale_percent": 58,
+        "product_position": "нижний центр",
+        "background": "реальный светлый интерьер холодильника с мягкой глубиной",
+        "palette": [
+          "#FAF6EE",
+          "#182027",
+          "#B8692B",
+          "#FFB000"
+        ],
+        "lighting": "чистый рассеянный холодный свет с естественными бликами на прозрачном пластике",
+        "typography": "крупный графитовый гротеск, компактные спецификации и один янтарный SKU-якорь",
+        "iconography": "тонкие доказательные отметки только рядом с тремя проверенными фактами",
+        "information_hierarchy": [
+          "название и назначение",
+          "объём 3 л",
+          "точный размер",
+          "три проверенных свойства"
+        ],
+        "negative_space": "верхняя четверть и нижняя узкая полоса свободны от ключевых частей товара",
+        "value_signal": "аккуратная редакционная верстка, чистый холодильник и хорошо читаемая прозрачная конструкция",
+        "slot_differentiation": "единственная главная карточка квадратного компактного SKU; не повторяет сцены и доказательные крупные планы деталей"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+          "box": [
+            0.05,
+            0.04,
+            0.62,
+            0.15
+          ],
+          "font_size_ratio": 0.052,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "none",
+          "background_color": "#FAF6EE",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "sku_badge",
+          "text": "3 Л",
+          "box": [
+            0.78,
+            0.05,
+            0.17,
+            0.1
+          ],
+          "font_size_ratio": 0.056,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "pill",
+          "background_color": "#FFB000",
+          "accent_style": "none",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "specification",
+          "text": "14,5 × 14,5 × 12 СМ",
+          "box": [
+            0.7,
+            0.17,
+            0.25,
+            0.07
+          ],
+          "font_size_ratio": 0.023,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 3
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.05,
+            0.85,
+            0.28,
+            0.1
+          ],
+          "font_size_ratio": 0.024,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 4
+        },
+        {
+          "role": "benefit",
+          "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.36,
+            0.85,
+            0.37,
+            0.1
+          ],
+          "font_size_ratio": 0.021,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 5
+        },
+        {
+          "role": "notice",
+          "text": "1 ШТ.",
+          "box": [
+            0.77,
+            0.85,
+            0.18,
+            0.1
+          ],
+          "font_size_ratio": 0.025,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 6
+        }
+      ],
+      "purchase_reason": "Сразу показать товар, его назначение и точный вариант 3 л.",
+      "visual_goal": "Сразу показать товар, его назначение и точный вариант 3 л.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 3 L SKU image. Show one compact transparent organizer in the lower center of a clean realistic refrigerator, occupying about 58 percent of the canvas, with berries and sealed cheese or yogurt as restrained scene props. Preserve the believable 14.5 x 14.5 x 12 cm square proportions, transparent PP5 body, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 3 Л; 14,5 × 14,5 × 12 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra organizer, accessory or product redesign.",
+      "style_direction": "крупный графитовый гротеск, компактные спецификации и один янтарный SKU-якорь",
+      "purpose": "Сразу показать товар, его назначение и точный вариант 3 л.",
+      "buyer_question": "Что это и какой объём я заказываю?",
+      "selling_goal": "Сразу показать товар, его назначение и точный вариант 3 л.",
+      "scene": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 3 L SKU image. Show one compact transparent organizer in the lower center of a clean realistic refrigerator, occupying about 58 percent of the canvas, with berries and sealed cheese or yogurt as restrained scene props. Preserve the believable 14.5 x 14.5 x 12 cm square proportions, transparent PP5 body, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 3 Л; 14,5 × 14,5 × 12 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra organizer, accessory or product redesign.",
       "russian_text": [
         "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
-        "3 Л · КОМПАКТНЫЙ ФОРМАТ"
+        "3 Л",
+        "14,5 × 14,5 × 12 СМ",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+        "1 ШТ."
       ],
-      "visual_direction": "透明可视，3L/5L/6L按需选择；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Крупный товар немного ниже центра, название в естественном светлом пространстве сверху слева, SKU и размер сверху справа, преимущества вдоль нижнего края；аккуратная редакционная верстка, чистый холодильник и хорошо читаемая прозрачная конструкция；единственная главная карточка квадратного компактного SKU; не повторяет сцены и доказательные крупные планы деталей",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-3l.png"
       ],
@@ -380,18 +477,18 @@
         "test-data/manual-input/P900002/sku-images/sku-3l.png"
       ],
       "reference_image_ids": [
-        "sku-fridge-organizer-3l"
+        "sku-3l"
       ],
       "variant_scope": "sku",
       "shared_across_variants": false,
       "source_sku_id": "fridge-organizer-3l",
       "variant_kind": "size_or_measurement",
-      "variant_value": "3L",
+      "variant_value": "3 Л",
       "operation": "edit_real_image",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce main visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 这是什么，为什么值得看？. Its single decision job is: 在3秒内说明产品、核心收益和使用场景. The exact Russian marketing message that the visual must prove is: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА / 3 Л · КОМПАКТНЫЙ ФОРМАТ. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство; Точный выбранный SKU: 3L. This exact SKU is fridge-organizer-3l / 3L. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · main · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/variant-main/fridge-organizer-3l.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 3 L SKU image. Show one compact transparent organizer in the lower center of a clean realistic refrigerator, occupying about 58 percent of the canvas, with berries and sealed cheese or yogurt as restrained scene props. Preserve the believable 14.5 x 14.5 x 12 cm square proportions, transparent PP5 body, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 3 Л; 14,5 × 14,5 × 12 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra organizer, accessory or product redesign.",
+      "prompt_brief": "3:4 · sku_main · Сразу показать товар, его назначение и точный вариант 3 л.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/variant-main/fridge-organizer-3l.png",
       "status": "planned",
       "failure_reason": "unknown"
     },
@@ -401,19 +498,181 @@
       "image_type": "main",
       "requested_image_type": "main",
       "fallback_reason": "unknown",
-      "purchase_reason": "透明可视、带盖和前置把手，按3L/5L/6L选择适合冰箱空间的容量。",
-      "visual_goal": "在3秒内说明产品、核心收益和使用场景；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "在3秒内说明产品、核心收益和使用场景",
-      "buyer_question": "这是什么，为什么值得看？",
-      "selling_goal": "在3秒内说明产品、核心收益和使用场景",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "sku_main",
+      "overlay_modules": [
+        "product_name",
+        "capacity_badge",
+        "dimension_lines",
+        "benefit_section",
+        "icon_chips",
+        "purchase_notice"
+      ],
+      "design_rationale": "Длинный низкий SKU показывается в ширину полки и выглядит вместительным, но аккуратным; единый визуальный язык связывает его с 3 л без подмены реальной формы.",
+      "art_direction": {
+        "concept": "Длинный прозрачный органайзер как аккуратная зона для овощей и закрытых упаковок",
+        "scene": "Средняя полка светлого холодильника с одним длинным органайзером, овощами и закрытыми упаковками внутри",
+        "composition": "Товар развёрнут по диагонали и занимает нижние две трети; текстовая и SKU-информация размещена в естественном верхнем пространстве",
+        "product_scale_percent": 62,
+        "product_position": "центр с лёгким смещением вправо",
+        "background": "светлый интерьер холодильника с видимой глубиной длинной полки",
+        "palette": [
+          "#FAF6EE",
+          "#182027",
+          "#B8692B",
+          "#FFB000"
+        ],
+        "lighting": "мягкий боковой свет подчёркивает длину и прозрачные стенки без искусственного свечения",
+        "typography": "редакционный графитовый заголовок и компактный янтарный маркер варианта",
+        "iconography": "небольшие отметки подтверждают корпус, крышку, ручку и одну единицу",
+        "information_hierarchy": [
+          "назначение",
+          "объём 5 л",
+          "размер длинного SKU",
+          "видимые свойства"
+        ],
+        "negative_space": "верхняя четверть свободна, нижняя полоса не закрывает ручку",
+        "value_signal": "чистая полка, понятная длина товара и сдержанная типографика создают ощущение организованного хранения",
+        "slot_differentiation": "главная карточка длинного низкого SKU отличается формой и ракурсом от квадратного и высокого вариантов"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+          "box": [
+            0.05,
+            0.04,
+            0.62,
+            0.15
+          ],
+          "font_size_ratio": 0.052,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "none",
+          "background_color": "#FAF6EE",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "sku_badge",
+          "text": "5 Л",
+          "box": [
+            0.78,
+            0.05,
+            0.17,
+            0.1
+          ],
+          "font_size_ratio": 0.056,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "pill",
+          "background_color": "#FFB000",
+          "accent_style": "none",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "specification",
+          "text": "29 × 15,5 × 12 СМ",
+          "box": [
+            0.7,
+            0.17,
+            0.25,
+            0.07
+          ],
+          "font_size_ratio": 0.023,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 3
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.05,
+            0.85,
+            0.28,
+            0.1
+          ],
+          "font_size_ratio": 0.024,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 4
+        },
+        {
+          "role": "benefit",
+          "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.36,
+            0.85,
+            0.37,
+            0.1
+          ],
+          "font_size_ratio": 0.021,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 5
+        },
+        {
+          "role": "notice",
+          "text": "1 ШТ.",
+          "box": [
+            0.77,
+            0.85,
+            0.18,
+            0.1
+          ],
+          "font_size_ratio": 0.025,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 6
+        }
+      ],
+      "purchase_reason": "Сразу показать товар, его назначение и точный вариант 5 л.",
+      "visual_goal": "Сразу показать товар, его назначение и точный вариант 5 л.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 5 L SKU image. Show one long, low transparent organizer diagonally across a realistic middle refrigerator shelf, occupying about 62 percent of the canvas, with vegetables and a few sealed packages inside. Preserve the believable 29 x 15.5 x 12 cm proportions, transparent PP5 body, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 5 Л; 29 × 15,5 × 12 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra accessory or product redesign.",
+      "style_direction": "редакционный графитовый заголовок и компактный янтарный маркер варианта",
+      "purpose": "Сразу показать товар, его назначение и точный вариант 5 л.",
+      "buyer_question": "Что это и какой объём я заказываю?",
+      "selling_goal": "Сразу показать товар, его назначение и точный вариант 5 л.",
+      "scene": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 5 L SKU image. Show one long, low transparent organizer diagonally across a realistic middle refrigerator shelf, occupying about 62 percent of the canvas, with vegetables and a few sealed packages inside. Preserve the believable 29 x 15.5 x 12 cm proportions, transparent PP5 body, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 5 Л; 29 × 15,5 × 12 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra accessory or product redesign.",
       "russian_text": [
         "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
-        "5 Л · УДОБНО ДЛЯ ОВОЩЕЙ"
+        "5 Л",
+        "29 × 15,5 × 12 СМ",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+        "1 ШТ."
       ],
-      "visual_direction": "透明可视，3L/5L/6L按需选择；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Товар развёрнут по диагонали и занимает нижние две трети; текстовая и SKU-информация размещена в естественном верхнем пространстве；чистая полка, понятная длина товара и сдержанная типографика создают ощущение организованного хранения；главная карточка длинного низкого SKU отличается формой и ракурсом от квадратного и высокого вариантов",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
@@ -421,18 +680,18 @@
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
       "reference_image_ids": [
-        "sku-fridge-organizer-5l"
+        "sku-5l"
       ],
       "variant_scope": "sku",
       "shared_across_variants": false,
       "source_sku_id": "fridge-organizer-5l",
       "variant_kind": "size_or_measurement",
-      "variant_value": "5L",
+      "variant_value": "5 Л",
       "operation": "edit_real_image",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce main visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 这是什么，为什么值得看？. Its single decision job is: 在3秒内说明产品、核心收益和使用场景. The exact Russian marketing message that the visual must prove is: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА / 5 Л · УДОБНО ДЛЯ ОВОЩЕЙ. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство; Точный выбранный SKU: 5L. This exact SKU is fridge-organizer-5l / 5L. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · main · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/variant-main/fridge-organizer-5l.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 5 L SKU image. Show one long, low transparent organizer diagonally across a realistic middle refrigerator shelf, occupying about 62 percent of the canvas, with vegetables and a few sealed packages inside. Preserve the believable 29 x 15.5 x 12 cm proportions, transparent PP5 body, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 5 Л; 29 × 15,5 × 12 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra accessory or product redesign.",
+      "prompt_brief": "3:4 · sku_main · Сразу показать товар, его назначение и точный вариант 5 л.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/variant-main/fridge-organizer-5l.png",
       "status": "planned",
       "failure_reason": "unknown"
     },
@@ -442,19 +701,181 @@
       "image_type": "main",
       "requested_image_type": "main",
       "fallback_reason": "unknown",
-      "purchase_reason": "透明可视、带盖和前置把手，按3L/5L/6L选择适合冰箱空间的容量。",
-      "visual_goal": "在3秒内说明产品、核心收益和使用场景；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "在3秒内说明产品、核心收益和使用场景",
-      "buyer_question": "这是什么，为什么值得看？",
-      "selling_goal": "在3秒内说明产品、核心收益和使用场景",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "sku_main",
+      "overlay_modules": [
+        "product_name",
+        "capacity_badge",
+        "dimension_lines",
+        "benefit_section",
+        "icon_chips",
+        "purchase_notice"
+      ],
+      "design_rationale": "Высокий SKU получает более низкий ракурс, чтобы дополнительная высота читалась сразу; визуальная система остаётся общей, но композиция доказывает именно отличие 6 л.",
+      "art_direction": {
+        "concept": "Высокий прозрачный органайзер как решение для более объёмных продуктов",
+        "scene": "Нижняя полка светлого холодильника с одним высоким длинным органайзером и крупными овощами внутри",
+        "composition": "Низкий трёхчетвертной ракурс подчёркивает высоту корпуса; товар занимает центр и нижнюю часть, информация остаётся сверху и по нижнему краю",
+        "product_scale_percent": 64,
+        "product_position": "центр ниже середины",
+        "background": "глубокая нижняя полка холодильника без других похожих контейнеров",
+        "palette": [
+          "#FAF6EE",
+          "#182027",
+          "#B8692B",
+          "#FFB000"
+        ],
+        "lighting": "мягкий верхне-боковой свет подчёркивает высокие прозрачные стенки",
+        "typography": "графитовый заголовок и компактные точные характеристики с янтарным акцентом",
+        "iconography": "три небольшие отметки для подтверждённых особенностей и количества",
+        "information_hierarchy": [
+          "назначение",
+          "объём 6 л",
+          "увеличенная высота",
+          "общие свойства"
+        ],
+        "negative_space": "верхняя четверть и нижняя безопасная полоса не пересекают корпус и ручку",
+        "value_signal": "выраженная глубина сцены, точный ракурс и чистые материалы показывают вместительность без дешёвых эффектов",
+        "slot_differentiation": "единственная главная карточка высокого SKU с низким ракурсом; не повторяет плоскую подачу варианта 5 л"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+          "box": [
+            0.05,
+            0.04,
+            0.62,
+            0.15
+          ],
+          "font_size_ratio": 0.052,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "none",
+          "background_color": "#FAF6EE",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "sku_badge",
+          "text": "6 Л",
+          "box": [
+            0.78,
+            0.05,
+            0.17,
+            0.1
+          ],
+          "font_size_ratio": 0.056,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "pill",
+          "background_color": "#FFB000",
+          "accent_style": "none",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "specification",
+          "text": "29 × 15,5 × 15,5 СМ",
+          "box": [
+            0.69,
+            0.17,
+            0.26,
+            0.07
+          ],
+          "font_size_ratio": 0.022,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 3
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.05,
+            0.85,
+            0.28,
+            0.1
+          ],
+          "font_size_ratio": 0.024,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 4
+        },
+        {
+          "role": "benefit",
+          "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.36,
+            0.85,
+            0.37,
+            0.1
+          ],
+          "font_size_ratio": 0.021,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 5
+        },
+        {
+          "role": "notice",
+          "text": "1 ШТ.",
+          "box": [
+            0.77,
+            0.85,
+            0.18,
+            0.1
+          ],
+          "font_size_ratio": 0.025,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 6
+        }
+      ],
+      "purchase_reason": "Сразу показать товар, его назначение и точный вариант 6 л.",
+      "visual_goal": "Сразу показать товар, его назначение и точный вариант 6 л.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 6 L SKU image. Use a low three-quarter view of one long, taller transparent organizer on a lower refrigerator shelf, occupying about 64 percent of the canvas, with a restrained amount of larger vegetables inside. Preserve the believable 29 x 15.5 x 15.5 cm proportions, visibly taller body, transparent PP5 appearance, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 6 Л; 29 × 15,5 × 15,5 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra accessory or product redesign.",
+      "style_direction": "графитовый заголовок и компактные точные характеристики с янтарным акцентом",
+      "purpose": "Сразу показать товар, его назначение и точный вариант 6 л.",
+      "buyer_question": "Что это и какой объём я заказываю?",
+      "selling_goal": "Сразу показать товар, его назначение и точный вариант 6 л.",
+      "scene": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 6 L SKU image. Use a low three-quarter view of one long, taller transparent organizer on a lower refrigerator shelf, occupying about 64 percent of the canvas, with a restrained amount of larger vegetables inside. Preserve the believable 29 x 15.5 x 15.5 cm proportions, visibly taller body, transparent PP5 appearance, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 6 Л; 29 × 15,5 × 15,5 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra accessory or product redesign.",
       "russian_text": [
         "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
-        "6 Л · БОЛЬШЕ МЕСТА"
+        "6 Л",
+        "29 × 15,5 × 15,5 СМ",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+        "1 ШТ."
       ],
-      "visual_direction": "透明可视，3L/5L/6L按需选择；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Низкий трёхчетвертной ракурс подчёркивает высоту корпуса; товар занимает центр и нижнюю часть, информация остаётся сверху и по нижнему краю；выраженная глубина сцены, точный ракурс и чистые материалы показывают вместительность без дешёвых эффектов；единственная главная карточка высокого SKU с низким ракурсом; не повторяет плоскую подачу варианта 5 л",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-6l.png"
       ],
@@ -462,18 +883,18 @@
         "test-data/manual-input/P900002/sku-images/sku-6l.png"
       ],
       "reference_image_ids": [
-        "sku-fridge-organizer-6l"
+        "sku-6l"
       ],
       "variant_scope": "sku",
       "shared_across_variants": false,
       "source_sku_id": "fridge-organizer-6l",
       "variant_kind": "size_or_measurement",
-      "variant_value": "6L",
+      "variant_value": "6 Л",
       "operation": "edit_real_image",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce main visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 这是什么，为什么值得看？. Its single decision job is: 在3秒内说明产品、核心收益和使用场景. The exact Russian marketing message that the visual must prove is: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА / 6 Л · БОЛЬШЕ МЕСТА. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство; Точный выбранный SKU: 6L. This exact SKU is fridge-organizer-6l / 6L. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · main · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/variant-main/fridge-organizer-6l.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce main visual in a single image-model call from only the real 6 L SKU image. Use a low three-quarter view of one long, taller transparent organizer on a lower refrigerator shelf, occupying about 64 percent of the canvas, with a restrained amount of larger vegetables inside. Preserve the believable 29 x 15.5 x 15.5 cm proportions, visibly taller body, transparent PP5 appearance, transparent lid, single front handle and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА; 6 Л; 29 × 15,5 × 15,5 СМ; ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА; 1 ШТ. Follow the typography hierarchy, positions and colors in overlay_plan without covering the handle. Remove supplier stickers, Chinese copy, source dimensions and browser controls. Add no other text, blank card, placeholder, extra accessory or product redesign.",
+      "prompt_brief": "3:4 · sku_main · Сразу показать товар, его назначение и точный вариант 6 л.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/variant-main/fridge-organizer-6l.png",
       "status": "planned",
       "failure_reason": "unknown"
     }
@@ -481,23 +902,118 @@
   "detail_images": [
     {
       "type": "detail",
-      "slot": "detail-001",
+      "slot": "detail-001-core-storage",
       "image_type": "benefit",
       "requested_image_type": "benefit",
       "fallback_reason": "unknown",
-      "purchase_reason": "透明可视并用于冰箱分类收纳",
-      "visual_goal": "把产品特点转化为用户收益；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "核心卖点",
-      "buyer_question": "为什么它能让冰箱更整齐？",
-      "selling_goal": "把产品特点转化为用户收益",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "core_benefit",
+      "overlay_modules": [
+        "product_name",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "design_rationale": "Общий порядок доказывается не абстрактными иконками, а одним заполненным прозрачным органайзером в реальном холодильнике и короткой последовательностью выгод.",
+      "art_direction": {
+        "concept": "Один прозрачный органайзер превращает разрозненные продукты в понятную зону хранения",
+        "scene": "Широкая полка холодильника до и после аккуратного группирования продуктов вокруг одного органайзера",
+        "composition": "Товар крупно справа, слева вертикальная последовательность из заголовка и двух выгод, фон показывает свободную организованную полку",
+        "product_scale_percent": 52,
+        "product_position": "правый нижний сектор",
+        "background": "чистая широкая полка холодильника с небольшим количеством продуктов",
+        "palette": [
+          "#F4F1E8",
+          "#21352A",
+          "#182027",
+          "#D8A43A"
+        ],
+        "lighting": "естественный свет холодильника с мягкими тенями и ясной прозрачностью",
+        "typography": "контрастный тёмно-зелёный заголовок и компактные графитовые выгоды",
+        "iconography": "две простые отметки порядка без декоративных карточек",
+        "information_hierarchy": [
+          "порядок",
+          "видимость содержимого",
+          "разделение по зонам"
+        ],
+        "negative_space": "левая треть оставлена спокойной для текста, товар не перекрывается",
+        "value_signal": "реальный организованный результат и чистая композиция выглядят полезнее универсального рекламного плаката",
+        "slot_differentiation": "единственная общая обзорная сцена порядка; остальные детали показывают конструкцию, отдельные SKU или выбор"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ПОРЯДОК В ХОЛОДИЛЬНИКЕ",
+          "box": [
+            0.05,
+            0.06,
+            0.48,
+            0.15
+          ],
+          "font_size_ratio": 0.05,
+          "font_weight": "bold",
+          "text_color": "#21352A",
+          "accent_color": "#D8A43A",
+          "background_style": "none",
+          "background_color": "#F4F1E8",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "benefit",
+          "text": "СОДЕРЖИМОЕ ВИДНО СРАЗУ",
+          "box": [
+            0.05,
+            0.27,
+            0.38,
+            0.12
+          ],
+          "font_size_ratio": 0.028,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#21352A",
+          "background_style": "none",
+          "background_color": "#F4F1E8",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ",
+          "box": [
+            0.05,
+            0.43,
+            0.4,
+            0.13
+          ],
+          "font_size_ratio": 0.026,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#D8A43A",
+          "background_style": "none",
+          "background_color": "#F4F1E8",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 3
+        }
+      ],
+      "purchase_reason": "Объяснить главную пользу организованного и видимого хранения.",
+      "visual_goal": "Объяснить главную пользу организованного и видимого хранения.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce detail visual in a single image-model call from the real transparent organizer reference. Show one organizer containing ordinary packaged produce on a bright, believable refrigerator shelf so the transparent walls remain visible. Preserve the lid, front handle, believable proportions and material appearance. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПОРЯДОК В ХОЛОДИЛЬНИКЕ; СОДЕРЖИМОЕ ВИДНО СРАЗУ; ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ. Follow overlay_plan for hierarchy, placement and color. Remove Chinese labels and supplier stickers. Add no other text, extra container or invented product part.",
+      "style_direction": "контрастный тёмно-зелёный заголовок и компактные графитовые выгоды",
+      "purpose": "Объяснить главную пользу организованного и видимого хранения.",
+      "buyer_question": "Как товар помогает поддерживать порядок?",
+      "selling_goal": "Объяснить главную пользу организованного и видимого хранения.",
+      "scene": "Create one finished 3:4 Ozon ecommerce detail visual in a single image-model call from the real transparent organizer reference. Show one organizer containing ordinary packaged produce on a bright, believable refrigerator shelf so the transparent walls remain visible. Preserve the lid, front handle, believable proportions and material appearance. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПОРЯДОК В ХОЛОДИЛЬНИКЕ; СОДЕРЖИМОЕ ВИДНО СРАЗУ; ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ. Follow overlay_plan for hierarchy, placement and color. Remove Chinese labels and supplier stickers. Add no other text, extra container or invented product part.",
       "russian_text": [
         "ПОРЯДОК В ХОЛОДИЛЬНИКЕ",
-        "СОДЕРЖИМОЕ ВИДНО СРАЗУ"
+        "СОДЕРЖИМОЕ ВИДНО СРАЗУ",
+        "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ"
       ],
-      "visual_direction": "明亮真实的冰箱层架，食材整洁但不过度摆拍；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Товар крупно справа, слева вертикальная последовательность из заголовка и двух выгод, фон показывает свободную организованную полку；реальный организованный результат и чистая композиция выглядят полезнее универсального рекламного плаката；единственная общая обзорная сцена порядка; остальные детали показывают конструкцию, отдельные SKU или выбор",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
@@ -505,7 +1021,7 @@
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
       "reference_image_ids": [
-        "sku-002"
+        "sku-5l"
       ],
       "variant_scope": "shared",
       "shared_across_variants": true,
@@ -513,32 +1029,128 @@
       "variant_kind": "not_applicable",
       "variant_value": "shared",
       "operation": "edit_real_image",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce benefit visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 为什么它能让冰箱更整齐？. Its single decision job is: 把产品特点转化为用户收益. The exact Russian marketing message that the visual must prove is: ПОРЯДОК В ХОЛОДИЛЬНИКЕ / СОДЕРЖИМОЕ ВИДНО СРАЗУ. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство. This detail role is grounded only in these exact brief references: test-data/manual-input/P900002/sku-images/sku-5l.png. Show only the SKU and facts named by this role; do not blend structures or dimensions from other references. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · core_benefit · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-001.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce detail visual in a single image-model call from the real transparent organizer reference. Show one organizer containing ordinary packaged produce on a bright, believable refrigerator shelf so the transparent walls remain visible. Preserve the lid, front handle, believable proportions and material appearance. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПОРЯДОК В ХОЛОДИЛЬНИКЕ; СОДЕРЖИМОЕ ВИДНО СРАЗУ; ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ. Follow overlay_plan for hierarchy, placement and color. Remove Chinese labels and supplier stickers. Add no other text, extra container or invented product part.",
+      "prompt_brief": "3:4 · core_benefit · Объяснить главную пользу организованного и видимого хранения.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/detail/detail-001.png",
       "status": "planned",
       "failure_reason": "unknown"
     },
     {
       "type": "detail",
-      "slot": "detail-002",
+      "slot": "detail-002-seal-odor",
       "image_type": "detail",
       "requested_image_type": "detail",
       "fallback_reason": "unknown",
-      "purchase_reason": "用户确认密封、不易串味",
-      "visual_goal": "用真实细节提升信任；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "密封与防串味",
-      "buyer_question": "盖子带来的实际利益是什么？",
-      "selling_goal": "用真实细节提升信任",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "structure_callout",
+      "overlay_modules": [
+        "product_name",
+        "callout_arrows",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "design_rationale": "Покупатель должен увидеть настоящую кромку крышки крупно; боковой доказательный кадр и осторожная формулировка объясняют пользу без выдуманной вакуумной функции.",
+      "art_direction": {
+        "concept": "Крупный доказательный план реальной крышки и прозрачной конструкции",
+        "scene": "Макросъёмка верхней части органайзера на полке холодильника с видимой кромкой крышки",
+        "composition": "Крышка занимает верхнюю правую половину, три коротких пояснения идут вертикально слева и соединяются тонкими направляющими",
+        "product_scale_percent": 68,
+        "product_position": "правый центр и верх",
+        "background": "мягко размытый холодильник без других контейнеров",
+        "palette": [
+          "#EEF2ED",
+          "#24452F",
+          "#17211B",
+          "#CFAE62"
+        ],
+        "lighting": "боковой контровой свет показывает прозрачную кромку без чрезмерных бликов",
+        "typography": "узкая вертикальная колонка тёмного текста с зелёными акцентами",
+        "iconography": "тонкие линии-указатели к видимой крышке и стенке",
+        "information_hierarchy": [
+          "плотное закрытие",
+          "меньше смешивания запахов",
+          "прозрачность"
+        ],
+        "negative_space": "левая треть и небольшие зоны около кромки свободны для доказательных подписей",
+        "value_signal": "макро-деталь реального изделия и спокойные точные подписи создают доверие",
+        "slot_differentiation": "единственный макрокадр крышки; не повторяет общий вид и крупный план передней ручки"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО",
+          "box": [
+            0.05,
+            0.07,
+            0.39,
+            0.16
+          ],
+          "font_size_ratio": 0.041,
+          "font_weight": "bold",
+          "text_color": "#17211B",
+          "accent_color": "#24452F",
+          "background_style": "translucent",
+          "background_color": "#EEF2ED",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "benefit",
+          "text": "МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ",
+          "box": [
+            0.05,
+            0.31,
+            0.37,
+            0.14
+          ],
+          "font_size_ratio": 0.027,
+          "font_weight": "bold",
+          "text_color": "#17211B",
+          "accent_color": "#CFAE62",
+          "background_style": "none",
+          "background_color": "#EEF2ED",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "callout",
+          "text": "ПРОЗРАЧНАЯ КОНСТРУКЦИЯ",
+          "box": [
+            0.05,
+            0.51,
+            0.35,
+            0.12
+          ],
+          "font_size_ratio": 0.026,
+          "font_weight": "bold",
+          "text_color": "#17211B",
+          "accent_color": "#24452F",
+          "background_style": "none",
+          "background_color": "#EEF2ED",
+          "accent_style": "underline",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 3
+        }
+      ],
+      "purchase_reason": "Показать крышку и осторожно объяснить уменьшение смешивания запахов.",
+      "visual_goal": "Показать крышку и осторожно объяснить уменьшение смешивания запахов.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce structure close-up in a single image-model call using the real 5 L organizer image as the only product evidence. Keep the transparent lid edge, body, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО; МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ; ПРОЗРАЧНАЯ КОНСТРУКЦИЯ. Follow overlay_plan for hierarchy, placement and restrained callout graphics. Remove supplier stickers and Chinese copy. Do not claim vacuum sealing or invent gaskets, accessories or other text.",
+      "style_direction": "узкая вертикальная колонка тёмного текста с зелёными акцентами",
+      "purpose": "Показать крышку и осторожно объяснить уменьшение смешивания запахов.",
+      "buyer_question": "Зачем нужна крышка?",
+      "selling_goal": "Показать крышку и осторожно объяснить уменьшение смешивания запахов.",
+      "scene": "Create one finished 3:4 Ozon ecommerce structure close-up in a single image-model call using the real 5 L organizer image as the only product evidence. Keep the transparent lid edge, body, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО; МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ; ПРОЗРАЧНАЯ КОНСТРУКЦИЯ. Follow overlay_plan for hierarchy, placement and restrained callout graphics. Remove supplier stickers and Chinese copy. Do not claim vacuum sealing or invent gaskets, accessories or other text.",
       "russian_text": [
         "КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО",
-        "МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ"
+        "МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ",
+        "ПРОЗРАЧНАЯ КОНСТРУКЦИЯ"
       ],
-      "visual_direction": "明亮真实的冰箱层架，食材整洁但不过度摆拍；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Крышка занимает верхнюю правую половину, три коротких пояснения идут вертикально слева и соединяются тонкими направляющими；макро-деталь реального изделия и спокойные точные подписи создают доверие；единственный макрокадр крышки; не повторяет общий вид и крупный план передней ручки",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
@@ -546,7 +1158,7 @@
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
       "reference_image_ids": [
-        "sku-002"
+        "sku-5l"
       ],
       "variant_scope": "shared",
       "shared_across_variants": true,
@@ -554,32 +1166,107 @@
       "variant_kind": "not_applicable",
       "variant_value": "shared",
       "operation": "compose_from_real_images",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce detail visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 盖子带来的实际利益是什么？. Its single decision job is: 用真实细节提升信任. The exact Russian marketing message that the visual must prove is: КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО / МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство. This detail role is grounded only in these exact brief references: test-data/manual-input/P900002/sku-images/sku-5l.png. Show only the SKU and facts named by this role; do not blend structures or dimensions from other references. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Use deterministic crop, mask and layout from the real reference images; AI must not redraw any product. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · seal_and_odor · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-002.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce structure close-up in a single image-model call using the real 5 L organizer image as the only product evidence. Keep the transparent lid edge, body, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО; МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ; ПРОЗРАЧНАЯ КОНСТРУКЦИЯ. Follow overlay_plan for hierarchy, placement and restrained callout graphics. Remove supplier stickers and Chinese copy. Do not claim vacuum sealing or invent gaskets, accessories or other text.",
+      "prompt_brief": "3:4 · structure_callout · Показать крышку и осторожно объяснить уменьшение смешивания запахов.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/detail/detail-002.png",
       "status": "planned",
       "failure_reason": "unknown"
     },
     {
       "type": "detail",
-      "slot": "detail-003",
-      "image_type": "feature",
-      "requested_image_type": "feature",
+      "slot": "detail-003-structure",
+      "image_type": "detail",
+      "requested_image_type": "detail",
       "fallback_reason": "unknown",
-      "purchase_reason": "透明盒体、透明盖子和前置把手",
-      "visual_goal": "用可验证功能建立理性购买理由；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "透明盒体、盖子和前置把手结构",
-      "buyer_question": "结构是否符合我的使用习惯？",
-      "selling_goal": "用可验证功能建立理性购买理由",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "structure_callout",
+      "overlay_modules": [
+        "product_name",
+        "callout_arrows",
+        "icon_chips",
+        "benefit_section"
+      ],
+      "design_rationale": "Отдельный фронтальный крупный план показывает именно ручку, крышку и прозрачные стенки; разнесённые подписи работают как доказательство конструкции, а не как список общих обещаний.",
+      "art_direction": {
+        "concept": "Три видимых элемента конструкции объяснены прямо на реальном товаре",
+        "scene": "Фронтальный крупный план пустого прозрачного органайзера на нейтральной полке холодильника",
+        "composition": "Товар по центру, заголовок сверху, подписи к корпусу и крышке слева, подпись к ручке справа снизу",
+        "product_scale_percent": 72,
+        "product_position": "центр",
+        "background": "нейтральная светлая полка с минимальной глубиной",
+        "palette": [
+          "#F6F7F4",
+          "#1F3340",
+          "#3F7B63",
+          "#D2A94A"
+        ],
+        "lighting": "ровный мягкий свет подчёркивает прозрачные грани и форму ручки",
+        "typography": "короткие графитовые подписи с тонкими зелёными направляющими",
+        "iconography": "линии и точки привязаны только к реально видимым частям",
+        "information_hierarchy": [
+          "прозрачный корпус",
+          "крышка",
+          "передняя ручка"
+        ],
+        "negative_space": "небольшие угловые зоны оставлены для подписей вокруг центрального товара",
+        "value_signal": "точная предметная съёмка и ясная привязка текста к деталям создают инженерное доверие",
+        "slot_differentiation": "единственная анатомическая схема фронтальной конструкции; не повторяет макро крышки"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.06,
+            0.05,
+            0.45,
+            0.11
+          ],
+          "font_size_ratio": 0.044,
+          "font_weight": "bold",
+          "text_color": "#1F3340",
+          "accent_color": "#D2A94A",
+          "background_style": "none",
+          "background_color": "#F6F7F4",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "callout",
+          "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.56,
+            0.18,
+            0.37,
+            0.12
+          ],
+          "font_size_ratio": 0.026,
+          "font_weight": "bold",
+          "text_color": "#1F3340",
+          "accent_color": "#3F7B63",
+          "background_style": "translucent",
+          "background_color": "#F6F7F4",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        }
+      ],
+      "purchase_reason": "Разложить конструкцию на понятные элементы без изменения товара.",
+      "visual_goal": "Разложить конструкцию на понятные элементы без изменения товара.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce product close-up in a single image-model call from the real 5 L SKU. Keep the transparent rectangular body, transparent lid, front handle and believable product proportions; show the handle and lid clearly. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА. Follow overlay_plan for hierarchy, placement and callout style. Remove Chinese footer, supplier label and interface artifacts. Add no exploded parts, invented accessories or other text.",
+      "style_direction": "короткие графитовые подписи с тонкими зелёными направляющими",
+      "purpose": "Разложить конструкцию на понятные элементы без изменения товара.",
+      "buyer_question": "Какие детали делают использование удобным?",
+      "selling_goal": "Разложить конструкцию на понятные элементы без изменения товара.",
+      "scene": "Create one finished 3:4 Ozon ecommerce product close-up in a single image-model call from the real 5 L SKU. Keep the transparent rectangular body, transparent lid, front handle and believable product proportions; show the handle and lid clearly. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА. Follow overlay_plan for hierarchy, placement and callout style. Remove Chinese footer, supplier label and interface artifacts. Add no exploded parts, invented accessories or other text.",
       "russian_text": [
         "ПРОЗРАЧНЫЙ КОРПУС",
         "КРЫШКА И ПЕРЕДНЯЯ РУЧКА"
       ],
-      "visual_direction": "明亮真实的冰箱层架，食材整洁但不过度摆拍；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Товар по центру, заголовок сверху, подписи к корпусу и крышке слева, подпись к ручке справа снизу；точная предметная съёмка и ясная привязка текста к деталям создают инженерное доверие；единственная анатомическая схема фронтальной конструкции; не повторяет макро крышки",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
@@ -587,7 +1274,7 @@
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
       "reference_image_ids": [
-        "sku-002"
+        "sku-5l"
       ],
       "variant_scope": "shared",
       "shared_across_variants": true,
@@ -595,73 +1282,241 @@
       "variant_kind": "not_applicable",
       "variant_value": "shared",
       "operation": "compose_from_real_images",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce feature visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 结构是否符合我的使用习惯？. Its single decision job is: 用可验证功能建立理性购买理由. The exact Russian marketing message that the visual must prove is: ПРОЗРАЧНЫЙ КОРПУС / КРЫШКА И ПЕРЕДНЯЯ РУЧКА. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство. This detail role is grounded only in these exact brief references: test-data/manual-input/P900002/sku-images/sku-5l.png. Show only the SKU and facts named by this role; do not blend structures or dimensions from other references. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Use deterministic crop, mask and layout from the real reference images; AI must not redraw any product. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · transparent_structure · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-003.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce product close-up in a single image-model call from the real 5 L SKU. Keep the transparent rectangular body, transparent lid, front handle and believable product proportions; show the handle and lid clearly. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПРОЗРАЧНЫЙ КОРПУС; КРЫШКА И ПЕРЕДНЯЯ РУЧКА. Follow overlay_plan for hierarchy, placement and callout style. Remove Chinese footer, supplier label and interface artifacts. Add no exploded parts, invented accessories or other text.",
+      "prompt_brief": "3:4 · structure_callout · Разложить конструкцию на понятные элементы без изменения товара.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/detail/detail-003.png",
       "status": "planned",
       "failure_reason": "unknown"
     },
     {
       "type": "detail",
-      "slot": "detail-004",
+      "slot": "detail-004-material-pp5",
+      "image_type": "detail",
+      "requested_image_type": "detail",
+      "fallback_reason": "unknown",
+      "layout_type": "structure_callout",
+      "overlay_modules": [
+        "product_name",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "design_rationale": "Вместо ещё одной SKU-сцены используется доказательный крупный план общего материала: покупатель видит прозрачность и реальные грани товара, а текст не обещает неподтверждённую сертификацию.",
+      "art_direction": {
+        "concept": "Честное доказательство прозрачного PP5 через реальную поверхность и конструкцию",
+        "scene": "Крупный предметный план прозрачной стенки, кромки крышки и передней ручки на тёплом светлом фоне",
+        "composition": "Товарная фактура занимает правые две трети; слева сверху крупный материал, ниже две короткие подписи с тонкими направляющими",
+        "product_scale_percent": 74,
+        "product_position": "правый центр с макро-фрагментом кромки",
+        "background": "матовый молочно-бежевый фон без холодильной сцены и без карточек интерфейса",
+        "palette": [
+          "#F4EFE5",
+          "#1E2B31",
+          "#A86632",
+          "#789285"
+        ],
+        "lighting": "жёсткий боковой контур и мягкий заполняющий свет подчёркивают прозрачность без искусственного свечения",
+        "typography": "контрастный графитовый гротеск с одним медным акцентом PP5",
+        "iconography": "никаких сертификатов; только тонкие линии к реально видимым элементам",
+        "information_hierarchy": [
+          "материал PP5",
+          "прозрачность",
+          "назначение для хранения продуктов"
+        ],
+        "negative_space": "левая треть остаётся ровной и светлой для трёх коротких сообщений",
+        "value_signal": "макро-фактура, чистые блики и отсутствие лишних обещаний создают ощущение добротного товара",
+        "slot_differentiation": "единственный материал-доказательство без холодильной сцены, размеров и SKU-различий"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "МАТЕРИАЛ PP5",
+          "box": [
+            0.05,
+            0.08,
+            0.38,
+            0.13
+          ],
+          "font_size_ratio": 0.05,
+          "font_weight": "bold",
+          "text_color": "#1E2B31",
+          "accent_color": "#A86632",
+          "background_style": "none",
+          "background_color": "#F4EFE5",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "callout",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.05,
+            0.31,
+            0.36,
+            0.11
+          ],
+          "font_size_ratio": 0.027,
+          "font_weight": "bold",
+          "text_color": "#1E2B31",
+          "accent_color": "#789285",
+          "background_style": "none",
+          "background_color": "#F4EFE5",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "benefit",
+          "text": "ДЛЯ ХРАНЕНИЯ ПРОДУКТОВ",
+          "box": [
+            0.05,
+            0.48,
+            0.38,
+            0.12
+          ],
+          "font_size_ratio": 0.026,
+          "font_weight": "bold",
+          "text_color": "#1E2B31",
+          "accent_color": "#A86632",
+          "background_style": "translucent",
+          "background_color": "#F4EFE5",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 3
+        }
+      ],
+      "purchase_reason": "Подтвердить общий для всех вариантов материал PP5 и прозрачность корпуса.",
+      "visual_goal": "Подтвердить общий для всех вариантов материал PP5 и прозрачность корпуса.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce material-proof visual in a single image-model call from only the real 5 L organizer reference as a representative of the shared construction. Use a clean macro view of the transparent wall, lid edge and front handle. Preserve the clear PP5 appearance, lid, believable proportions and surface reflections. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: МАТЕРИАЛ PP5; ПРОЗРАЧНЫЙ КОРПУС; ДЛЯ ХРАНЕНИЯ ПРОДУКТОВ. Follow overlay_plan for hierarchy, placement and evidence zones. Remove the source sticker, Chinese footer, source dimension marks and browser controls. Add no laboratory symbols, certification marks, unsupported safety claims or other text.",
+      "style_direction": "контрастный графитовый гротеск с одним медным акцентом PP5",
+      "purpose": "Подтвердить общий для всех вариантов материал PP5 и прозрачность корпуса.",
+      "buyer_question": "Из какого материала сделан органайзер и видно ли содержимое?",
+      "selling_goal": "Подтвердить общий для всех вариантов материал PP5 и прозрачность корпуса.",
+      "scene": "Create one finished 3:4 Ozon ecommerce material-proof visual in a single image-model call from only the real 5 L organizer reference as a representative of the shared construction. Use a clean macro view of the transparent wall, lid edge and front handle. Preserve the clear PP5 appearance, lid, believable proportions and surface reflections. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: МАТЕРИАЛ PP5; ПРОЗРАЧНЫЙ КОРПУС; ДЛЯ ХРАНЕНИЯ ПРОДУКТОВ. Follow overlay_plan for hierarchy, placement and evidence zones. Remove the source sticker, Chinese footer, source dimension marks and browser controls. Add no laboratory symbols, certification marks, unsupported safety claims or other text.",
+      "russian_text": [
+        "МАТЕРИАЛ PP5",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "ДЛЯ ХРАНЕНИЯ ПРОДУКТОВ"
+      ],
+      "visual_direction": "Товарная фактура занимает правые две трети; слева сверху крупный материал, ниже две короткие подписи с тонкими направляющими；макро-фактура, чистые блики и отсутствие лишних обещаний создают ощущение добротного товара；единственный материал-доказательство без холодильной сцены, размеров и SKU-различий",
+      "reference_product_images": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "reference_images": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "reference_image_ids": [
+        "sku-5l"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "compose_from_real_images",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce material-proof visual in a single image-model call from only the real 5 L organizer reference as a representative of the shared construction. Use a clean macro view of the transparent wall, lid edge and front handle. Preserve the clear PP5 appearance, lid, believable proportions and surface reflections. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: МАТЕРИАЛ PP5; ПРОЗРАЧНЫЙ КОРПУС; ДЛЯ ХРАНЕНИЯ ПРОДУКТОВ. Follow overlay_plan for hierarchy, placement and evidence zones. Remove the source sticker, Chinese footer, source dimension marks and browser controls. Add no laboratory symbols, certification marks, unsupported safety claims or other text.",
+      "prompt_brief": "3:4 · structure_callout · Подтвердить общий для всех вариантов материал PP5 и прозрачность корпуса.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/detail/detail-004.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "detail",
+      "slot": "detail-005-front-handle",
       "image_type": "scene",
       "requested_image_type": "scene",
       "fallback_reason": "unknown",
-      "purchase_reason": "3L小号款和已确认尺寸",
-      "visual_goal": "用真实环境建立代入感；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "3L使用场景",
-      "buyer_question": "3L适合放什么？",
-      "selling_goal": "用真实环境建立代入感",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "usage_scene",
+      "overlay_modules": [
+        "product_name",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "design_rationale": "Одна динамичная диагональ показывает действие, общее для всех SKU, и не повторяет размеры или объём конкретного варианта; ручка становится главным доказательством удобства.",
+      "art_direction": {
+        "concept": "Передняя ручка превращает глубокую полку в понятное движение на себя",
+        "scene": "Один прозрачный органайзер частично выдвинут на средней полке холодильника, без руки и без второго товара",
+        "composition": "Диагональ от задней правой точки к нижнему центру; ручка находится в резком фокусе, текст собран в верхнем левом углу",
+        "product_scale_percent": 63,
+        "product_position": "центр с направлением движения к нижнему краю",
+        "background": "реальная полка холодильника с мягко размытыми закрытыми упаковками на заднем плане",
+        "palette": [
+          "#EEF2EF",
+          "#20362E",
+          "#4F8069",
+          "#D39A3E"
+        ],
+        "lighting": "контрастный холодный свет холодильника и тёплый отблеск на передней ручке",
+        "typography": "короткий тёмно-зелёный заголовок и одна крупная поясняющая строка",
+        "iconography": "одна тонкая стрелка движения, без руки и универсальных пиктограмм",
+        "information_hierarchy": [
+          "передняя ручка",
+          "выдвижение с полки"
+        ],
+        "negative_space": "верхняя левая четверть свободна, ручка и передний край ничем не перекрыты",
+        "value_signal": "реальное действие, крупная ручка и чистый холодильник показывают удобство без рекламной абстракции",
+        "slot_differentiation": "единственная динамичная сцена движения; нет объёма, размера или SKU-специфичного обещания"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.05,
+            0.07,
+            0.43,
+            0.12
+          ],
+          "font_size_ratio": 0.049,
+          "font_weight": "bold",
+          "text_color": "#20362E",
+          "accent_color": "#D39A3E",
+          "background_style": "none",
+          "background_color": "#EEF2EF",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "benefit",
+          "text": "УДОБНО ВЫДВИГАТЬ С ПОЛКИ",
+          "box": [
+            0.05,
+            0.25,
+            0.42,
+            0.13
+          ],
+          "font_size_ratio": 0.029,
+          "font_weight": "bold",
+          "text_color": "#20362E",
+          "accent_color": "#4F8069",
+          "background_style": "translucent",
+          "background_color": "#EEF2EF",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        }
+      ],
+      "purchase_reason": "Показать общий для всех вариантов способ выдвижения за переднюю ручку.",
+      "visual_goal": "Показать общий для всех вариантов способ выдвижения за переднюю ручку.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce action scene in a single image-model call from only the real 5 L organizer image as a representative of the handle shared by every selected SKU. Show one transparent organizer partially pulled toward the viewer on a realistic refrigerator shelf, with the single front handle completely visible and no hand. Preserve the body, lid, handle, transparency and believable proportions. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПЕРЕДНЯЯ РУЧКА; УДОБНО ВЫДВИГАТЬ С ПОЛКИ. Follow overlay_plan for hierarchy, placement and color. Remove supplier labels, Chinese copy, source dimensions and browser controls. Add no other text, extra container, accessory or altered handle.",
+      "style_direction": "короткий тёмно-зелёный заголовок и одна крупная поясняющая строка",
+      "purpose": "Показать общий для всех вариантов способ выдвижения за переднюю ручку.",
+      "buyer_question": "Удобно ли доставать органайзер с полки холодильника?",
+      "selling_goal": "Показать общий для всех вариантов способ выдвижения за переднюю ручку.",
+      "scene": "Create one finished 3:4 Ozon ecommerce action scene in a single image-model call from only the real 5 L organizer image as a representative of the handle shared by every selected SKU. Show one transparent organizer partially pulled toward the viewer on a realistic refrigerator shelf, with the single front handle completely visible and no hand. Preserve the body, lid, handle, transparency and believable proportions. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПЕРЕДНЯЯ РУЧКА; УДОБНО ВЫДВИГАТЬ С ПОЛКИ. Follow overlay_plan for hierarchy, placement and color. Remove supplier labels, Chinese copy, source dimensions and browser controls. Add no other text, extra container, accessory or altered handle.",
       "russian_text": [
-        "3 Л · ДЛЯ НЕБОЛЬШИХ ПОРЦИЙ",
-        "КОМПАКТНО НА ПОЛКЕ"
+        "ПЕРЕДНЯЯ РУЧКА",
+        "УДОБНО ВЫДВИГАТЬ С ПОЛКИ"
       ],
-      "visual_direction": "明亮真实的冰箱层架，食材整洁但不过度摆拍；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
-      "reference_product_images": [
-        "test-data/manual-input/P900002/sku-images/sku-3l.png"
-      ],
-      "reference_images": [
-        "test-data/manual-input/P900002/sku-images/sku-3l.png"
-      ],
-      "reference_image_ids": [
-        "sku-001"
-      ],
-      "variant_scope": "shared",
-      "shared_across_variants": true,
-      "source_sku_id": "all",
-      "variant_kind": "not_applicable",
-      "variant_value": "shared",
-      "operation": "edit_real_image",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce scene visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 3L适合放什么？. Its single decision job is: 用真实环境建立代入感. The exact Russian marketing message that the visual must prove is: 3 Л · ДЛЯ НЕБОЛЬШИХ ПОРЦИЙ / КОМПАКТНО НА ПОЛКЕ. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство. This detail role is grounded only in these exact brief references: test-data/manual-input/P900002/sku-images/sku-3l.png. Show only the SKU and facts named by this role; do not blend structures or dimensions from other references. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · scene_3l · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-004.png",
-      "status": "planned",
-      "failure_reason": "unknown"
-    },
-    {
-      "type": "detail",
-      "slot": "detail-005",
-      "image_type": "usage",
-      "requested_image_type": "usage",
-      "fallback_reason": "unknown",
-      "purchase_reason": "5L中号款和已确认尺寸",
-      "visual_goal": "降低操作理解成本；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "5L使用场景",
-      "buyer_question": "5L在冰箱里如何使用？",
-      "selling_goal": "降低操作理解成本",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "russian_text": [
-        "5 Л · ДЛЯ ОВОЩЕЙ И УПАКОВОК",
-        "УДОБНО ДОСТАВАТЬ ЗА РУЧКУ"
-      ],
-      "visual_direction": "明亮真实的冰箱层架，食材整洁但不过度摆拍；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Диагональ от задней правой точки к нижнему центру; ручка находится в резком фокусе, текст собран в верхнем левом углу；реальное действие, крупная ручка и чистый холодильник показывают удобство без рекламной абстракции；единственная динамичная сцена движения; нет объёма, размера или SKU-специфичного обещания",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
@@ -669,7 +1524,7 @@
         "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
       "reference_image_ids": [
-        "sku-002"
+        "sku-5l"
       ],
       "variant_scope": "shared",
       "shared_across_variants": true,
@@ -677,32 +1532,106 @@
       "variant_kind": "not_applicable",
       "variant_value": "shared",
       "operation": "edit_real_image",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce usage visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 5L在冰箱里如何使用？. Its single decision job is: 降低操作理解成本. The exact Russian marketing message that the visual must prove is: 5 Л · ДЛЯ ОВОЩЕЙ И УПАКОВОК / УДОБНО ДОСТАВАТЬ ЗА РУЧКУ. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство. This detail role is grounded only in these exact brief references: test-data/manual-input/P900002/sku-images/sku-5l.png. Show only the SKU and facts named by this role; do not blend structures or dimensions from other references. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · scene_5l · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-005.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce action scene in a single image-model call from only the real 5 L organizer image as a representative of the handle shared by every selected SKU. Show one transparent organizer partially pulled toward the viewer on a realistic refrigerator shelf, with the single front handle completely visible and no hand. Preserve the body, lid, handle, transparency and believable proportions. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПЕРЕДНЯЯ РУЧКА; УДОБНО ВЫДВИГАТЬ С ПОЛКИ. Follow overlay_plan for hierarchy, placement and color. Remove supplier labels, Chinese copy, source dimensions and browser controls. Add no other text, extra container, accessory or altered handle.",
+      "prompt_brief": "3:4 · usage_scene · Показать общий для всех вариантов способ выдвижения за переднюю ручку.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/detail/detail-005.png",
       "status": "planned",
       "failure_reason": "unknown"
     },
     {
       "type": "detail",
-      "slot": "detail-006",
-      "image_type": "problem_solution",
-      "requested_image_type": "problem_solution",
+      "slot": "detail-006-shared-food-zones",
+      "image_type": "scene",
+      "requested_image_type": "scene",
       "fallback_reason": "unknown",
-      "purchase_reason": "6L大号款和已确认尺寸",
-      "visual_goal": "用问题与解决方案强化购买动机；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "6L使用场景",
-      "buyer_question": "6L如何解决大份食材收纳？",
-      "selling_goal": "用问题与解决方案强化购买动机",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "russian_text": [
-        "6 Л · ДЛЯ ОБЪЁМНЫХ ПРОДУКТОВ",
-        "БОЛЬШЕ ПОРЯДКА ВНУТРИ"
+      "layout_type": "usage_scene",
+      "overlay_modules": [
+        "product_name",
+        "benefit_section",
+        "icon_chips"
       ],
-      "visual_direction": "明亮真实的冰箱层架，食材整洁但不过度摆拍；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "design_rationale": "Финальная товарная сцена показывает универсальный способ группировки продуктов, но не повторяет SKU-различия; цвет овощей и упаковок создаёт контраст, а прозрачность остаётся главным доказательством.",
+      "art_direction": {
+        "concept": "Одна прозрачная зона объединяет разные продукты и сохраняет визуальный порядок",
+        "scene": "Чистая широкая полка холодильника с одним органайзером, овощами, фруктами и закрытыми упаковками, разложенными по понятным зонам",
+        "composition": "Товар крупно слева в перспективе полки; справа сверху высокая контрастная текстовая колонка, цветные продукты формируют направляющую к прозрачному корпусу",
+        "product_scale_percent": 57,
+        "product_position": "левый центр с глубиной полки вправо",
+        "background": "светлый современный холодильник с контролируемой глубиной и без визуального беспорядка",
+        "palette": [
+          "#EFF3EE",
+          "#1F342C",
+          "#78944D",
+          "#D9A03D",
+          "#A63F3D"
+        ],
+        "lighting": "яркий направленный свет с глубокими тенями на заднем плане создаёт высокий контраст без неона",
+        "typography": "крупный тёмно-зелёный заголовок и две короткие строки с янтарными акцентами",
+        "iconography": "две тонкие разделительные отметки зон, не имитирующие внутренние перегородки",
+        "information_hierarchy": [
+          "варианты продуктов",
+          "разделение по зонам"
+        ],
+        "negative_space": "верхняя правая треть спокойная и контрастная; товар и продукты не перекрываются текстом",
+        "value_signal": "насыщенные натуральные цвета, реальная глубина холодильника и ясная организация создают дорогой живой кадр",
+        "slot_differentiation": "единственная широкая продуктовая сцена с цветовым контрастом; не сообщает конкретный объём или размер"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК",
+          "box": [
+            0.55,
+            0.07,
+            0.39,
+            0.17
+          ],
+          "font_size_ratio": 0.038,
+          "font_weight": "bold",
+          "text_color": "#1F342C",
+          "accent_color": "#D9A03D",
+          "background_style": "none",
+          "background_color": "#EFF3EE",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ",
+          "box": [
+            0.58,
+            0.33,
+            0.35,
+            0.13
+          ],
+          "font_size_ratio": 0.027,
+          "font_weight": "bold",
+          "text_color": "#1F342C",
+          "accent_color": "#78944D",
+          "background_style": "translucent",
+          "background_color": "#EFF3EE",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        }
+      ],
+      "purchase_reason": "Показать общий для всех размеров сценарий разделения продуктов по зонам.",
+      "visual_goal": "Показать общий для всех размеров сценарий разделения продуктов по зонам.",
+      "scene_description": "Create one finished premium 3:4 Ozon ecommerce usage scene in a single image-model call using only the real 6 L organizer reference as one representative of the product family. Show one transparent organizer in a clean refrigerator with a restrained mix of vegetables, fruit and closed food packages grouped into separate surrounding shelf zones. The scene demonstrates the shared use case and must not advertise 6 L or dimensions. Preserve the transparent body, lid, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК; ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ. Follow overlay_plan for hierarchy, placement and strong contrast. Remove source labels, Chinese copy, source dimensions and browser controls. Add no other text, extra organizer, invented divider or accessory.",
+      "style_direction": "крупный тёмно-зелёный заголовок и две короткие строки с янтарными акцентами",
+      "purpose": "Показать общий для всех размеров сценарий разделения продуктов по зонам.",
+      "buyer_question": "Какие продукты можно организовать и как это выглядит в холодильнике?",
+      "selling_goal": "Показать общий для всех размеров сценарий разделения продуктов по зонам.",
+      "scene": "Create one finished premium 3:4 Ozon ecommerce usage scene in a single image-model call using only the real 6 L organizer reference as one representative of the product family. Show one transparent organizer in a clean refrigerator with a restrained mix of vegetables, fruit and closed food packages grouped into separate surrounding shelf zones. The scene demonstrates the shared use case and must not advertise 6 L or dimensions. Preserve the transparent body, lid, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК; ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ. Follow overlay_plan for hierarchy, placement and strong contrast. Remove source labels, Chinese copy, source dimensions and browser controls. Add no other text, extra organizer, invented divider or accessory.",
+      "russian_text": [
+        "ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК",
+        "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ"
+      ],
+      "visual_direction": "Товар крупно слева в перспективе полки; справа сверху высокая контрастная текстовая колонка, цветные продукты формируют направляющую к прозрачному корпусу；насыщенные натуральные цвета, реальная глубина холодильника и ясная организация создают дорогой живой кадр；единственная широкая продуктовая сцена с цветовым контрастом; не сообщает конкретный объём или размер",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-6l.png"
       ],
@@ -710,7 +1639,7 @@
         "test-data/manual-input/P900002/sku-images/sku-6l.png"
       ],
       "reference_image_ids": [
-        "sku-003"
+        "sku-6l"
       ],
       "variant_scope": "shared",
       "shared_across_variants": true,
@@ -718,33 +1647,150 @@
       "variant_kind": "not_applicable",
       "variant_value": "shared",
       "operation": "edit_real_image",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce problem_solution visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 6L如何解决大份食材收纳？. Its single decision job is: 用问题与解决方案强化购买动机. The exact Russian marketing message that the visual must prove is: 6 Л · ДЛЯ ОБЪЁМНЫХ ПРОДУКТОВ / БОЛЬШЕ ПОРЯДКА ВНУТРИ. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство. This detail role is grounded only in these exact brief references: test-data/manual-input/P900002/sku-images/sku-6l.png. Show only the SKU and facts named by this role; do not blend structures or dimensions from other references. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · scene_6l · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-006.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished premium 3:4 Ozon ecommerce usage scene in a single image-model call using only the real 6 L organizer reference as one representative of the product family. Show one transparent organizer in a clean refrigerator with a restrained mix of vegetables, fruit and closed food packages grouped into separate surrounding shelf zones. The scene demonstrates the shared use case and must not advertise 6 L or dimensions. Preserve the transparent body, lid, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК; ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ. Follow overlay_plan for hierarchy, placement and strong contrast. Remove source labels, Chinese copy, source dimensions and browser controls. Add no other text, extra organizer, invented divider or accessory.",
+      "prompt_brief": "3:4 · usage_scene · Показать общий для всех размеров сценарий разделения продуктов по зонам.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/detail/detail-006.png",
       "status": "planned",
       "failure_reason": "unknown"
     },
     {
       "type": "detail",
-      "slot": "detail-007",
+      "slot": "detail-007-sku-comparison",
       "image_type": "comparison",
       "requested_image_type": "comparison",
       "fallback_reason": "unknown",
-      "purchase_reason": "三SKU容量、尺寸和比例必须准确",
-      "visual_goal": "只比较有来源的SKU差异；没有事实依据时阻止生成；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "三款尺寸与容量对比",
-      "buyer_question": "哪个尺寸适合我的冰箱？",
-      "selling_goal": "只比较有来源的SKU差异；没有事实依据时阻止生成",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "sku_comparison",
+      "overlay_modules": [
+        "product_name",
+        "sku_labels",
+        "dimension_lines",
+        "purchase_notice"
+      ],
+      "design_rationale": "Выбор размера решается одной доказательной сравнительной схемой из трёх реальных SKU; одинаковая подпись и масштабная сетка помогают сравнить без подмены форм.",
+      "art_direction": {
+        "concept": "Одна честная сравнительная таблица помогает выбрать между 3, 5 и 6 л",
+        "scene": "Три реальные вырезки SKU на спокойном нейтральном фоне без искусственной общей сцены",
+        "composition": "Заголовок сверху, три товара в одной горизонтальной шкале, подписи размеров непосредственно под каждым вариантом",
+        "product_scale_percent": 70,
+        "product_position": "три равных сектора по центру",
+        "background": "молочно-серый доказательный фон с тонкими разделителями",
+        "palette": [
+          "#F5F3EE",
+          "#202A30",
+          "#496A57",
+          "#D29A3A"
+        ],
+        "lighting": "исходный свет реальных SKU выравнивается без перерисовки товара",
+        "typography": "крупный общий заголовок и три одинаково оформленные спецификации",
+        "iconography": "без иконок; только реальные товары, подписи и тонкая сравнительная сетка",
+        "information_hierarchy": [
+          "выбор объёма",
+          "3 л и размер",
+          "5 л и размер",
+          "6 л и размер"
+        ],
+        "negative_space": "верхняя полоса и зоны под каждым SKU оставлены для текста",
+        "value_signal": "честное сравнение реальных вариантов снижает риск ошибки и возврата",
+        "slot_differentiation": "единственная многотоварная схема; не используется как стиль других изображений"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ВЫБЕРИТЕ ПОДХОДЯЩИЙ ОБЪЁМ",
+          "box": [
+            0.08,
+            0.05,
+            0.84,
+            0.12
+          ],
+          "font_size_ratio": 0.046,
+          "font_weight": "bold",
+          "text_color": "#202A30",
+          "accent_color": "#D29A3A",
+          "background_style": "none",
+          "background_color": "#F5F3EE",
+          "accent_style": "top_line",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "specification",
+          "text": "3 л: 14,5 × 14,5 × 12 см",
+          "box": [
+            0.04,
+            0.8,
+            0.29,
+            0.1
+          ],
+          "font_size_ratio": 0.022,
+          "font_weight": "bold",
+          "text_color": "#202A30",
+          "accent_color": "#496A57",
+          "background_style": "translucent",
+          "background_color": "#F5F3EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "specification",
+          "text": "5 л: 29 × 15,5 × 12 см",
+          "box": [
+            0.355,
+            0.8,
+            0.29,
+            0.1
+          ],
+          "font_size_ratio": 0.022,
+          "font_weight": "bold",
+          "text_color": "#202A30",
+          "accent_color": "#D29A3A",
+          "background_style": "translucent",
+          "background_color": "#F5F3EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 3
+        },
+        {
+          "role": "specification",
+          "text": "6 л: 29 × 15,5 × 15,5 см",
+          "box": [
+            0.67,
+            0.8,
+            0.29,
+            0.1
+          ],
+          "font_size_ratio": 0.021,
+          "font_weight": "bold",
+          "text_color": "#202A30",
+          "accent_color": "#496A57",
+          "background_style": "translucent",
+          "background_color": "#F5F3EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 4
+        }
+      ],
+      "purchase_reason": "Сравнить все реальные варианты один раз и помочь выбрать размер.",
+      "visual_goal": "Сравнить все реальные варианты один раз и помочь выбрать размер.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce SKU comparison in a single image-model call using all three real SKU source images. Show the distinct 3 L, 5 L and 6 L organizers simultaneously in source order with truthful relative forms. Preserve each shape, lid, handle and believable proportions. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ВЫБЕРИТЕ ПОДХОДЯЩИЙ ОБЪЁМ; 3 л: 14,5 × 14,5 × 12 см; 5 л: 29 × 15,5 × 12 см; 6 л: 29 × 15,5 × 15,5 см. Follow overlay_plan for the top headline and three specification zones. Remove supplier captions and add no other text or accessories.",
+      "style_direction": "крупный общий заголовок и три одинаково оформленные спецификации",
+      "purpose": "Сравнить все реальные варианты один раз и помочь выбрать размер.",
+      "buyer_question": "Чем отличаются 3, 5 и 6 л?",
+      "selling_goal": "Сравнить все реальные варианты один раз и помочь выбрать размер.",
+      "scene": "Create one finished 3:4 Ozon ecommerce SKU comparison in a single image-model call using all three real SKU source images. Show the distinct 3 L, 5 L and 6 L organizers simultaneously in source order with truthful relative forms. Preserve each shape, lid, handle and believable proportions. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ВЫБЕРИТЕ ПОДХОДЯЩИЙ ОБЪЁМ; 3 л: 14,5 × 14,5 × 12 см; 5 л: 29 × 15,5 × 12 см; 6 л: 29 × 15,5 × 15,5 см. Follow overlay_plan for the top headline and three specification zones. Remove supplier captions and add no other text or accessories.",
       "russian_text": [
+        "ВЫБЕРИТЕ ПОДХОДЯЩИЙ ОБЪЁМ",
         "3 л: 14,5 × 14,5 × 12 см",
         "5 л: 29 × 15,5 × 12 см",
         "6 л: 29 × 15,5 × 15,5 см"
       ],
-      "visual_direction": "明亮真实的冰箱层架，食材整洁但不过度摆拍；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Заголовок сверху, три товара в одной горизонтальной шкале, подписи размеров непосредственно под каждым вариантом；честное сравнение реальных вариантов снижает риск ошибки и возврата；единственная многотоварная схема; не используется как стиль других изображений",
       "reference_product_images": [
         "test-data/manual-input/P900002/sku-images/sku-3l.png",
         "test-data/manual-input/P900002/sku-images/sku-5l.png",
@@ -756,9 +1802,9 @@
         "test-data/manual-input/P900002/sku-images/sku-6l.png"
       ],
       "reference_image_ids": [
-        "sku-001",
-        "sku-002",
-        "sku-003"
+        "sku-3l",
+        "sku-5l",
+        "sku-6l"
       ],
       "variant_scope": "shared",
       "shared_across_variants": true,
@@ -766,46 +1812,135 @@
       "variant_kind": "not_applicable",
       "variant_value": "shared",
       "operation": "compose_from_real_images",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce comparison visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 哪个尺寸适合我的冰箱？. Its single decision job is: 只比较有来源的SKU差异；没有事实依据时阻止生成. The exact Russian marketing message that the visual must prove is: 3 л: 14,5 × 14,5 × 12 см / 5 л: 29 × 15,5 × 12 см / 6 л: 29 × 15,5 × 15,5 см. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство. This detail role is grounded only in these exact brief references: test-data/manual-input/P900002/sku-images/sku-3l.png, test-data/manual-input/P900002/sku-images/sku-5l.png, test-data/manual-input/P900002/sku-images/sku-6l.png. Show only the SKU and facts named by this role; do not blend structures or dimensions from other references. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Use deterministic crop, mask and layout from the real reference images; AI must not redraw any product. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · sku_comparison · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-007.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce SKU comparison in a single image-model call using all three real SKU source images. Show the distinct 3 L, 5 L and 6 L organizers simultaneously in source order with truthful relative forms. Preserve each shape, lid, handle and believable proportions. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ВЫБЕРИТЕ ПОДХОДЯЩИЙ ОБЪЁМ; 3 л: 14,5 × 14,5 × 12 см; 5 л: 29 × 15,5 × 12 см; 6 л: 29 × 15,5 × 15,5 см. Follow overlay_plan for the top headline and three specification zones. Remove supplier captions and add no other text or accessories.",
+      "prompt_brief": "3:4 · sku_comparison · Сравнить все реальные варианты один раз и помочь выбрать размер.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/detail/detail-007.png",
       "status": "planned",
       "failure_reason": "unknown"
     },
     {
-      "type": "disclaimer",
-      "slot": "detail-008",
+      "type": "detail",
+      "slot": "detail-008-purchase-notice",
       "image_type": "disclaimer",
       "requested_image_type": "disclaimer",
       "fallback_reason": "unknown",
-      "purchase_reason": "每单1个并提醒核对尺寸",
-      "visual_goal": "说明适用范围与限制，降低退货；服务于核心销售角度：看得见、抽得出、按容量分区收纳。",
-      "scene_description": "unknown；3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
-      "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。；整套保持冷白浅蓝识别，但每张构图和购买理由不同",
-      "purpose": "单个装与购买前说明",
-      "buyer_question": "下单前要确认什么？",
-      "selling_goal": "说明适用范围与限制，降低退货",
-      "scene": "3L用于小份谷物、零食或配料；5L用于蔬果和中等份量食品；6L用于体积较大的蔬果或更多食材",
+      "layout_type": "purchase_notice",
+      "overlay_modules": [
+        "product_name",
+        "purchase_notice",
+        "icon_chips"
+      ],
+      "design_rationale": "Финальная карточка снижает возвраты: один выбранный товар показан крупно, а две короткие проверки отделены от коммерческих обещаний спокойной информационной композицией; конкретные SKU различия остаются только в сравнении.",
+      "art_direction": {
+        "concept": "Спокойная финальная памятка о количестве и выборе размера перед заказом",
+        "scene": "Один реальный органайзер на нейтральной холодильной полке без других вариантов или сравнительных миниатюр",
+        "composition": "Товар слева снизу, крупный заголовок справа сверху, два последовательных пункта справа по вертикали",
+        "product_scale_percent": 43,
+        "product_position": "левый нижний сектор",
+        "background": "светлый нейтральный холодильник с большой спокойной областью справа",
+        "palette": [
+          "#F4F2EC",
+          "#253039",
+          "#536D5A",
+          "#C9983E"
+        ],
+        "lighting": "ровный доверительный свет без рекламного блеска",
+        "typography": "спокойная тёмная информационная колонка и золотистые отметки",
+        "iconography": "две одинаковые небольшие отметки проверки",
+        "information_hierarchy": [
+          "перед покупкой",
+          "один товар",
+          "проверка размера"
+        ],
+        "negative_space": "правая половина оставлена для информационной колонки",
+        "value_signal": "ясные условия заказа и отсутствие скрытой комплектации создают доверие",
+        "slot_differentiation": "единственная финальная памятка с одним товаром и вертикальным списком"
+      },
+      "overlay_plan": [
+        {
+          "role": "headline",
+          "text": "ПЕРЕД ПОКУПКОЙ",
+          "box": [
+            0.53,
+            0.08,
+            0.4,
+            0.12
+          ],
+          "font_size_ratio": 0.047,
+          "font_weight": "bold",
+          "text_color": "#253039",
+          "accent_color": "#C9983E",
+          "background_style": "none",
+          "background_color": "#F4F2EC",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "notice",
+          "text": "1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ",
+          "box": [
+            0.53,
+            0.29,
+            0.4,
+            0.12
+          ],
+          "font_size_ratio": 0.027,
+          "font_weight": "bold",
+          "text_color": "#253039",
+          "accent_color": "#536D5A",
+          "background_style": "none",
+          "background_color": "#F4F2EC",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "notice",
+          "text": "ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ",
+          "box": [
+            0.53,
+            0.46,
+            0.41,
+            0.14
+          ],
+          "font_size_ratio": 0.025,
+          "font_weight": "bold",
+          "text_color": "#253039",
+          "accent_color": "#C9983E",
+          "background_style": "none",
+          "background_color": "#F4F2EC",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 3
+        }
+      ],
+      "purchase_reason": "Снять последние сомнения о комплектации и выборе размера.",
+      "visual_goal": "Снять последние сомнения о комплектации и выборе размера.",
+      "scene_description": "Create one finished 3:4 Ozon ecommerce purchase-information visual in a single image-model call from only the real 5 L organizer reference as a representative of the product family. Show exactly one transparent organizer; do not show or compare the other variants. Preserve the body, lid, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПЕРЕД ПОКУПКОЙ; 1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ; ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ. Follow overlay_plan for hierarchy, placement and readability. Remove source labels, Chinese copy, source dimensions and browser controls. Add no other text, empty information box or invented accessory.",
+      "style_direction": "спокойная тёмная информационная колонка и золотистые отметки",
+      "purpose": "Снять последние сомнения о комплектации и выборе размера.",
+      "buyer_question": "Что я получу и что проверить до заказа?",
+      "selling_goal": "Снять последние сомнения о комплектации и выборе размера.",
+      "scene": "Create one finished 3:4 Ozon ecommerce purchase-information visual in a single image-model call from only the real 5 L organizer reference as a representative of the product family. Show exactly one transparent organizer; do not show or compare the other variants. Preserve the body, lid, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПЕРЕД ПОКУПКОЙ; 1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ; ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ. Follow overlay_plan for hierarchy, placement and readability. Remove source labels, Chinese copy, source dimensions and browser controls. Add no other text, empty information box or invented accessory.",
       "russian_text": [
+        "ПЕРЕД ПОКУПКОЙ",
         "1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ",
         "ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ"
       ],
-      "visual_direction": "明亮真实的冰箱层架，食材整洁但不过度摆拍；俄文短标题加一行利益点，不使用固定黑框或空白卡片；禁止纯白底、孤立抠图、通用海报、重复构图和只换背景；",
+      "visual_direction": "Товар слева снизу, крупный заголовок справа сверху, два последовательных пункта справа по вертикали；ясные условия заказа и отсутствие скрытой комплектации создают доверие；единственная финальная памятка с одним товаром и вертикальным списком",
       "reference_product_images": [
-        "test-data/manual-input/P900002/sku-images/sku-3l.png",
-        "test-data/manual-input/P900002/sku-images/sku-5l.png",
-        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
       "reference_images": [
-        "test-data/manual-input/P900002/sku-images/sku-3l.png",
-        "test-data/manual-input/P900002/sku-images/sku-5l.png",
-        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
       ],
       "reference_image_ids": [
-        "sku-001",
-        "sku-002",
-        "sku-003"
+        "sku-5l"
       ],
       "variant_scope": "shared",
       "shared_across_variants": true,
@@ -813,63 +1948,78 @@
       "variant_kind": "not_applicable",
       "variant_value": "shared",
       "operation": "compose_from_real_images",
-      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
-      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce disclaimer visual from the final listing data. Final Russian listing title: Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л. This image must answer one buyer question: 下单前要确认什么？. Its single decision job is: 说明适用范围与限制，降低退货. The exact Russian marketing message that the visual must prove is: 1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ / ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ. Verified listing facts available for visual evidence: Тип: Органайзер для холодильника; Материал: полипропилен (PP5); Объем: [\"3 л\", \"5 л\", \"6 л\"]; Форма: прямоугольная; Особенности: [\"с крышкой\", \"с ручкой\"]; Назначение: хранение продуктов в холодильнике; Вид выпуска товара: фабричное производство. This detail role is grounded only in these exact brief references: test-data/manual-input/P900002/sku-images/sku-3l.png, test-data/manual-input/P900002/sku-images/sku-5l.png, test-data/manual-input/P900002/sku-images/sku-6l.png. Show only the SKU and facts named by this role; do not blend structures or dimensions from other references. Visual thesis: 把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。. Use deterministic crop, mask and layout from the real reference images; AI must not redraw any product. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
-      "prompt_brief": "3:4 product-specific visual · purchase_notice · 透明可视，3L/5L/6L按需选择",
-      "output_path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-008.png",
+      "source_text_policy": "single_pass_scene_product_exact_russian",
+      "prompt": "Create one finished 3:4 Ozon ecommerce purchase-information visual in a single image-model call from only the real 5 L organizer reference as a representative of the product family. Show exactly one transparent organizer; do not show or compare the other variants. Preserve the body, lid, front handle, believable proportions and one-item quantity. In this same final image, render these exact Russian lines once, correctly and legibly, in this order: ПЕРЕД ПОКУПКОЙ; 1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ; ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ. Follow overlay_plan for hierarchy, placement and readability. Remove source labels, Chinese copy, source dimensions and browser controls. Add no other text, empty information box or invented accessory.",
+      "prompt_brief": "3:4 · purchase_notice · Снять последние сомнения о комплектации и выборе размера.",
+      "output_path": "test-data/manual-output/P900002/generated-images/quality-test-20260717/detail/detail-008.png",
       "status": "planned",
       "failure_reason": "unknown"
     }
   ],
   "disclaimer_images": [],
   "must_preserve": [
-    "vertical 3:4 ratio",
-    "product structure",
-    "product colors",
-    "SKU differences",
-    "accessory count"
+    "без выдуманных аксессуаров",
+    "комплект из одного выбранного органайзера",
+    "крышка",
+    "крышка и передняя ручка",
+    "материал PP5 как подтверждённый общий факт",
+    "никаких объёмов или размеров вне общей сравнительной карточки",
+    "никаких сертификатов или неподтверждённых обещаний",
+    "один органайзер",
+    "один товар",
+    "одна реальная репрезентативная SKU без сравнения вариантов",
+    "передняя ручка",
+    "порядок 3 л, 5 л, 6 л",
+    "прозрачность корпуса",
+    "прозрачный корпус",
+    "прозрачный корпус и крышка",
+    "пропорции SKU",
+    "реальная крышка без выдуманного уплотнителя",
+    "реальная передняя ручка",
+    "реальная форма крышки",
+    "реальные пропорции каждого варианта",
+    "реальный прозрачный товар",
+    "сцена объясняет общий способ использования, а не вариант 5 л",
+    "точная форма варианта 3 л",
+    "точная форма варианта 5 л",
+    "точная форма варианта 6 л",
+    "точные размеры",
+    "три разных реальных SKU"
   ],
   "must_not_change": [
-    "material",
-    "dimensions",
-    "weight",
-    "load capacity",
-    "certifications",
-    "brand",
-    "functions",
-    "package quantity",
-    "accessories"
+    "SKU proportions",
+    "transparent material",
+    "lid",
+    "front handle",
+    "single-item quantity"
   ],
   "forbidden_content": [
-    "白底目录图",
-    "日文贴纸",
-    "中文营销字",
-    "网页箭头",
-    "改变盒体比例",
-    "虚构配件",
-    "unverified claims",
-    "unverified brand logos",
-    "extra accessories",
-    "different product structure or color",
-    "blank rounded rectangles, empty text boxes, placeholder cards or decorative empty frames"
+    "китайский текст и иероглифы",
+    "логотип или наклейка поставщика",
+    "белый каталожный фон по умолчанию",
+    "вымышленные аксессуары",
+    "изменение формы, цвета, прозрачности или количества товара",
+    "неверная кириллица или обрезанный русский текст",
+    "утверждение о вакуумной герметичности",
+    "повторение восьми деталей для каждого SKU"
   ],
   "risks": [
     {
-      "area": "style",
-      "level": "high",
-      "message": "只拦截错商品、错SKU、额外配件功能、明显变形、中文乱码和不可读俄文；其他视觉选择交给商品专属方案。"
+      "area": "product_fidelity",
+      "level": "critical",
+      "message": "Reject any changed SKU proportions, lid, handle, transparency or accessory count."
     },
     {
-      "area": "russian_text",
-      "level": "medium",
-      "message": "俄文上图前必须由Codex生成并在生成后逐字检查。"
+      "area": "ecommerce_layout",
+      "level": "critical",
+      "message": "A scene photo with only two text lines is not a completed ecommerce main image."
     }
   ],
   "processing": {
     "step": "image_plan",
     "status": "completed",
-    "started_at": "2026-07-16T17:47:52+08:00",
-    "finished_at": "2026-07-16T17:47:52+08:00",
+    "started_at": "2026-07-17T20:01:46+08:00",
+    "finished_at": "2026-07-17T20:01:46+08:00",
     "error": null
   }
 }

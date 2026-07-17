@@ -30,6 +30,16 @@ def requested_slot_names(value: Any) -> set[str]:
 def pending_slots(product_dir: Path, concurrency: int) -> Dict[str, Any]:
     concurrency = max(1, min(int(concurrency), 4))
     plan = load_json(product_dir / "output/image-plan.json")
+    requires_lock = (plan.get("generator_contract") or {}).get("product_pixel_lock_required") is True
+    hard_gate_path = product_dir / "output/image-hard-gate.json"
+    try:
+        hard_gate = {
+            str(item.get("slot")): item
+            for item in (load_json(hard_gate_path).get("checked_slots") or [])
+            if item.get("slot")
+        }
+    except (OSError, ValueError, json.JSONDecodeError):
+        hard_gate = {}
     requested_path = product_dir / "output/image-regeneration-request.json"
     requested = requested_slot_names(load_json(requested_path).get("failed_slots")) if requested_path.is_file() else set()
     planned_by_slot = {
@@ -40,7 +50,11 @@ def pending_slots(product_dir: Path, concurrency: int) -> Dict[str, Any]:
     if requested and all(
         slot in planned_by_slot
         and (ROOT / str(planned_by_slot[slot].get("output_path") or "")).is_file()
-        and (product_dir / "output/product-lock" / f"{slot}.json").is_file()
+        and (
+            not requires_lock
+            or (product_dir / "output/product-lock" / f"{slot}.json").is_file()
+            or hard_gate.get(slot, {}).get("status") == "pass"
+        )
         for slot in requested
     ):
         requested = set()
@@ -49,20 +63,35 @@ def pending_slots(product_dir: Path, concurrency: int) -> Dict[str, Any]:
     for key in ("main_images", "detail_images", "disclaimer_images"):
         for item in plan.get(key) or []:
             slot = str(item.get("slot") or "")
-            if not slot or item.get("status") == "needs_review":
+            if not slot:
+                continue
+            # A regeneration request deliberately re-opens slots by marking
+            # them needs_review.  They must remain schedulable when they are
+            # explicitly named in the request; otherwise every host restart
+            # reports a retry but has no work to execute.
+            if item.get("status") == "needs_review" and slot not in requested:
                 continue
             if requested and slot not in requested:
                 continue
             output = ROOT / str(item.get("output_path") or "")
             manifest = product_dir / "output/product-lock" / f"{slot}.json"
-            if not requested and output.is_file() and manifest.is_file():
+            if not requested and output.is_file() and (
+                not requires_lock
+                or manifest.is_file()
+                or hard_gate.get(slot, {}).get("status") == "pass"
+            ):
                 continue
             target = main_slots if key == "main_images" else detail_slots
             target.append({
                 "slot": slot,
                 "image_type": item.get("image_type"),
+                "operation": item.get("operation"),
                 "output_path": item.get("output_path"),
             })
+    # Deterministic real-image compositions finish quickly and create a real
+    # checkpoint before slower AI reference edits.  This prevents a healthy
+    # detail batch from looking idle merely because its first AI call is slow.
+    detail_slots.sort(key=lambda item: 0 if item.get("operation") == "compose_from_real_images" else 1)
     waves = [
         *[main_slots[index:index + concurrency] for index in range(0, len(main_slots), concurrency)],
         *[detail_slots[index:index + concurrency] for index in range(0, len(detail_slots), concurrency)],

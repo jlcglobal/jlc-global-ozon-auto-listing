@@ -1,0 +1,4 @@
+{
+  "upload_strategy": "single_card_variants",
+  "variant_decision": "size_or_measurement"
+}

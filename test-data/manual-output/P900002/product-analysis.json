@@ -1,0 +1,83 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900002",
+  "product_type": "透明冰箱食品收纳盒",
+  "category": "冰箱收纳盒 / Органайзер для холодильника",
+  "facts": {
+    "title_cn": "透明冰箱食品收纳盒，带盖和前置把手，3L/5L/6L",
+    "material": "PP5塑料",
+    "color": "透明",
+    "structure": [
+      "透明盒体",
+      "透明盖子",
+      "前置把手"
+    ],
+    "use": "冰箱食品分类收纳",
+    "quantity_per_order": 1
+  },
+  "selling_points": [
+    {
+      "text": "透明盒体便于查看内容物",
+      "evidence": [
+        "input/source.json#/product_attributes"
+      ]
+    },
+    {
+      "text": "带盖结构用于冰箱分类收纳，减少食物气味相互影响",
+      "evidence": [
+        "input/source.json#/product_attributes"
+      ]
+    },
+    {
+      "text": "前置把手便于从冰箱层架抽取",
+      "evidence": [
+        "input/source.json#/product_attributes"
+      ]
+    },
+    {
+      "text": "3L、5L、6L三种容量可按空间和食材选择",
+      "evidence": [
+        "input/source.json#/skus"
+      ]
+    }
+  ],
+  "target_customer": [
+    "希望把蔬果、谷物或包装食品分区收纳的俄罗斯家庭用户"
+  ],
+  "usage_scenarios": [
+    "冰箱层架分类收纳",
+    "厨房干燥食品整理",
+    "小份食材收纳"
+  ],
+  "unknowns": [
+    {
+      "field": "品牌",
+      "reason": "用户未提供，禁止虚构"
+    },
+    {
+      "field": "采购价",
+      "reason": "用户未提供，禁止虚构"
+    },
+    {
+      "field": "商品重量",
+      "reason": "用户未提供，禁止虚构"
+    },
+    {
+      "field": "包装尺寸",
+      "reason": "用户未提供，禁止虚构"
+    },
+    {
+      "field": "包装重量",
+      "reason": "用户未提供，禁止虚构"
+    },
+    {
+      "field": "认证",
+      "reason": "用户未提供，禁止虚构"
+    },
+    {
+      "field": "耐温范围",
+      "reason": "用户未提供，禁止虚构"
+    }
+  ],
+  "risks": []
+}

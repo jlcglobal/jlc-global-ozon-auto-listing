@@ -1,0 +1,669 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900002",
+  "source_refs": [
+    "test-data/manual-input/P900002/source.json",
+    "test-data/manual-input/P900002/category-selection.json",
+    "test-data/manual-output/P900002/product-analysis.json",
+    "test-data/manual-output/P900002/product-positioning.json",
+    "test-data/manual-input/P900002/sku-images/sku-3l.png",
+    "test-data/manual-input/P900002/sku-images/sku-5l.png",
+    "test-data/manual-input/P900002/sku-images/sku-6l.png"
+  ],
+  "product_understanding": {
+    "product_type_ru": "прозрачный органайзер для холодильника",
+    "category_fit": "Органайзер для холодильника",
+    "what_it_is": "Прямоугольный прозрачный контейнер с крышкой и передней ручкой для раздельного хранения продуктов в холодильнике.",
+    "shared_facts": [
+      "прозрачный корпус",
+      "прозрачная крышка",
+      "передняя ручка",
+      "материал PP5",
+      "один органайзер выбранного объёма в комплекте"
+    ],
+    "sku_difference": "Варианты отличаются объёмом и внешними размерами: 3, 5 или 6 л.",
+    "unknown_high_risk_facts": [
+      "бренд",
+      "сертификация",
+      "гарантия",
+      "температурный диапазон",
+      "вес товара и упаковки",
+      "таможенный код"
+    ]
+  },
+  "buyer_strategy": {
+    "target_buyer": "Покупатель в России, который хочет быстрее находить продукты и аккуратно распределить их по зонам холодильника.",
+    "purchase_motivations": [
+      "видеть содержимое без открывания контейнера",
+      "разделить продукты по категориям",
+      "удобно выдвигать органайзер за переднюю ручку",
+      "подобрать объём под свободное место на полке"
+    ],
+    "purchase_objections": [
+      "подойдёт ли размер к полке холодильника",
+      "какой объём выбрать",
+      "что именно входит в комплект",
+      "не изменён ли товар на рекламных изображениях"
+    ],
+    "decision_sequence": [
+      "сразу показать тип товара и объём",
+      "объяснить пользу прозрачного корпуса и крышки",
+      "показать конструкцию и ручку",
+      "дать реальные сценарии хранения",
+      "сравнить три объёма и точные размеры",
+      "уточнить комплектацию и необходимость измерить полку"
+    ]
+  },
+  "listing": {
+    "seo_title_ru": "Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л",
+    "short_title_ru": "Прозрачный органайзер для холодильника",
+    "description_ru": "Прозрачный органайзер с крышкой и передней ручкой помогает аккуратно распределить продукты по зонам холодильника. Через стенки хорошо видно содержимое, поэтому нужную упаковку, овощи или фрукты проще найти без лишних поисков.\n\nКонтейнер подходит для повседневной организации холодильной полки и кухонного хранения. В нём можно раздельно разместить овощи, фрукты, закрытые упаковки или сухие продукты, если такой способ соответствует условиям хранения конкретного продукта.\n\nПрозрачная крышка закрывает содержимое и помогает уменьшить взаимное влияние запахов. Передняя ручка упрощает извлечение органайзера с полки. Все варианты имеют одинаковую конструкцию и отличаются объёмом и внешними размерами.\n\nВыберите объём 3, 5 или 6 л, затем сравните точные внешние размеры с доступным местом в холодильнике. Поставьте органайзер на ровную полку, поместите продукты внутрь, закройте крышку и выдвигайте контейнер только за предусмотренную ручку.\n\nВ комплект входит один органайзер выбранного объёма. Перед покупкой измерьте свободное место на полке. Данные о температурном диапазоне, гарантии и сертификации не подтверждены и поэтому не заявляются.",
+    "description_sections": {
+      "product_value": "Прозрачный корпус помогает видеть содержимое, а крышка и передняя ручка делают ежедневное хранение в холодильнике более организованным.",
+      "usage_scenarios": "Используйте органайзер на полке холодильника для овощей, фруктов, закрытых упаковок или других продуктов с подходящими условиями хранения.",
+      "core_advantages": "Общие преимущества всех вариантов — прозрачный корпус, отдельная крышка, передняя ручка и возможность выбрать один из трёх объёмов.",
+      "usage_method": "Выберите подходящий размер, поставьте контейнер на ровную полку, загрузите продукты, закройте крышку и выдвигайте органайзер за ручку.",
+      "notices": "В комплект входит один органайзер выбранного объёма. До заказа измерьте полку; неподтверждённые гарантия, сертификация и температурный диапазон не заявляются."
+    },
+    "selling_points": [
+      {
+        "text_ru": "Прозрачный корпус позволяет быстро увидеть содержимое.",
+        "claim_type": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/product_attributes"
+        ]
+      },
+      {
+        "text_ru": "Крышка помогает уменьшить взаимное влияние запахов продуктов.",
+        "claim_type": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/product_attributes"
+        ]
+      },
+      {
+        "text_ru": "Передняя ручка упрощает извлечение органайзера с полки.",
+        "claim_type": "supported_inference",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/product_attributes"
+        ]
+      },
+      {
+        "text_ru": "Три объёма помогают подобрать вариант под продукты и свободное место.",
+        "claim_type": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json#/skus"
+        ]
+      }
+    ],
+    "keywords": {
+      "primary": [
+        {
+          "text_ru": "органайзер для холодильника",
+          "intent": "transactional",
+          "source_refs": [
+            "test-data/manual-input/P900002/category-selection.json#/category_name_ru"
+          ],
+          "metrics": "unknown"
+        },
+        {
+          "text_ru": "контейнер для холодильника",
+          "intent": "commercial",
+          "source_refs": [
+            "test-data/manual-input/P900002/source.json#/title_cn"
+          ],
+          "metrics": "unknown"
+        }
+      ],
+      "long_tail": [
+        {
+          "text_ru": "прозрачный контейнер для продуктов с крышкой",
+          "intent": "transactional",
+          "source_refs": [
+            "test-data/manual-input/P900002/source.json#/product_attributes"
+          ],
+          "metrics": "unknown"
+        },
+        {
+          "text_ru": "органайзер для холодильника с ручкой",
+          "intent": "transactional",
+          "source_refs": [
+            "test-data/manual-input/P900002/source.json#/product_attributes"
+          ],
+          "metrics": "unknown"
+        },
+        {
+          "text_ru": "контейнер для хранения продуктов 3 5 6 л",
+          "intent": "commercial",
+          "source_refs": [
+            "test-data/manual-input/P900002/source.json#/skus"
+          ],
+          "metrics": "unknown"
+        }
+      ],
+      "scene": [
+        {
+          "text_ru": "порядок в холодильнике",
+          "intent": "informational",
+          "source_refs": [
+            "test-data/manual-output/P900002/product-positioning.json#/core_sales_angle"
+          ],
+          "metrics": "unknown"
+        },
+        {
+          "text_ru": "хранение овощей и фруктов",
+          "intent": "commercial",
+          "source_refs": [
+            "test-data/manual-output/P900002/product-analysis.json#/usage_scenarios"
+          ],
+          "metrics": "unknown"
+        }
+      ],
+      "excluded": [
+        {
+          "text_ru": "вакуумный контейнер",
+          "intent": "функция не подтверждена",
+          "source_refs": [
+            "test-data/manual-output/P900002/product-analysis.json#/unknowns"
+          ],
+          "metrics": "unknown"
+        },
+        {
+          "text_ru": "термостойкий контейнер",
+          "intent": "температурный диапазон не подтверждён",
+          "source_refs": [
+            "test-data/manual-input/P900002/source.json#/unknowns"
+          ],
+          "metrics": "unknown"
+        }
+      ]
+    },
+    "hashtags": [
+      "#органайзер_холодильника",
+      "#контейнер_холодильника",
+      "#контейнер_для_продуктов",
+      "#прозрачный_контейнер",
+      "#контейнер_с_крышкой",
+      "#контейнер_с_ручкой",
+      "#ящик_для_холодильника",
+      "#хранение_продуктов",
+      "#порядок_в_холодильнике",
+      "#организация_хранения",
+      "#кухонный_органайзер",
+      "#контейнер_3л",
+      "#контейнер_5л",
+      "#контейнер_6л",
+      "#органайзер_3л",
+      "#органайзер_5л",
+      "#органайзер_6л",
+      "#хранение_овощей",
+      "#хранение_фруктов",
+      "#хранение_упаковок",
+      "#прозрачный_ящик",
+      "#ящик_с_крышкой",
+      "#ящик_с_ручкой",
+      "#органайзер_для_кухни",
+      "#контейнер_прямоугольный",
+      "#система_хранения",
+      "#полка_холодильника",
+      "#контейнер_pp5",
+      "#ёмкость_для_продуктов",
+      "#выбор_объёма"
+    ]
+  },
+  "attribute_plan": [
+    {
+      "attribute_name": "Тип",
+      "value": "Органайзер для холодильника",
+      "value_kind": "fact",
+      "source_refs": [
+        "test-data/manual-input/P900002/category-selection.json"
+      ]
+    },
+    {
+      "attribute_name": "Материал",
+      "value": "полипропилен PP5",
+      "value_kind": "fact",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/product_attributes"
+      ]
+    },
+    {
+      "attribute_name": "Цвет",
+      "value": "прозрачный",
+      "value_kind": "fact",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/product_attributes"
+      ]
+    },
+    {
+      "attribute_name": "Количество в комплекте",
+      "value": 1,
+      "value_kind": "fact",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/product_attributes"
+      ]
+    },
+    {
+      "attribute_name": "Бренд",
+      "value": "unknown",
+      "value_kind": "unknown_high_risk",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/unknowns"
+      ]
+    },
+    {
+      "attribute_name": "Сертификация, гарантия и таможенный код",
+      "value": "unknown",
+      "value_kind": "unknown_high_risk",
+      "source_refs": [
+        "test-data/manual-input/P900002/source.json#/unknowns"
+      ]
+    }
+  ],
+  "sku_plan": [
+    {
+      "sku_id": "fridge-organizer-3l",
+      "name_ru": "Органайзер для холодильника, 3 л",
+      "difference_ru": "объём 3 л, размер 14,5 × 14,5 × 12 см",
+      "specification": {
+        "capacity_ml": 3000,
+        "external_dimensions_cm": {
+          "length": 14.5,
+          "width": 14.5,
+          "height": 12
+        },
+        "color": "прозрачный",
+        "material": "PP5"
+      },
+      "source_image": "test-data/manual-input/P900002/sku-images/sku-3l.png"
+    },
+    {
+      "sku_id": "fridge-organizer-5l",
+      "name_ru": "Органайзер для холодильника, 5 л",
+      "difference_ru": "объём 5 л, размер 29 × 15,5 × 12 см",
+      "specification": {
+        "capacity_ml": 5000,
+        "external_dimensions_cm": {
+          "length": 29,
+          "width": 15.5,
+          "height": 12
+        },
+        "color": "прозрачный",
+        "material": "PP5"
+      },
+      "source_image": "test-data/manual-input/P900002/sku-images/sku-5l.png"
+    },
+    {
+      "sku_id": "fridge-organizer-6l",
+      "name_ru": "Органайзер для холодильника, 6 л",
+      "difference_ru": "объём 6 л, размер 29 × 15,5 × 15,5 см",
+      "specification": {
+        "capacity_ml": 6000,
+        "external_dimensions_cm": {
+          "length": 29,
+          "width": 15.5,
+          "height": 15.5
+        },
+        "color": "прозрачный",
+        "material": "PP5"
+      },
+      "source_image": "test-data/manual-input/P900002/sku-images/sku-6l.png"
+    }
+  ],
+  "visual_system": {
+    "style_name": "Чистая синяя система хранения",
+    "palette": [
+      "ледяной голубой",
+      "чистый белый",
+      "тёмно-синий",
+      "свежий зелёный акцент"
+    ],
+    "lighting": "светлый естественный свет холодильника без жёлтого оттенка",
+    "composition": "крупный реальный товар, свободная зона для русской информации, карточки преимуществ, стрелки и размерные линии",
+    "mood": "свежо, чисто, понятно, практично",
+    "typography": "чёткая кириллица с короткими заголовками и выраженной иерархией",
+    "shared_rule": "Детальные изображения объясняют только общие свойства всех трёх вариантов; различия показываются один раз в сравнении SKU."
+  },
+  "main_images": [
+    {
+      "slot": "main-fridge-organizer-3l",
+      "sku_id": "fridge-organizer-3l",
+      "layout_type": "sku_main",
+      "commercial_purpose": "Сразу показать товар, его назначение и точный вариант 3 л.",
+      "buyer_question": "Что это и какой объём я заказываю?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-3l.png"
+      ],
+      "russian_text": [
+        "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+        "3 Л",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "КРЫШКА И ПЕРЕДНЯЯ РУЧКА"
+      ],
+      "prompt": "Create a faithful 3:4 ecommerce base scene for Ozon from only the provided real 3 L SKU image. Keep the exact transparent rectangular body, transparent lid, front handle, proportions and single-item quantity. Use a bright blue-white refrigerator setting with clear product separation; remove supplier labels and Chinese text, add no generated typography, no extra accessories and no white catalog background.",
+      "operation": "edit_real_image",
+      "overlay_modules": [
+        "product_name",
+        "capacity_badge",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "must_preserve": [
+        "точная форма варианта 3 л",
+        "прозрачный корпус и крышка",
+        "передняя ручка",
+        "один товар"
+      ]
+    },
+    {
+      "slot": "main-fridge-organizer-5l",
+      "sku_id": "fridge-organizer-5l",
+      "layout_type": "sku_main",
+      "commercial_purpose": "Сразу показать товар, его назначение и точный вариант 5 л.",
+      "buyer_question": "Что это и какой объём я заказываю?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "russian_text": [
+        "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+        "5 Л",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "КРЫШКА И ПЕРЕДНЯЯ РУЧКА"
+      ],
+      "prompt": "Create a faithful 3:4 ecommerce base scene for Ozon from only the provided real 5 L SKU image. Keep the exact long transparent rectangular body, transparent lid, front handle, proportions and single-item quantity. Use a bright blue-white refrigerator setting with clear product separation; remove supplier labels and Chinese text, add no generated typography, no extra accessories and no white catalog background.",
+      "operation": "edit_real_image",
+      "overlay_modules": [
+        "product_name",
+        "capacity_badge",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "must_preserve": [
+        "точная форма варианта 5 л",
+        "прозрачный корпус и крышка",
+        "передняя ручка",
+        "один товар"
+      ]
+    },
+    {
+      "slot": "main-fridge-organizer-6l",
+      "sku_id": "fridge-organizer-6l",
+      "layout_type": "sku_main",
+      "commercial_purpose": "Сразу показать товар, его назначение и точный вариант 6 л.",
+      "buyer_question": "Что это и какой объём я заказываю?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+      ],
+      "russian_text": [
+        "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+        "6 Л",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "КРЫШКА И ПЕРЕДНЯЯ РУЧКА"
+      ],
+      "prompt": "Create a faithful 3:4 ecommerce base scene for Ozon from only the provided real 6 L SKU image. Keep the exact tall transparent rectangular body, transparent lid, front handle, proportions and single-item quantity. Use a bright blue-white refrigerator setting with clear product separation; remove supplier labels and Chinese text, add no generated typography, no extra accessories and no white catalog background.",
+      "operation": "edit_real_image",
+      "overlay_modules": [
+        "product_name",
+        "capacity_badge",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "must_preserve": [
+        "точная форма варианта 6 л",
+        "прозрачный корпус и крышка",
+        "передняя ручка",
+        "один товар"
+      ]
+    }
+  ],
+  "detail_images": [
+    {
+      "slot": "detail-001-core-storage",
+      "layout_type": "core_benefit",
+      "commercial_purpose": "Объяснить главную пользу организованного и видимого хранения.",
+      "buyer_question": "Как товар помогает поддерживать порядок?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "russian_text": [
+        "ПОРЯДОК, КОТОРЫЙ ВИДНО",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ"
+      ],
+      "prompt": "Edit the real transparent organizer into a bright, believable refrigerator shelf scene in 3:4. Show one unchanged organizer containing ordinary packaged produce so the transparent walls remain visible. Preserve the lid, front handle, dimensions and material appearance; remove Chinese labels and supplier stickers. Generate no text, no extra containers and no invented product parts because Russian sales modules will be added deterministically.",
+      "operation": "edit_real_image",
+      "overlay_modules": [
+        "product_name",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "must_preserve": [
+        "прозрачный корпус",
+        "крышка",
+        "передняя ручка",
+        "один органайзер"
+      ]
+    },
+    {
+      "slot": "detail-002-seal-odor",
+      "layout_type": "structure_callout",
+      "commercial_purpose": "Показать крышку и осторожно объяснить уменьшение смешивания запахов.",
+      "buyer_question": "Зачем нужна крышка?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "russian_text": [
+        "КРЫШКА ДЛЯ АККУРАТНОГО ХРАНЕНИЯ",
+        "ЗАКРЫВАЕТ СОДЕРЖИМОЕ",
+        "ПОМОГАЕТ УМЕНЬШИТЬ СМЕШИВАНИЕ ЗАПАХОВ",
+        "ПРОЗРАЧНАЯ КОНСТРУКЦИЯ"
+      ],
+      "prompt": "Use the real 5 L organizer image as the only product evidence and prepare a clean 3:4 close-up base for deterministic structure callouts. Keep the exact transparent lid edge, body, front handle and one-item quantity. Remove all supplier stickers and Chinese copy. Do not redraw the organizer, do not claim vacuum sealing, do not add text, arrows or invented gaskets; those exact Russian annotations will be rendered later.",
+      "operation": "compose_from_real_images",
+      "overlay_modules": [
+        "product_name",
+        "callout_arrows",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "must_preserve": [
+        "реальная крышка без выдуманного уплотнителя",
+        "прозрачный корпус",
+        "передняя ручка",
+        "один товар"
+      ]
+    },
+    {
+      "slot": "detail-003-structure",
+      "layout_type": "structure_callout",
+      "commercial_purpose": "Разложить конструкцию на понятные элементы без изменения товара.",
+      "buyer_question": "Какие детали делают использование удобным?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "russian_text": [
+        "ПРОДУМАННАЯ КОНСТРУКЦИЯ",
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "СОДЕРЖИМОЕ ВИДНО СРАЗУ",
+        "ПЕРЕДНЯЯ РУЧКА",
+        "УДОБНО ВЫДВИГАТЬ С ПОЛКИ"
+      ],
+      "prompt": "Prepare a faithful 3:4 product close-up from the real 5 L SKU for deterministic structure annotation. Keep the exact transparent rectangular body, transparent lid, front handle and product proportions; show the handle and lid clearly. Remove Chinese footer, supplier label and interface artifacts. Add no generated typography, no exploded parts and no accessories not visible in the source.",
+      "operation": "compose_from_real_images",
+      "overlay_modules": [
+        "product_name",
+        "callout_arrows",
+        "icon_chips",
+        "benefit_section"
+      ],
+      "must_preserve": [
+        "прозрачный корпус",
+        "реальная форма крышки",
+        "реальная передняя ручка",
+        "пропорции SKU"
+      ]
+    },
+    {
+      "slot": "detail-004-fridge-scene",
+      "layout_type": "usage_scene",
+      "commercial_purpose": "Показать понятный сценарий разделения продуктов на полке холодильника.",
+      "buyer_question": "Как органайзер выглядит в холодильнике?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "russian_text": [
+        "СВОЁ МЕСТО ДЛЯ ПРОДУКТОВ",
+        "ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК",
+        "СОДЕРЖИМОЕ ЛЕГКО НАЙТИ"
+      ],
+      "prompt": "Create a realistic bright refrigerator interior scene in 3:4 by faithfully editing the provided real organizer. Show the unchanged transparent container on a shelf with a modest amount of vegetables or closed food packages, keeping the lid and front handle visible. Avoid a generic white catalog look, generated text, excess props and duplicate products; remove source stickers and Chinese labels.",
+      "operation": "edit_real_image",
+      "overlay_modules": [
+        "product_name",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "must_preserve": [
+        "форма и прозрачность товара",
+        "крышка",
+        "передняя ручка",
+        "один органайзер"
+      ]
+    },
+    {
+      "slot": "detail-005-kitchen-scene",
+      "layout_type": "usage_scene",
+      "commercial_purpose": "Расширить сценарий на аккуратное хранение подходящих сухих продуктов.",
+      "buyer_question": "Можно ли использовать органайзер вне холодильника?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "russian_text": [
+        "УДОБНО И НА КУХОННОЙ ПОЛКЕ",
+        "ДЛЯ ЗАКРЫТЫХ УПАКОВОК И СУХИХ ПРОДУКТОВ",
+        "ВЫБИРАЙТЕ ПОДХОДЯЩИЕ УСЛОВИЯ ХРАНЕНИЯ"
+      ],
+      "prompt": "Create a clean, modern kitchen shelf scene in 3:4 using the real transparent organizer without changing its form. Place a few closed food packages or suitable dry goods inside while retaining the exact lid, front handle and material appearance. Use fresh blue-white light and practical ecommerce composition, not a plain white background. Remove supplier markings; generate no text or invented features.",
+      "operation": "edit_real_image",
+      "overlay_modules": [
+        "product_name",
+        "benefit_section",
+        "purchase_notice"
+      ],
+      "must_preserve": [
+        "реальный прозрачный товар",
+        "крышка",
+        "передняя ручка",
+        "одна единица"
+      ]
+    },
+    {
+      "slot": "detail-006-easy-access",
+      "layout_type": "core_benefit",
+      "commercial_purpose": "Показать практическую пользу передней ручки и прозрачности.",
+      "buyer_question": "Насколько удобно доставать и проверять содержимое?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "russian_text": [
+        "ВИДНО СРАЗУ — ДОСТАТЬ ПРОЩЕ",
+        "ПРОЗРАЧНЫЕ СТЕНКИ",
+        "ПЕРЕДНЯЯ РУЧКА",
+        "АККУРАТНОЕ РАЗДЕЛЕНИЕ ПРОДУКТОВ"
+      ],
+      "prompt": "Make a faithful 3:4 ecommerce base showing one real transparent organizer being gently pulled forward on a refrigerator shelf by its actual front handle. The product geometry, lid, color and material must remain unchanged and the hand must not cover key features. Use clear cool lighting, remove Chinese and supplier labels, add no generated writing and no additional containers.",
+      "operation": "edit_real_image",
+      "overlay_modules": [
+        "product_name",
+        "benefit_section",
+        "icon_chips"
+      ],
+      "must_preserve": [
+        "передняя ручка",
+        "прозрачные стенки",
+        "крышка",
+        "один товар"
+      ]
+    },
+    {
+      "slot": "detail-007-sku-comparison",
+      "layout_type": "sku_comparison",
+      "commercial_purpose": "Сравнить все реальные варианты один раз и помочь выбрать размер.",
+      "buyer_question": "Чем отличаются 3, 5 и 6 л?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-3l.png",
+        "test-data/manual-input/P900002/sku-images/sku-5l.png",
+        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+      ],
+      "russian_text": [
+        "ВЫБЕРИТЕ ПОДХОДЯЩИЙ ОБЪЁМ",
+        "3 Л — 14,5 × 14,5 × 12 СМ",
+        "5 Л — 29 × 15,5 × 12 СМ",
+        "6 Л — 29 × 15,5 × 15,5 СМ"
+      ],
+      "prompt": "Deterministically compose all three real SKU source images into one 3:4 comparison. Show the distinct 3 L, 5 L and 6 L organizers simultaneously in source order with no AI redrawing or scale substitution. Preserve each shape, lid, handle and proportions, remove supplier captions, and reserve clear zones for exact Russian capacity labels and dimension lines added by the layout renderer.",
+      "operation": "compose_from_real_images",
+      "overlay_modules": [
+        "product_name",
+        "sku_labels",
+        "dimension_lines",
+        "purchase_notice"
+      ],
+      "must_preserve": [
+        "три разных реальных SKU",
+        "точные размеры",
+        "порядок 3 л, 5 л, 6 л",
+        "реальные пропорции каждого варианта"
+      ]
+    },
+    {
+      "slot": "detail-008-purchase-notice",
+      "layout_type": "purchase_notice",
+      "commercial_purpose": "Снять последние сомнения о комплектации и выборе размера.",
+      "buyer_question": "Что я получу и что проверить до заказа?",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-3l.png",
+        "test-data/manual-input/P900002/sku-images/sku-5l.png",
+        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+      ],
+      "russian_text": [
+        "ПЕРЕД ПОКУПКОЙ",
+        "1 ОРГАНАЙЗЕР ВЫБРАННОГО ОБЪЁМА",
+        "ИЗМЕРЬТЕ СВОБОДНОЕ МЕСТО НА ПОЛКЕ",
+        "ВЫБЕРИТЕ 3, 5 ИЛИ 6 Л",
+        "ТЕМПЕРАТУРНЫЙ ДИАПАЗОН НЕ ПОДТВЕРЖДЁН"
+      ],
+      "prompt": "Create a deterministic 3:4 purchase information composition from the three real SKU references. Do not merge variants into a fictional product and do not imply that all three are included. Preserve the exact transparent bodies, lids, handles and SKU differences, remove source labels, and leave a large readable information area for exact Russian package and measurement notices.",
+      "operation": "compose_from_real_images",
+      "overlay_modules": [
+        "product_name",
+        "sku_labels",
+        "purchase_notice",
+        "icon_chips"
+      ],
+      "must_preserve": [
+        "комплект из одного выбранного органайзера",
+        "три варианта выбора",
+        "реальные SKU",
+        "без выдуманных аксессуаров"
+      ]
+    }
+  ],
+  "forbidden": [
+    "китайский текст и иероглифы",
+    "логотип или наклейка поставщика",
+    "белый каталожный фон по умолчанию",
+    "вымышленные аксессуары",
+    "изменение формы, цвета, прозрачности или количества товара",
+    "неверная кириллица или обрезанный русский текст",
+    "утверждение о вакуумной герметичности",
+    "повторение восьми деталей для каждого SKU"
+  ],
+  "processing": {
+    "step": "ecommerce_design",
+    "status": "completed",
+    "model_mode": "connected_codex",
+    "generated_at": "2026-07-16T21:30:00+08:00",
+    "error": null
+  }
+}

@@ -1,0 +1,9 @@
+{
+  "product_id": "P900002",
+  "status": "OFFLINE_ACCEPTANCE_READY",
+  "task_authorized": false,
+  "upload_forbidden": true,
+  "ozon_write_api_calls": 0,
+  "ozon_read_api_calls": 0,
+  "inventory_api_calls": 0
+}

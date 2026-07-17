@@ -10,15 +10,31 @@ import sys
 import tempfile
 import time
 import urllib.parse
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Dict, List
 
 from .images import CloudflareImageTunnel, ImageTunnelError
 
+DEFAULT_IMAGE_CHANNEL_TTL_SECONDS = 24 * 60 * 60
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def image_channel_ttl(started_at: str | None = None, ttl_seconds: int = DEFAULT_IMAGE_CHANNEL_TTL_SECONDS) -> Dict[str, Any]:
+    """Fixed safety lifetime; it never depends on a remote Ozon query."""
+    started = datetime.fromisoformat(started_at) if started_at else datetime.now(timezone.utc)
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    expires = started + timedelta(seconds=int(ttl_seconds))
+    return {
+        "ttl_seconds": int(ttl_seconds),
+        "started_at": started.isoformat(timespec="seconds"),
+        "expires_at": expires.isoformat(timespec="seconds"),
+        "close_policy": "fixed_ttl",
+    }
 
 
 def load_json(path: Path) -> Dict[str, Any]:
@@ -36,10 +52,22 @@ def write_json_atomic(path: Path, value: Dict[str, Any]) -> None:
 
 def process_alive(pid: Any) -> bool:
     try:
-        os.kill(int(pid), 0)
-        return True
+        process_id = int(pid)
+        os.kill(process_id, 0)
     except (OSError, TypeError, ValueError):
         return False
+    ps = shutil.which("ps")
+    if ps:
+        try:
+            state = subprocess.run(
+                [ps, "-o", "stat=", "-p", str(process_id)],
+                capture_output=True, text=True, timeout=2, check=False,
+            ).stdout.strip()
+            if not state or state.upper().startswith("Z"):
+                return False
+        except (OSError, subprocess.SubprocessError):
+            pass
+    return True
 
 
 def running_channel_count(project_root: Path) -> int:
@@ -63,7 +91,13 @@ def start_image_channel(
     if state_path.is_file():
         state = load_json(state_path)
         if state.get("status") == "running" and process_alive(state.get("worker_pid")):
-            return apply_public_urls(product_dir, manifest, state["public_url"])
+            try:
+                return apply_public_urls(product_dir, manifest, state["public_url"])
+            except Exception:
+                # A quick-tunnel URL can expire while its local worker still
+                # exists. Close it before a retry creates a replacement.
+                if not stop_image_channel(product_dir, reason="public_url_validation_failed", wait_seconds=10):
+                    raise ImageTunnelError("旧图片通道失效且未能安全退出，已阻止重复启动")
     workspace_root = product_dir.parent.parent
     source_root = Path(__file__).resolve().parents[2]
     if running_channel_count(workspace_root) >= concurrency_limit:
@@ -78,7 +112,7 @@ def start_image_channel(
     ]
     caffeinate = shutil.which("caffeinate")
     if caffeinate:
-        command = [caffeinate, "-dimsu", *command]
+        command = [caffeinate, "-ims", *command]
     env = dict(os.environ)
     package_root = str(Path(__file__).resolve().parents[1])
     # Store uploads run from an isolated copy under runtime/.  The uploader
@@ -100,7 +134,11 @@ def start_image_channel(
         if state_path.is_file():
             state = load_json(state_path)
             if state.get("status") == "running":
-                return apply_public_urls(product_dir, manifest, state["public_url"])
+                try:
+                    return apply_public_urls(product_dir, manifest, state["public_url"])
+                except Exception:
+                    stop_image_channel(product_dir, reason="public_url_validation_failed", wait_seconds=10)
+                    raise
             if state.get("status") == "failed":
                 raise ImageTunnelError(str(state.get("reason") or "Image channel failed"))
         time.sleep(1)
@@ -123,15 +161,25 @@ def apply_public_urls(product_dir: Path, manifest: Dict[str, Any], public_url: s
     return manifest
 
 
-def stop_image_channel(product_dir: Path, reason: str = "ozon_cdn_confirmed") -> None:
+def stop_image_channel(
+    product_dir: Path,
+    reason: str = "ozon_cdn_confirmed",
+    wait_seconds: float = 0,
+) -> bool:
     output = product_dir / "output"
     state_path = output / "image-channel-state.json"
     if not state_path.is_file():
-        return
+        return True
     state = load_json(state_path)
     if state.get("status") != "running":
-        return
+        return not process_alive(state.get("worker_pid"))
     (output / "image-channel.stop").write_text(reason + "\n", encoding="utf-8")
+    if wait_seconds <= 0:
+        return True
+    deadline = time.monotonic() + wait_seconds
+    while process_alive(state.get("worker_pid")) and time.monotonic() < deadline:
+        time.sleep(0.2)
+    return not process_alive(state.get("worker_pid"))
 
 
 def channel_state(product_dir: Path) -> Dict[str, Any]:

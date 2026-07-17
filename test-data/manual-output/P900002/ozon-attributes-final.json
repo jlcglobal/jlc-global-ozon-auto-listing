@@ -1,0 +1,71 @@
+{
+  "attributes": [
+    {
+      "attribute_name": "Бренд",
+      "value": "Нет бренда",
+      "source": "project_rule"
+    },
+    {
+      "attribute_name": "Тип",
+      "value": "Органайзер для холодильника",
+      "source": "locked_category"
+    },
+    {
+      "attribute_name": "Материал",
+      "value": "полипропилен (PP5)",
+      "source": "user_confirmed"
+    },
+    {
+      "attribute_name": "Цвет",
+      "value": "прозрачный",
+      "source": "user_confirmed"
+    },
+    {
+      "attribute_name": "Объем",
+      "value": [
+        "3 л",
+        "5 л",
+        "6 л"
+      ],
+      "source": "user_confirmed_skus"
+    },
+    {
+      "attribute_name": "Форма",
+      "value": "прямоугольная",
+      "source": "visible_inference"
+    },
+    {
+      "attribute_name": "Количество в комплекте",
+      "value": 1,
+      "source": "user_confirmed"
+    },
+    {
+      "attribute_name": "Особенности",
+      "value": [
+        "с крышкой",
+        "с ручкой"
+      ],
+      "source": "user_confirmed"
+    },
+    {
+      "attribute_name": "Назначение",
+      "value": "хранение продуктов в холодильнике",
+      "source": "user_confirmed"
+    },
+    {
+      "attribute_name": "Страна-изготовитель",
+      "value": "Китай",
+      "source": "project_rule"
+    },
+    {
+      "attribute_name": "Комплектация",
+      "value": "органайзер выбранного объёма — 1 шт.",
+      "source": "user_confirmed"
+    },
+    {
+      "attribute_name": "Вид выпуска товара",
+      "value": "фабричное производство",
+      "source": "source_platform"
+    }
+  ]
+}

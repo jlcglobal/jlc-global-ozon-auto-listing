@@ -40,6 +40,19 @@
       "forbidden_visual_signals": ["冷硬工业科技背景", "户外山野场景", "过度奢华化妆品陈列"],
       "truthfulness_guardrails": ["容量、尺寸、耐温和材质仅允许使用可靠来源", "不得增加不存在的餐具或配件"]
     },
+    "portable_kitchen_appliance_fresh": {
+      "label_cn": "便携厨房小家电清新活力风",
+      "applicable_to": ["便携榨汁杯", "小型搅拌机", "随行厨房电器"],
+      "style_direction": "清新、轻快、便携、功能直观，突出真实饮用和随行使用场景",
+      "tone": "明亮、利落、有活力",
+      "color_direction": ["清透日光", "产品本色", "果蔬自然色", "少量冷灰或清爽绿色点缀"],
+      "composition_style": "产品占据视觉中心，用果汁制作、随行携带和杯体细节形成不同画面；每张图只回答一个购买问题",
+      "text_style": "短俄文卖点与容量信息优先；未经证实的功率、续航、保温时长和食品接触认证不得出现",
+      "image_strategy": ["fresh_lifestyle", "portable_usage", "capacity", "detail"],
+      "required_visual_signals": ["真实商品轮廓", "清新饮用或制作语境", "便携使用关系", "不同SKU差异清楚"],
+      "forbidden_visual_signals": ["普通收纳用品式暖厨房模板", "纯工业科技背景", "白底商品图", "增加不存在的水果、刀头、杯盖或配件"],
+      "truthfulness_guardrails": ["不得改变杯体、杯盖、颜色、容量和SKU结构", "功能、材质、续航、功率及保温能力仅使用可靠来源"]
+    },
     "home_minimal_organized": {
       "label_cn": "家居极简整理风",
       "applicable_to": ["家居收纳", "清洁用品", "整理用品"],

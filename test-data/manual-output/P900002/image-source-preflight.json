@@ -1,0 +1,37 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900002",
+  "status": "PASS",
+  "sku_references": [
+    {
+      "source_sku_id": "fridge-organizer-3l",
+      "sku_name": "3L小号款",
+      "preferred_reference_path": "test-data/manual-input/P900002/sku-images/sku-3l.png",
+      "status": "ready",
+      "reason": "用户提供的真实SKU图片可用",
+      "width": 1162,
+      "height": 1040,
+      "sha256": "2045114d5e8428d2f8652458c4ab142eb2f77186ed9fc06e50f0604d8ed02d9b"
+    },
+    {
+      "source_sku_id": "fridge-organizer-5l",
+      "sku_name": "5L中号款",
+      "preferred_reference_path": "test-data/manual-input/P900002/sku-images/sku-5l.png",
+      "status": "ready",
+      "reason": "用户提供的真实SKU图片可用",
+      "width": 1132,
+      "height": 970,
+      "sha256": "7f5d08efc5b5603566f4c595314493af283c234ed1a7b053d4e11f94f3112a9f"
+    },
+    {
+      "source_sku_id": "fridge-organizer-6l",
+      "sku_name": "6L大号款",
+      "preferred_reference_path": "test-data/manual-input/P900002/sku-images/sku-6l.png",
+      "status": "ready",
+      "reason": "用户提供的真实SKU图片可用",
+      "width": 1126,
+      "height": 1060,
+      "sha256": "d5404f6bc1d596caa3953c4fa5b78e3cc8a93a57e27143f1294258df8b9966b6"
+    }
+  ]
+}

@@ -19,6 +19,11 @@ from typing import Any, Dict, Iterable, List, Tuple
 
 from jsonschema import Draft202012Validator
 
+try:
+    from PIL import Image
+except ImportError:  # pragma: no cover - the runtime venv provides Pillow
+    Image = None
+
 
 ROOT = Path(__file__).resolve().parents[1]
 RULES_PATH = ROOT / "rules" / "image_qc_rules.json"
@@ -54,6 +59,97 @@ def read_png_size(path: Path) -> Tuple[int, int]:
     if len(signature) < 24 or signature[:8] != b"\x89PNG\r\n\x1a\n" or signature[12:16] != b"IHDR":
         raise ValueError("not a readable PNG image")
     return struct.unpack(">II", signature[16:24])
+
+
+def detect_empty_placeholder_panel(path: Path) -> Dict[str, Any] | None:
+    """Detect a large, nearly empty rounded/rectangular text panel.
+
+    Image models often leave a dark or light rounded rectangle where a sales
+    message was requested.  It is not enough to check that the PNG exists: a
+    panel with no useful text must be rejected before the product can continue.
+    This intentionally conservative detector only considers broad bands near
+    the top or bottom, requires a low-variance interior and a visible boundary
+    on all four sides, and returns evidence for the UI error message.
+    """
+    if Image is None or not path.is_file():
+        return None
+    try:
+        with Image.open(path) as source:
+            image = source.convert("RGB")
+            # Keep the scan deterministic and cheap for 3:4 images.
+            width, height = image.size
+            scale = min(1.0, 240.0 / max(width, 1))
+            if scale < 1.0:
+                image = image.resize((max(1, int(width * scale)), max(1, int(height * scale))))
+            pixels = __import__("numpy").asarray(image, dtype="float32")
+    except (OSError, ValueError, ImportError):
+        return None
+
+    height, width = pixels.shape[:2]
+    if width < 120 or height < 160:
+        return None
+    gray = pixels.mean(axis=2)
+    # Panels are normally either in the lower information area or at the top.
+    y_ranges = [(0, int(height * 0.45)), (int(height * 0.55), height)]
+    width_fracs = (0.50, 0.62, 0.74, 0.86)
+    height_fracs = (0.07, 0.10, 0.14, 0.18, 0.22)
+    best: Dict[str, Any] | None = None
+
+    for y_start, y_end in y_ranges:
+        for height_frac in height_fracs:
+            box_h = max(12, int(height * height_frac))
+            if box_h >= y_end - y_start:
+                continue
+            for width_frac in width_fracs:
+                box_w = max(60, int(width * width_frac))
+                if box_w >= width:
+                    continue
+                # A few deterministic positions cover centered and slightly
+                # offset panels without mistaking a full-width wall for one.
+                for x in sorted({(width - box_w) // 2, int(width * 0.06), width - box_w - int(width * 0.06)}):
+                    if x < 2 or x + box_w + 2 >= width:
+                        continue
+                    for y in range(y_start + 2, y_end - box_h - 1, max(3, box_h // 12)):
+                        pad_x = max(3, int(box_w * 0.06))
+                        pad_y = max(2, int(box_h * 0.12))
+                        interior = gray[y + pad_y:y + box_h - pad_y, x + pad_x:x + box_w - pad_x]
+                        if interior.size == 0:
+                            continue
+                        variance = float(interior.std())
+                        # A blank panel is much more uniform than a product
+                        # scene. Keep this threshold deliberately strict so a
+                        # smooth wall, floor, or curtain is not misclassified.
+                        # Text or a real product normally pushes variance well
+                        # above this value.
+                        if variance > 3.0 or (box_w / width) < 0.58:
+                            continue
+                        top_out = gray[max(0, y - 3):y, x + pad_x:x + box_w - pad_x]
+                        bottom_out = gray[y + box_h:min(height, y + box_h + 3), x + pad_x:x + box_w - pad_x]
+                        left_out = gray[y + pad_y:y + box_h - pad_y, max(0, x - 3):x]
+                        right_out = gray[y + pad_y:y + box_h - pad_y, x + box_w:min(width, x + box_w + 3)]
+                        if min(top_out.size, bottom_out.size, left_out.size, right_out.size) == 0:
+                            continue
+                        edge_contrast = [
+                            abs(float(interior.mean()) - float(top_out.mean())),
+                            abs(float(interior.mean()) - float(bottom_out.mean())),
+                            abs(float(interior.mean()) - float(left_out.mean())),
+                            abs(float(interior.mean()) - float(right_out.mean())),
+                        ]
+                        if min(edge_contrast) < 10.0:
+                            continue
+                        score = (box_w / width) * (box_h / height) * (min(edge_contrast) / 255.0)
+                        candidate = {
+                            "x": round(x / width, 4),
+                            "y": round(y / height, 4),
+                            "width": round(box_w / width, 4),
+                            "height": round(box_h / height, 4),
+                            "interior_stddev": round(variance, 2),
+                            "edge_contrast": [round(value, 2) for value in edge_contrast],
+                            "score": round(score, 6),
+                        }
+                        if best is None or candidate["score"] > best["score"]:
+                            best = candidate
+    return best
 
 
 def all_plan_items(plan: Dict[str, Any]) -> Iterable[Dict[str, Any]]:
@@ -244,6 +340,17 @@ def inspect_images(
                 "status": status,
                 "message": message,
             })
+
+            placeholder = detect_empty_placeholder_panel(path)
+            if placeholder:
+                critical_failures.append("empty_placeholder_panel")
+                issues.append({
+                    "code": "empty_placeholder_panel",
+                    "severity": "critical",
+                    "image_slots": [slot],
+                    "message": "图片存在空白占位框或空面板，必须重新生成此图；不能继续上传。",
+                    "evidence": placeholder,
+                })
         except (FileNotFoundError, OSError, ValueError) as error:
             critical_failures.append("image_file_unreadable")
             issues.append({
@@ -317,7 +424,10 @@ def assessment_from_hard_gate(product_dir: Path, hard_gate: Dict[str, Any]) -> D
     """Adapt the six user-approved hard failures to the legacy report envelope."""
     plan = load_json(product_dir / "output/image-plan.json")
     planned_slots = [item["slot"] for item in all_plan_items(plan) if item.get("status") != "needs_review"]
-    checked_slots = [str(value) for value in hard_gate.get("checked_slots") or []]
+    checked_slots = [
+        str(value.get("slot") if isinstance(value, dict) else value)
+        for value in hard_gate.get("checked_slots") or []
+    ]
     if set(checked_slots) != set(planned_slots):
         missing = sorted(set(planned_slots) - set(checked_slots))
         raise ValueError("hard gate did not check every generated slot: " + ", ".join(missing))

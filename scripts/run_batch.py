@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+import re
 import signal
 import shutil
 import subprocess
@@ -12,10 +13,16 @@ import sys
 import threading
 import time
 from concurrent.futures import ThreadPoolExecutor, as_completed
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 from typing import Any, Callable, Dict, List, Optional
 
 from jsonschema import Draft202012Validator
+
+try:
+    from scripts.production_input_guard import validate_formal_product_input
+except ModuleNotFoundError:
+    from production_input_guard import validate_formal_product_input
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
@@ -53,6 +60,7 @@ from product_deletion import deletion_requested  # noqa: E402
 SETTINGS_PATH = ROOT / "config/pipeline-settings.json"
 BATCH_LOCK_PATH = ROOT / "logs/.batch.lock"
 BATCH_PID_PATH = ROOT / "logs/batch-runner.pid"
+CURRENT_BATCH_PATH = ROOT / "logs/current-batch.json"
 SAFE_STOP_REQUEST_PATH = ROOT / "logs/safe-stop-request.json"
 IMAGE_GENERATION_STEPS = {"image_generation"}
 IMAGE_QC_STEPS = {"image_qc"}
@@ -61,13 +69,32 @@ STEP_START_PROGRESS = {
     step: max(2, round(index * 95 / max(len(PIPELINE_STEPS), 1)))
     for index, step in enumerate(PIPELINE_STEPS)
 }
-SUCCESS_STATES = {"UPLOADED", "OZON_MODERATION", "ACTIVE"}
+SUCCESS_STATES = {"UPLOADED", "OZON_MODERATION", "ACTIVE", "HANDED_OFF_TO_OZON"}
 _batch_write_lock = threading.Lock()
 _codex_semaphore = threading.BoundedSemaphore(2)
 
 
+def codex_worker_env(settings: Dict[str, Any]) -> Dict[str, str]:
+    """Keep Codex helper scripts on the same Python runtime as the project."""
+    env = dict(
+        os.environ,
+        UPLOAD_MODE="production" if app_mode(settings) == "production" else "dry-run",
+    )
+    venv_python = ROOT / ".venv" / "bin" / "python"
+    python_bin = venv_python if venv_python.is_file() else Path(sys.executable)
+    python_dir = str(python_bin.parent)
+    current_path = env.get("PATH", "")
+    env["PATH"] = f"{python_dir}{os.pathsep}{current_path}" if current_path else python_dir
+    env["CAF_PYTHON_BIN"] = str(python_bin)
+    return env
+
+
 class ImageRegenerationRequested(RuntimeError):
     pass
+
+
+class ImageGenerationStalled(subprocess.TimeoutExpired):
+    """Raised when image generation is alive but produces no new slot checkpoint."""
 
 
 class ProductDeletionRequested(RuntimeError):
@@ -114,6 +141,7 @@ def run_registered_process(
     env: Optional[Dict[str, str]] = None,
     completion_check: Optional[Callable[[], bool]] = None,
     completion_poll_seconds: float = 0.5,
+    stall_seconds: Optional[int] = None,
 ) -> subprocess.Popen:
     if product_deleted(product_dir):
         raise ProductDeletionRequested(product_dir.name)
@@ -122,11 +150,17 @@ def run_registered_process(
         stderr=subprocess.STDOUT, text=True, start_new_session=True, close_fds=True,
     )
     worker_path = product_worker_path(product_dir.name)
+    started_at = now()
     write_json_atomic(worker_path, {
         "product_id": product_dir.name, "pid": process.pid,
-        "command": command[:3], "started_at": now(),
+        "command": command[:3], "started_at": started_at,
+        "last_heartbeat_at": started_at, "last_progress_at": started_at,
     })
     artifact_completed_early = False
+    image_signature = completed_image_slot_count(product_dir)
+    last_image_progress = time.monotonic()
+    last_image_progress_at = started_at
+    last_worker_heartbeat = 0.0
     try:
         deadline = time.monotonic() + timeout_seconds
         while process.poll() is None:
@@ -139,6 +173,36 @@ def run_registered_process(
                     f"Batch {batch_id} stopped during {status.get('current_step') or 'current step'}; "
                     "completed file checkpoints were preserved."
                 )
+            if status.get("current_step") == "image_generation":
+                try:
+                    refresh_live_image_progress(product_dir)
+                except (OSError, ValueError, json.JSONDecodeError):
+                    # A concurrent child write must never interrupt the worker.
+                    pass
+                completed_slots = completed_image_slot_count(product_dir)
+                if completed_slots != image_signature:
+                    image_signature = completed_slots
+                    last_image_progress = time.monotonic()
+                    last_image_progress_at = now()
+                if stall_seconds and time.monotonic() - last_image_progress >= stall_seconds:
+                    raise ImageGenerationStalled(
+                        command, stall_seconds,
+                        output=f"图片连续{stall_seconds}秒没有新增完成槽位",
+                    )
+            if time.monotonic() - last_worker_heartbeat >= 3:
+                worker = {
+                    "product_id": product_dir.name,
+                    "pid": process.pid,
+                    "command": command[:3],
+                    "step": status.get("current_step") or "unknown",
+                    "started_at": started_at,
+                    "last_heartbeat_at": now(),
+                    "last_progress_at": last_image_progress_at,
+                    "completed_image_slots": image_signature,
+                    "planned_image_slots": planned_image_slot_count(product_dir),
+                }
+                write_json_atomic(worker_path, worker)
+                last_worker_heartbeat = time.monotonic()
             if completion_check is not None:
                 try:
                     artifact_ready = bool(completion_check())
@@ -352,7 +416,7 @@ def codex_command(settings: Dict[str, Any]) -> str:
         return configured
     found = shutil.which("codex")
     if not found:
-        raise RuntimeError("Codex executable is unavailable")
+        raise FileNotFoundError("Codex executable is unavailable")
     return found
 
 
@@ -364,14 +428,17 @@ def codex_reasoning_effort(settings: Dict[str, Any], step: str) -> str:
 
 def codex_exec_command(settings: Dict[str, Any], step: str, prompt: str) -> List[str]:
     """Build an unattended child command without unrelated MCP startup waits."""
-    return [
+    command = [
         codex_command(settings), "exec", "-C", str(ROOT), "--skip-git-repo-check",
         "--ephemeral", "--disable", "chronicle",
         "-s", "danger-full-access", "-c", 'approval_policy="never"',
         "-c", "mcp_servers={}",
         "-c", f'model_reasoning_effort="{codex_reasoning_effort(settings, step)}"',
-        prompt,
     ]
+    if step in {"ecommerce_design", "russian_copy"}:
+        command.extend(["-c", 'web_search="live"'])
+    command.append(prompt)
+    return command
 
 
 def load_shop_environment(settings: Dict[str, Any]) -> None:
@@ -441,7 +508,12 @@ def product_step_timeout(product_dir: Path, settings: Dict[str, Any], step: str)
             len(load_json(regeneration_path).get("failed_slots") or []),
         )
     calculated = per_unit * max(1, remaining)
-    return min(calculated, int(settings.get("image_generation_run_max_seconds", 1200)))
+    # The worker already has a separate idle-stall watchdog.  A fixed ten-minute
+    # wall-clock limit interrupted healthy 12-slot jobs even while new images
+    # were arriving, so keep the total window bounded but long enough for the
+    # remaining slots.  The idle watchdog remains separately configurable.
+    configured_max = max(600, min(int(settings.get("image_generation_run_max_seconds", 1800)), 3600))
+    return min(calculated, configured_max)
 
 
 def completed_image_slot_count(product_dir: Path) -> int:
@@ -449,6 +521,18 @@ def completed_image_slot_count(product_dir: Path) -> int:
     if not plan_path.is_file():
         return 0
     plan = load_json(plan_path)
+    requires_lock = (plan.get("generator_contract") or {}).get("product_pixel_lock_required") is True
+    hard_gate = {}
+    hard_gate_path = product_dir / "output/image-hard-gate.json"
+    if hard_gate_path.is_file():
+        try:
+            hard_gate = {
+                str(item.get("slot")): item
+                for item in (load_json(hard_gate_path).get("checked_slots") or [])
+                if item.get("slot")
+            }
+        except (OSError, ValueError, json.JSONDecodeError):
+            hard_gate = {}
     completed = 0
     for key in ("main_images", "detail_images", "disclaimer_images"):
         for item in plan.get(key) or []:
@@ -458,15 +542,191 @@ def completed_image_slot_count(product_dir: Path) -> int:
                 continue
             output_path = ROOT / output_value
             manifest_path = product_dir / "output/product-lock" / f"{slot}.json"
-            if not output_path.is_file() or not manifest_path.is_file():
+            if not output_path.is_file():
                 continue
-            try:
-                manifest = load_json(manifest_path)
-            except (OSError, ValueError, json.JSONDecodeError):
-                continue
-            if (manifest.get("audit") or {}).get("status") == "pass":
+            if hard_gate.get(slot, {}).get("status") == "pass":
                 completed += 1
+                continue
+            # Older plans deliberately used AI reference editing without a
+            # compositor lock.  Those plans still produce valid progressive
+            # checkpoints; requiring a lock here made the workbench stay at
+            # 78% forever even though PNGs had already been saved.
+            if not requires_lock and output_path.is_file():
+                completed += 1
+                continue
+            if manifest_path.is_file():
+                try:
+                    manifest = load_json(manifest_path)
+                except (OSError, ValueError, json.JSONDecodeError):
+                    continue
+                if (manifest.get("audit") or {}).get("status") == "pass":
+                    completed += 1
     return completed
+
+
+def planned_image_slot_count(product_dir: Path) -> int:
+    plan_path = product_dir / "output/image-plan.json"
+    if not plan_path.is_file():
+        return 0
+    try:
+        plan = load_json(plan_path)
+    except (OSError, ValueError, json.JSONDecodeError):
+        return 0
+    return sum(
+        1
+        for key in ("main_images", "detail_images", "disclaimer_images")
+        for item in (plan.get(key) or [])
+        if item.get("output_path") and item.get("slot")
+    )
+
+
+def refresh_live_image_progress(product_dir: Path) -> None:
+    """Expose slot-level progress while the Codex image worker is running."""
+    status_path = product_dir / "status.json"
+    if not status_path.is_file():
+        return
+    status = load_json(status_path)
+    if status.get("current_step") != "image_generation":
+        return
+    total = planned_image_slot_count(product_dir)
+    completed = completed_image_slot_count(product_dir)
+    if not total:
+        return
+    # Keep the existing phase position, but make completed slots visible in
+    # the remaining image-generation band (78..90) instead of waiting for the
+    # child process to exit before the UI changes.
+    start = max(78, int(status.get("progress") or 0))
+    live = min(90, start + round(12 * completed / total))
+    if live <= int(status.get("progress") or 0) and completed <= int(status.get("completed_image_slots") or 0):
+        return
+    status["progress"] = max(int(status.get("progress") or 0), live)
+    status["completed_image_slots"] = completed
+    status["planned_image_slots"] = total
+    status["last_run_at"] = now()
+    write_json_atomic(status_path, status)
+
+
+def image_slot_states_after_interruption(product_dir: Path, reason_code: str) -> List[str]:
+    """Keep valid images and mark only unfinished slots for one bounded retry."""
+    plan_path = product_dir / "output/image-plan.json"
+    if not plan_path.is_file():
+        return []
+    image_plan = load_json(plan_path)
+    hard_gate_path = product_dir / "output/image-hard-gate.json"
+    try:
+        passed_slots = {
+            str(item.get("slot"))
+            for item in (load_json(hard_gate_path).get("checked_slots") or [])
+            if item.get("slot") and item.get("status") == "pass"
+        }
+    except (OSError, ValueError, json.JSONDecodeError):
+        passed_slots = set()
+    missing: List[str] = []
+    requires_lock = (image_plan.get("generator_contract") or {}).get("product_pixel_lock_required") is True
+    for collection in ("main_images", "detail_images", "disclaimer_images"):
+        for item in image_plan.get(collection) or []:
+            slot = str(item.get("slot") or "")
+            output_path = ROOT / str(item.get("output_path") or "")
+            lock_path = product_dir / "output/product-lock" / f"{slot}.json"
+            completed = bool(slot) and (
+                slot in passed_slots
+                or (output_path.is_file() and (not requires_lock or lock_path.is_file()))
+            )
+            if completed:
+                item["status"] = "generated"
+                item["failure_reason"] = "unknown"
+                continue
+            item["status"] = "needs_review"
+            item["failure_reason"] = reason_code
+            if slot:
+                missing.append(slot)
+    write_json_atomic(plan_path, image_plan)
+    return missing
+
+
+def notify_mac(title: str, message: str) -> None:
+    """Best-effort local notification; notification failure never affects a task."""
+    if sys.platform != "darwin":
+        return
+    safe_title = title.replace("\\", "\\\\").replace('"', '\\"')
+    safe_message = message.replace("\\", "\\\\").replace('"', '\\"')
+    try:
+        subprocess.Popen(
+            ["/usr/bin/osascript", "-e", f'display notification "{safe_message}" with title "{safe_title}"'],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, close_fds=True,
+        )
+    except OSError:
+        pass
+
+
+def recover_interrupted_image_generation(
+    product_dir: Path,
+    settings: Dict[str, Any],
+    reason: str,
+    reason_code: str,
+) -> Dict[str, Any]:
+    """Retry unfinished slots; ongoing forward progress may continue in another host window."""
+    missing = image_slot_states_after_interruption(product_dir, reason_code)
+    previous_request_path = product_dir / "output/image-regeneration-request.json"
+    previous_missing: set[str] = set()
+    if previous_request_path.is_file():
+        try:
+            previous_missing = {
+                str(item.get("slot") if isinstance(item, dict) else item)
+                for item in (load_json(previous_request_path).get("failed_slots") or [])
+                if (item.get("slot") if isinstance(item, dict) else item)
+            }
+        except (OSError, ValueError, json.JSONDecodeError):
+            previous_missing = set()
+    current_missing = set(missing)
+    made_forward_progress = bool(previous_missing) and current_missing < previous_missing
+    if made_forward_progress:
+        # This is continuation of a healthy progressive job, not a second
+        # retry of the same failed slot.  The no-progress retry limit remains
+        # one, while completed images stay immutable.
+        status_path = product_dir / "status.json"
+        status = load_json(status_path)
+        status.setdefault("retry_count_by_step", {})["image_generation"] = 0
+        status.setdefault("warnings", []).append(
+            f"上一个生图窗口新增了{len(previous_missing) - len(current_missing)}张图片；"
+            f"已保留完成图片并继续剩余{len(current_missing)}张。"
+        )
+        write_json_atomic(status_path, status)
+    status = request_single_image_regeneration(product_dir, missing, reason)
+    if status.get("status") == "FAILED_HARD_BLOCKER":
+        status["host_recovery_state"] = "needs_attention"
+        status["host_recovery_reason"] = reason
+        write_json_atomic(product_dir / "status.json", status)
+        notify_mac("AI Factory 需要处理", f"{product_dir.name} 生图自动修复一次后仍然失败")
+        return {
+            "product_id": product_dir.name,
+            "outcome": "failed",
+            "step": "image_generation",
+            "failed_slots": missing,
+        }
+    status["host_recovery_state"] = "recovering"
+    status["host_recovery_reason"] = reason
+    status.setdefault("warnings", []).append(
+        f"生图主机已自动重启一次；保留完成图片，"
+        + (f"只继续 {len(missing)} 个未完成槽位。" if missing else "只继续完成生图收尾检查。")
+    )
+    write_json_atomic(product_dir / "status.json", status)
+    return {
+        "product_id": product_dir.name,
+        "outcome": "retry",
+        "step": "image_generation",
+        "failed_slots": missing,
+    }
+
+
+def clear_image_host_recovery(product_dir: Path) -> None:
+    status_path = product_dir / "status.json"
+    if not status_path.is_file():
+        return
+    status = load_json(status_path)
+    status["host_recovery_state"] = "normal"
+    status["host_recovery_reason"] = "unknown"
+    write_json_atomic(status_path, status)
 
 
 def app_mode(settings: Dict[str, Any]) -> str:
@@ -505,6 +765,8 @@ def validate_source_step(product_dir: Path) -> None:
     require_files(product_dir, ["input/source.json", "input/raw-snapshot.json", "input/category-selection.json", "status.json"])
     source = load_json(source_path)
     selection = load_json(product_dir / "input/category-selection.json")
+    validate_formal_product_input(product_dir)
+    offline_fixture = False
     schema = load_json(ROOT / "templates/source.schema.json")
     errors = sorted(Draft202012Validator(schema).iter_errors(source), key=lambda item: list(item.path))
     if errors:
@@ -518,7 +780,9 @@ def validate_source_step(product_dir: Path) -> None:
     if not 1 <= len(skus) <= MAX_SELECTED_SKUS_PER_PRODUCT:
         raise RuntimeError(f"Selected SKU count must be 1-{MAX_SELECTED_SKUS_PER_PRODUCT}")
     for sku in skus:
-        if not str(sku.get("sku_id") or "").strip() or sku.get("purchase_price") is None:
+        if not str(sku.get("sku_id") or "").strip() or (
+            sku.get("purchase_price") is None
+        ):
             raise RuntimeError("Every selected SKU requires a real sku_id and purchase price")
     if (
         not isinstance(selection.get("category_id"), int)
@@ -549,7 +813,20 @@ def offer_exists_check(product_dir: Path, settings: Dict[str, Any]) -> None:
     from ozon_adapter import OzonConfig
     from ozon_uploader import OzonWriteClient
     client = OzonWriteClient(OzonConfig.from_shop(str(settings.get("shop_name") or "zhonglian1"), ROOT / "ozon-adapter/shops.json"))
-    response = client.get_products_info(identifiers)
+    # This entry point is also used by focused recovery/diagnostic runs, where
+    # the process-level environment has not gone through ``main()``.  The
+    # endpoint is a read-only existence check, but the shared client still
+    # requires the explicit production mode gate.  Mirror the batch setting
+    # for this one call and restore the caller's environment afterwards.
+    previous_upload_mode = os.environ.get("UPLOAD_MODE")
+    os.environ["UPLOAD_MODE"] = "production"
+    try:
+        response = client.get_products_info(identifiers)
+    finally:
+        if previous_upload_mode is None:
+            os.environ.pop("UPLOAD_MODE", None)
+        else:
+            os.environ["UPLOAD_MODE"] = previous_upload_mode
     items = response.get("items") or response.get("result", {}).get("items") or []
     existing = {str(item.get("offer_id")) for item in items if item.get("offer_id")}
     if existing and len(existing) != len(identifiers):
@@ -710,6 +987,12 @@ def run_local_step(product_dir: Path, step: str, settings: Dict[str, Any], log_p
         run_checked([python, "scripts/style_selector.py", str(product_dir)], log_path, timeout, product_dir)
         require_files(product_dir, ["output/style-profile.json"])
     elif step == "image_plan":
+        require_files(product_dir, [
+            "output/ozon-ecommerce-design.json",
+            "output/title-ru.json", "output/description-ru.json", "output/ozon-tags.json",
+            "output/ozon-attributes-final.json", "output/pricing-result.json",
+            "output/platform-grouping-result.json",
+        ])
         style_path = product_dir / "output/style-profile.json"
         if not style_path.is_file() or load_json(style_path).get("classification_status") != "selected":
             run_checked([python, "scripts/style_selector.py", str(product_dir)], log_path, timeout, product_dir)
@@ -717,11 +1000,19 @@ def run_local_step(product_dir: Path, step: str, settings: Dict[str, Any], log_p
             raise RuntimeError("已锁定类目仍无法选择图片风格，禁止生成无依据图片规划")
         run_checked([python, "scripts/image_source_preflight.py", str(product_dir)], log_path, timeout, product_dir)
         require_files(product_dir, ["output/image-source-preflight.json"])
+        # The connected-Codex designer is the only commercial source. This
+        # projector validates and materializes compatibility artifacts; it
+        # never invents copy or falls back to a local template.
+        run_checked([python, "scripts/ozon_ecommerce_designer_contract.py", str(product_dir), "--materialize"], log_path, timeout, product_dir)
+        require_files(product_dir, ["output/ecommerce-creative-brief.json"])
         run_checked([python, "scripts/image_planner.py", str(product_dir), "--write"], log_path, timeout, product_dir)
         require_files(product_dir, ["output/image-plan.json"])
     elif step == "image_qc":
-        if not (product_dir / "output/image-qc-report.json").is_file():
-            run_checked([python, "scripts/image_qc.py", str(product_dir), "--hard-gate", "--write"], log_path, timeout, product_dir)
+        # Rebuild the report on every entry.  The image worker updates
+        # image-hard-gate.json incrementally, so an older QC report may only
+        # contain the slots that existed during a previous attempt and would
+        # incorrectly block final upload even when all planned images now pass.
+        run_checked([python, "scripts/image_qc.py", str(product_dir), "--hard-gate", "--write"], log_path, timeout, product_dir)
         run_checked([python, "scripts/image_qc.py", str(product_dir), "--verify-report"], log_path, timeout, product_dir)
         report = load_json(product_dir / "output/image-qc-report.json")
         if report.get("decision") != "pass" or report.get("critical_failures"):
@@ -750,11 +1041,38 @@ def run_local_step(product_dir: Path, step: str, settings: Dict[str, Any], log_p
         ], log_path, timeout, product_dir)
         require_files(product_dir, ["output/title-ru.json", "output/description-ru.json", "output/keywords-ru.json", "output/ozon-draft.json"])
     elif step == "field_completion":
-        run_checked([python, "ozon-field-completion/cli.py", product_dir.name], log_path, timeout, product_dir)
-        require_files(product_dir, ["output/ozon-tags.json", "output/rich-content.json", "output/final-upload-check.json"])
+        run_checked([
+            python, "ozon-field-completion/cli.py", product_dir.name, "--pre-image",
+        ], log_path, timeout, product_dir)
+        require_files(product_dir, [
+            "output/ozon-tags.json", "output/ozon-attributes-final.json",
+            "output/attribute-coverage-report.json",
+        ])
         tags = load_json(product_dir / "output/ozon-tags.json")
         if tags.get("count") != 30 or len(tags.get("tags") or []) != 30:
             raise RuntimeError("Ozon tags must contain exactly 30 entries")
+        attributes = load_json(product_dir / "output/ozon-attributes-final.json")
+        missing_required = int((attributes.get("required_summary") or {}).get("missing") or 0)
+        if missing_required:
+            raise RuntimeError(f"{missing_required} required Ozon attributes are still missing")
+    elif step == "final_upload_check":
+        content_input = product_dir / "output/marketplace-content-input.json"
+        require_files(product_dir, [
+            "output/image-plan.json", "output/image-qc-report.json",
+            "output/marketplace-content-input.json",
+        ])
+        run_checked([
+            python, "scripts/marketplace_content_generator.py", str(product_dir),
+            "--content-input", str(content_input), "--write",
+        ], log_path, timeout, product_dir)
+        run_checked([
+            python, "ozon-field-completion/cli.py", product_dir.name,
+        ], log_path, timeout, product_dir)
+        require_files(product_dir, [
+            "output/ozon-draft.json", "output/ozon-tags.json",
+            "output/ozon-attributes-final.json", "output/rich-content.json",
+            "output/final-upload-check.json",
+        ])
         check = load_json(product_dir / "output/final-upload-check.json")
         if check.get("status") != "PASS" or check.get("upload_allowed") is not True:
             raise RuntimeError("Final upload check did not pass: " + "; ".join(check.get("errors") or []))
@@ -762,12 +1080,19 @@ def run_local_step(product_dir: Path, step: str, settings: Dict[str, Any], log_p
         if app_mode(settings) != "production":
             raise RuntimeError("APP_MODE=development prohibits real Ozon batch uploads")
         status = load_json(product_dir / "status.json")
-        if int(status.get("api_write_count") or 0) > 0 and (product_dir / "output/ozon-write-receipt.json").is_file():
-            # The write was accepted earlier. Move to read-only task polling instead of resubmitting.
+        retry_stores = [str(value) for value in status.get("target_store_ids_for_run") or []]
+        if (
+            not retry_stores
+            and int(status.get("api_write_count") or 0) > 0
+            and (product_dir / "output/ozon-write-receipt.json").is_file()
+        ):
+            # The product-level write was accepted earlier. Move to read-only
+            # task polling instead of resubmitting.  A failed-store retry is
+            # different: multi_store_upload.py receives an explicit allowlist
+            # and checks each store's own task/offer state independently.
             from pipeline_runtime import complete_step
             complete_step(product_dir, step)
             return True
-        retry_stores = [str(value) for value in status.get("target_store_ids_for_run") or []]
         command = [python, "scripts/multi_store_upload.py", str(product_dir), "--execute"]
         for store_id in retry_stores:
             command.extend(["--only-store", store_id])
@@ -804,6 +1129,159 @@ def product_analysis_output_is_complete(product_dir: Path) -> bool:
     )
 
 
+def ecommerce_design_output_is_complete(product_dir: Path) -> bool:
+    """Validate the unified connected-Codex design before advancing."""
+    path = product_dir / "output/ozon-ecommerce-design.json"
+    if not path.is_file():
+        return False
+    try:
+        from ozon_ecommerce_designer_contract import validate_design
+        value = load_json(path)
+        return (
+            not validate_design(product_dir, value)
+            and value.get("product_id") == product_dir.name
+            and (value.get("processing") or {}).get("step") == "ecommerce_design"
+            and (value.get("processing") or {}).get("model_mode") == "connected_codex"
+        )
+    except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+        return False
+
+
+def codex_worker_unavailable(log_path: Path, start_offset: int = 0) -> bool:
+    """Recognize temporary Codex transport/service failures that must pause the step."""
+    try:
+        with log_path.open("r", encoding="utf-8", errors="replace") as handle:
+            handle.seek(max(0, int(start_offset)))
+            text = handle.read()[-16000:].casefold()
+    except OSError:
+        return False
+    signals = (
+        "403 forbidden", "failed to connect to websocket", "unexpected status 403",
+        "codex executable is unavailable", "transport channel closed",
+        "error: reconnecting", "429 too many requests", "unexpected status 429",
+        "rate limit", "502 bad gateway", "503 service unavailable",
+        "504 gateway timeout", "connection reset by peer", "connection refused",
+    )
+    return any(signal in text for signal in signals)
+
+
+def codex_retry_remaining_seconds(
+    status: Dict[str, Any],
+    current_time: Optional[datetime] = None,
+) -> float:
+    """Return the remaining service-backoff delay without treating it as a product error."""
+    if str(status.get("ai_service_state") or "normal") != "waiting_for_recovery":
+        return 0.0
+    value = str(status.get("ai_service_retry_after") or "")
+    if not value or value == "unknown":
+        return 0.0
+    try:
+        retry_at = datetime.fromisoformat(value.replace("Z", "+00:00"))
+    except ValueError:
+        return 0.0
+    if retry_at.tzinfo is None:
+        retry_at = retry_at.replace(tzinfo=timezone.utc)
+    current = current_time or datetime.now(timezone.utc)
+    return max(0.0, (retry_at.astimezone(timezone.utc) - current.astimezone(timezone.utc)).total_seconds())
+
+
+def mark_codex_service_waiting(
+    product_dir: Path,
+    step: str,
+    settings: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Pause on the same checkpoint and schedule a later online-model retry."""
+    path = product_dir / "status.json"
+    status = load_json(path)
+    previous_state = str(status.get("ai_service_state") or "normal")
+    delay = max(10, int(settings.get("codex_outage_retry_seconds", 30)))
+    retry_at = datetime.now(timezone.utc) + timedelta(seconds=delay)
+    status.update({
+        "status": "PROCESSING",
+        "current_step": step,
+        "next_action": step,
+        "active_step": None,
+        "failed_step": "unknown",
+        "error_code": "AI_SERVICE_TEMPORARILY_UNAVAILABLE",
+        "error_message": f"联网大模型暂时不可用，任务已停在{step}并将在约{delay}秒后自动重试；无需人工处理。",
+        "last_run_at": now(),
+        "ai_service_state": "waiting_for_recovery",
+        "ai_service_reason": "codex_transport_or_service_unavailable",
+        "ai_service_retry_after": retry_at.isoformat(timespec="seconds"),
+        "ai_service_retry_count": int(status.get("ai_service_retry_count") or 0) + 1,
+    })
+    if previous_state != "waiting_for_recovery":
+        status.setdefault("warnings", []).append(
+            "联网大模型暂时不可用；系统已暂停当前步骤，恢复后自动从断点继续，不启用本地备用分析。"
+        )
+    write_json_atomic(path, status)
+    return status
+
+
+def clear_codex_service_waiting(product_dir: Path) -> None:
+    path = product_dir / "status.json"
+    status = load_json(path)
+    if str(status.get("ai_service_state") or "normal") != "waiting_for_recovery":
+        return
+    status.update({
+        "ai_service_state": "normal",
+        "ai_service_reason": "unknown",
+        "ai_service_retry_after": "unknown",
+        "error_code": "unknown",
+        "error_message": "unknown",
+        "active_step": None,
+        "last_run_at": now(),
+    })
+    write_json_atomic(path, status)
+
+
+def russian_copy_quality_errors(
+    copy_value: Dict[str, Any],
+    content_value: Dict[str, Any],
+    keyword_value: Dict[str, Any],
+) -> List[str]:
+    """Reject stale translation-style copy before the checkpoint can advance."""
+    errors: List[str] = []
+    bullets = copy_value.get("bullets_ru") or []
+    if not isinstance(bullets, list) or not 3 <= len(bullets) <= 6:
+        errors.append("Russian copy must contain 3 to 6 selling points")
+    elif len({
+        str(item.get("text_ru") if isinstance(item, dict) else item).strip().casefold()
+        for item in bullets
+    }) != len(bullets):
+        errors.append("Russian selling points must be unique")
+
+    description = str(copy_value.get("description_ru") or "").strip()
+    paragraphs = [value.strip() for value in re.split(r"\n\s*\n", description) if value.strip()]
+    if len(paragraphs) < 4:
+        errors.append("Russian description must contain at least 4 paragraphs")
+
+    hashtags = content_value.get("hashtags_ru") or []
+    valid_hashtags = (
+        isinstance(hashtags, list)
+        and len(hashtags) == 30
+        and len({str(value).casefold() for value in hashtags}) == 30
+        and all(
+            re.fullmatch(r"#[А-Яа-яЁё0-9_]+", str(value).strip())
+            and 3 <= len(str(value).strip()) <= 30
+            and not str(value).strip()[1:].isdigit()
+            for value in hashtags
+        )
+    )
+    if not valid_hashtags:
+        errors.append("Russian copy must contain exactly 30 valid unique hashtags")
+
+    live_keywords = [
+        item for item in (keyword_value.get("approved_keywords") or [])
+        if isinstance(item, dict)
+        and item.get("source") in {"ozon_public_search", "ozon_seller_metadata"}
+        and item.get("evidence")
+    ]
+    if not live_keywords:
+        errors.append("Keyword research must include Ozon public or seller-metadata provenance")
+    return errors
+
+
 def russian_copy_output_is_complete(product_dir: Path) -> bool:
     """Accept the Russian-copy step as soon as all three validated artifacts exist."""
     output_dir = product_dir / "output"
@@ -827,9 +1305,11 @@ def russian_copy_output_is_complete(product_dir: Path) -> bool:
         validate_content_input(content_value, product_dir.name, content_rules)
     except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
         return False
+    quality_errors = russian_copy_quality_errors(copy_value, content_value, keyword_value)
     return (
         not copy_errors
         and not keyword_errors
+        and not quality_errors
         and copy_value.get("product_id") == product_dir.name
         and keyword_value.get("product_id") == product_dir.name
         and (copy_value.get("processing") or {}).get("step") == "russian_copy"
@@ -858,6 +1338,10 @@ def complete_embedded_image_qc(
 def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
     if product_deleted(product_dir):
         return {"product_id": product_dir.name, "outcome": "deleted"}
+    # Every resume path is guarded, not only the first validate_source step.
+    # This prevents a stale checkpoint from reading another product, a manual
+    # test fixture or files added after the workbench collection snapshot.
+    validate_formal_product_input(product_dir)
     lock_path = product_dir / ".pipeline.lock"
     if lock_path.is_file():
         try:
@@ -872,6 +1356,7 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
     except FileExistsError:
         return {"product_id": product_dir.name, "outcome": "locked"}
     try:
+        clear_codex_service_waiting(product_dir)
         status = transition_to_processing(product_dir)
         if status.get("status") in TERMINAL_STATES:
             return {"product_id": product_dir.name, "outcome": "terminal"}
@@ -887,21 +1372,17 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
             write_json_atomic(product_dir / "status.json", status)
         cache_key = input_hash(product_dir, step)
         local_cache_hit = cache_hit(product_dir, step, cache_key)
-        shared_cache_key = shared_analysis_input_hash(product_dir) if step == "product_analysis" else None
-        shared_cache_hit = bool(
-            step == "product_analysis"
-            and not local_cache_hit
-            and shared_cache_key
-            and shared_analysis_cache_restore(product_dir, shared_cache_key)
-        )
+        # Cross-product analysis reuse is intentionally disabled. Even similar
+        # titles/images/capacities belong to different product_id+collection_id
+        # boundaries and may not complement each other's facts or attributes.
+        shared_cache_key = None
+        shared_cache_hit = False
         started = performance_start(product_dir, step, local_cache_hit or shared_cache_hit)
         if local_cache_hit or shared_cache_hit:
             if product_deleted(product_dir):
                 raise ProductDeletionRequested(product_dir.name)
             from pipeline_runtime import complete_step
             complete_step(product_dir, step)
-            if shared_cache_hit:
-                cache_store(product_dir, step, cache_key)
             performance_finish(product_dir, step, started, True, "cache_hit")
             return {
                 "product_id": product_dir.name,
@@ -913,6 +1394,7 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
         before_image_slots = completed_image_slot_count(product_dir) if step == "image_generation" else 0
         artifact_paths = {
             "product_analysis": [product_dir / "output/product-analysis.json"],
+            "ecommerce_design": [product_dir / "output/ozon-ecommerce-design.json"],
             "russian_copy": [
                 product_dir / "output/copy-ru.json",
                 product_dir / "output/marketplace-content-input.json",
@@ -931,6 +1413,8 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                 return False
             if step == "product_analysis":
                 return product_analysis_output_is_complete(product_dir)
+            if step == "ecommerce_design":
+                return ecommerce_design_output_is_complete(product_dir)
             if step == "russian_copy":
                 return russian_copy_output_is_complete(product_dir)
             return False
@@ -945,10 +1429,13 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
             if step == "product_analysis" else ""
         )
         fast_copy_instruction = (
-            "russian_copy使用截图式快速生成模式：只读取已经完成的product-analysis.json、product-positioning.json、"
+            "russian_copy使用商品理解式快速生成模式：只读取已经完成的product-analysis.json、product-positioning.json、"
             "ozon-category.json、pricing-result.json和source.json；不要重新分析全部图片，不要重新执行商品理解；"
-            "一次性生成标题、短标题、描述、卖点、关键词文件、marketplace-content-input.json和30个俄文标签；"
-            "关键词只使用商品事实、类目词和已有本地缓存，不单独调用搜索Skill；每个标签单独保存且不超过30个字符；"
+            "先按俄罗斯Ozon买家真实搜索语序理解商品，再一次性生成SEO标题、短标题、简介、完整描述、卖点、关键词文件、marketplace-content-input.json和30个俄文标签；"
+            "标题必须使用核心商品词＋主要用途＋关键卖点＋重要规格的自然结构，禁止逐字翻译中文、中文语序直译、虚构搜索热度或堆砌无关词；"
+            "同时必须根据product-positioning.json中的买家痛点、场景和3至5条可追溯卖点生成image_copy_ru：每种图片角色1至3句、每句不超过70字符的俄文电商短文案；"
+            "每个SKU主图文案必须在main_by_sku中准确区分对应容量、颜色、材质或配置，禁止把一个SKU事实套到其他SKU；"
+            "关键词只使用商品事实、锁定类目词和已有本地缓存中的自然俄语表达，不虚构热度；每个标签单独保存且不超过30个字符；"
             "不要输出分析过程、解释、计划或Markdown，文件全部校验成功后最终只输出一行：DONE russian_copy。"
             if step == "russian_copy" else ""
         )
@@ -969,7 +1456,7 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
             "不得提问、不得写全局Skill记忆、不得虚构搜索量或难度；只使用商品事实、实时类目和可验证Ozon公开搜索词，"
             "输出output/keyword-research-ru.json，并据此生成俄文文案以及output/marketplace-content-input.json；"
             "image_generation必须调用$image-generator，但不得调用外部品牌、营销、摄影或生图Skill。"
-            "生成前只运行一次image_source_preflight.py；SKU原图短边不足600px时先尝试恢复1688原尺寸，仍不足则停止，严禁放大、像素复制或强行抠图。"
+            "生成前只运行一次image_source_preflight.py；SKU原图短边不足600px时先尝试恢复1688原尺寸，512至599px允许带警告用于参考编辑，低于512px才停止；任何情况都严禁放大、像素复制或强行抠图。"
             "尺寸、颜色和SKU对比图只用真实原图确定性裁切排版，禁止AI重画；主图和生活场景图可使用内置参考图编辑，但必须保持真实结构、颜色、比例和配件。"
             f"image_generation先运行scripts/image_slot_scheduler.py并按每波最多{image_slot_concurrency}张处理；"
             "每张图片保存后只检查错商品、错SKU/颜色、额外配件功能、明显变形、中文乱码和不可读俄文；"
@@ -986,24 +1473,49 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                 "如果存在input/operator-guidance.json，必须读取其中用户对商品结构、SKU对应关系或配件数量的回答，并保存可追溯引用；"
                 "如果存在input/manual-confirmation.json，必须同时读取；其中尺寸、重量、材质和人民币进价是用户在本批次唯一一次确认后保存的补充信息，"
                 "应标记为estimated_human_approved并优先于普通AI推测，但不得改写input/source.json；"
-                "没有详情图时直接记录unknown，不扫描无关文件。"
+                "没有详情图时，不得因此跳过标题、SKU文字和已有主图/SKU图中的可靠信息；只把确实无法判断的项目记录unknown，不扫描无关文件。"
                 "只读取input/category-selection.json顶层的category_id、type_id、中文/俄文类目名和路径；"
                 "禁止展开读取rules_snapshot、属性字典和allowed_values，因为类目已经由用户锁定。"
                 "不得运行类目匹配、测量、俄文文案、关键词、定价、生图、图片质检、Rich Content或上传。"
-                "明确来源事实必须保留引用；未知材质、认证、承重、功能和配件写unknown，不得猜测。"
+                "明确来源事实必须保留引用：标题或SKU文字明确写出的材质、用途、容量、充电方式和配件属于1688事实，不得再次写成unknown。"
+                "同时把能由类目、标题和清晰实物图可靠推出的低风险结构信息写入inferences，例如手持/台式、可见形状、可见部件数量、充电产品的无线使用方式、是否明显为行星结构；每项必须写confidence和basis。"
+                "功率、速度数、保修、认证、承重、保护系统、标识码、海关编码以及看不清的配件仍写unknown，不得猜测。"
                 "品牌无可靠来源时按项目规则写Нет бренда，1688来源国写中国，未提供包装数量时写1。"
                 "输出必须符合templates/product-analysis.schema.json；列表每项一句、每类最多8项。"
                 "完成JSON原子写入后运行断点校验，不输出分析过程；最终只输出DONE product_analysis。"
                 "不得提交stock、warehouse_id，不调用库存或任何Ozon写接口。"
             )
+        elif step == "ecommerce_design":
+            prompt = (
+                f"调用$full-product-pipeline和$ozon-ecommerce-designer，product_id={product_dir.name}。"
+                "本轮只完成ecommerce_design；读取当前商品已完成的真实采集资料、已选SKU及各自真实图片、人工锁定类目、目标店铺、"
+                "product-analysis、product-positioning、尺寸重量、定价结果、类目属性和合法字典值。"
+                "使用当前联网Codex理解商品以及俄罗斯Ozon买家的搜索和购买习惯；联网能力不可用时停在本步骤等待恢复，禁止本地备用分析或模板降级。"
+                "一次性写入output/ozon-ecommerce-design.json，必须符合templates/ozon-ecommerce-design.schema.json。"
+                "设计文件的product_id、collection_id和source_kind必须与当前input/source.json完全一致；只允许读取当前商品本次工作台采集输入和当前商品已完成的JSON产物。"
+                "禁止读取test-data、对话附件、其他product_id、旧归档商品或任何output/generated-images、rejected-generation、accepted-images作为事实/商品参考；禁止按文件名、相似图片、SKU名或容量自动补资料。"
+                "方案必须包括自然俄文SEO标题、短标题、至少4段完整描述、3至6个可追溯卖点、主词/长尾词/场景词/排除词及来源、"
+                "正好30个唯一俄文标签、普通属性填写建议、高风险unknown、SKU俄文名称与准确差异、俄罗斯买家动机与疑虑、商品专属视觉系统。"
+                "图片契约始终为当前已选SKU数N张独立主图加正好8张商品组共享详情图，N为1至10；每个SKU主图只能绑定该SKU自己的真实图片和规格。"
+                "共享详情不得按SKU重复；SKU差异只放入一张使用全部SKU真实原图确定性合成的对比图。"
+                "整套必须覆盖sku_main、core_benefit、structure_callout、usage_scene、sku_comparison、purchase_notice六类版式；"
+                "每张图一次性写全商业目的、买家问题、精确参考图、准确俄文、完整提示词、排版模块和禁止改变项。"
+                "禁止照片加顶部两行巨型文字、普通白底、固定类目模板、重复构图、中文乱码、供应商水印、虚构配件或改变SKU比例。"
+                "AI仅规划忠实商品的场景底图；准确俄文、容量徽标、尺寸线、卖点模块、图标和标注由确定性电商排版器添加。"
+                "尺寸、结构、SKU对比和包装内容必须compose_from_real_images，禁止AI重画。"
+                "完成后运行$CAF_PYTHON_BIN scripts/ozon_ecommerce_designer_contract.py products/"
+                f"{product_dir.name} --materialize；最终只输出DONE ecommerce_design。"
+                "不得生图、不得打开预览、不得上传Ozon、不得调用任何Ozon或库存接口。"
+            )
         elif step == "russian_copy":
             prompt = (
                 f"调用$full-product-pipeline，product_id={product_dir.name}。"
-                "本轮只完成russian_copy；只读取已完成的product-analysis.json、product-positioning.json、"
-                "ozon-category.json、pricing-result.json和source.json中的所选SKU。"
-                "不要重新读图片、重新分析商品、重新匹配类目或运行生图。"
-                "一次性生成并校验标题、短标题、描述、卖点、关键词、marketplace-content-input.json和30个俄文标签；"
-                "关键词仅使用可追溯商品事实、已锁定类目词和本地缓存，不调用外部搜索。"
+                "本轮只完成russian_copy兼容断点；统一俄文和图片文案已经由ozon-ecommerce-design.json确定。"
+                "禁止重新读图片、重新分析商品、重新搜索关键词或改写设计方案。"
+                "运行$CAF_PYTHON_BIN scripts/ozon_ecommerce_designer_contract.py products/"
+                f"{product_dir.name} --materialize，把统一方案投影到现有俄文兼容文件。"
+                "如果现有keyword-research-ru.json和marketplace-content-input.json缺失，只能从统一方案中的关键词来源和俄文资料确定性投影，禁止增加新主张。"
+                "如果存在workbench-draft.json，locked_fields中的人工确认文案和标签不得被重新运行覆盖。"
                 "完成文件和断点后立即结束，最终只输出DONE russian_copy。"
                 "不得提交stock、warehouse_id，不调用库存或任何Ozon写接口。"
             )
@@ -1011,22 +1523,27 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
             prompt = (
                 f"调用$full-product-pipeline和$image-generator，product_id={product_dir.name}。"
                 "这是用户点击运行任务后已授权的无人值守批次；禁止向用户提问、请求确认或等待回复，直接执行并保存结果。"
-                "本轮只完成image_generation；只读取image-plan.json、style-profile.json、product-analysis.json、"
+                "本轮只完成image_generation；只读取ecommerce-creative-brief.json、image-plan.json、style-profile.json、product-analysis.json、"
+                "title-ru.json、description-ru.json、ozon-tags.json、ozon-attributes-final.json、pricing-result.json、"
                 "copy-ru.json、platform-grouping-result.json和计划中列出的真实参考图。"
                 "如果存在input/visual-preference.json，必须把set_hint应用于整套视觉，并把slot_hints只应用于对应图片；简单风格意见不能覆盖真实性、SKU和配件硬规则。"
                 "不要重跑商品分析、类目、属性、定价或文案。"
+                "开始前确认image-plan.json中的listing_context.ready=true，且所有计划槽位已经分别生成非通用提示词；必须先完成全部逐图提示词，再开始任何图片调用。"
+                "每张图必须围绕image-plan.json中已经确定的russian_text和购买理由设计画面；生成无字底图后必须在同一步叠加全部俄文卖点并逐字检查，禁止把无字底图显示为成品。"
                 "先读取并确认现有image-source-preflight.json已通过；报告通过且参考图哈希未变化时直接复用，不重复运行检查。低清SKU缩略图禁止放大、像素复制或自动抠图。"
                 f"再运行image_slot_scheduler.py，每波最多{image_slot_concurrency}张；"
-                "每个所选SKU必须有一张独立真实关联主图，并且所有SKU主图必须先生成；随后按当前商品专属方案生成6至8张共享详情图。"
+                "每个所选SKU必须有一张独立真实关联主图，并且所有SKU主图必须先生成；随后严格按ecommerce-creative-brief生成8张共享详情图。"
                 "禁止普通白底图，禁止固定类目模板，禁止只更换背景却重复相同构图；每张图必须回答不同购买问题。"
                 "严格按image-plan.json的operation分流：compose_from_real_images只做真实原图确定性排版；edit_real_image使用真实参考图进行AI场景编辑并保持商品身份、颜色、结构、比例和配件。"
                 "调用内置图片工具前，必须把计划中的所有products/...参考路径转换为以项目根目录开头的绝对路径；禁止把相对路径传给图片工具。"
                 "每次图片工具调用最多传5张参考图；SKU主图只传自己的SKU图，共享图优先SKU原图再选清晰主图。"
-                "AI生成与商品专属构图一致的无文字视觉和有意留出的排版空间；随后用scripts/image_text_overlay.py --kind main或detail写入准确俄文。"
-                "文字必须融入画面，禁止固定黑色文字框；主图只用一条大字卖点，详情图允许更多信息。"
+                "AI生成与商品专属构图一致的无文字视觉，只保留融入场景的自然留白；随后用scripts/image_text_overlay.py --kind main或detail写入准确俄文。"
+                "运行任何Python辅助脚本时必须使用环境变量$CAF_PYTHON_BIN指向的项目解释器，禁止调用系统中其他python3。"
+                "文字必须融入画面，禁止固定黑色文字框；禁止空白圆角矩形、空文字框、占位卡片、带边框空面板或装饰性空框；主图只用一条大字卖点，详情图允许更多信息。"
                 "不得调用$ecommerce-branding或其他外部Skill，不得把空背景、残缺抠图或像素块保存为商品图。"
-                "每张保存后只做硬错误快检并增量更新output/image-hard-gate.json；仅失败单图允许当场重做一次，不做整套评分。"
-                "全部计划槽位检查完成后运行scripts/image_qc.py --hard-gate --write生成兼容报告。目标整套在5分钟内完成。"
+                "每张保存后只做硬错误快检并增量更新output/image-hard-gate.json；空白占位框也属于硬错误；仅失败单图允许当场重做一次，不做整套评分。"
+                "全部计划槽位检查完成后运行scripts/image_qc.py --hard-gate --write生成兼容报告。"
+                "真实图片工具返回可能超过5分钟；按断点持续保存，禁止因单张等待较久而自行放弃整套。"
                 "完成文件和断点后立即结束，最终只输出DONE image_generation。"
                 "不得提交stock、warehouse_id，不调用库存或任何Ozon写接口。"
             )
@@ -1035,10 +1552,13 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
         if run_local_step(product_dir, step, settings, log_path):
             if product_deleted(product_dir):
                 return {"product_id": product_dir.name, "outcome": "deleted", "step": step}
+            if step == "image_generation":
+                clear_image_host_recovery(product_dir)
             cache_store(product_dir, step, cache_key)
             performance_finish(product_dir, step, started, False, "completed")
             return {"product_id": product_dir.name, "outcome": "completed", "step": step}
-        env = dict(os.environ, UPLOAD_MODE="production" if app_mode(settings) == "production" else "dry-run")
+        env = codex_worker_env(settings)
+        codex_log_offset = log_path.stat().st_size if log_path.is_file() else 0
         with log_path.open("a", encoding="utf-8") as output:
             try:
                 with _codex_semaphore:
@@ -1047,15 +1567,22 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                         product_dir, output, product_step_timeout(product_dir, settings, step), env,
                         completion_check=(
                             new_step_artifacts_are_complete
-                            if step in {"product_analysis", "russian_copy"}
+                            if step in {"product_analysis", "ecommerce_design", "russian_copy"}
                             else None
                         ),
                         completion_poll_seconds=float(settings.get("artifact_poll_interval_seconds", 0.5)),
+                        stall_seconds=(
+                            int(settings.get("image_generation_stall_seconds", 300))
+                            if step == "image_generation" else None
+                        ),
                     )
             except subprocess.TimeoutExpired as exc:
+                output.flush()
                 if new_step_artifacts_are_complete():
                     from pipeline_runtime import complete_step
                     complete_step(product_dir, step)
+                    if step == "image_generation":
+                        clear_image_host_recovery(product_dir)
                     cache_store(product_dir, step, cache_key)
                     performance_finish(product_dir, step, started, False, "completed_after_timeout")
                     with log_path.open("a", encoding="utf-8") as output:
@@ -1065,30 +1592,63 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                         "outcome": "completed_after_timeout",
                         "step": step,
                     }
-                after_image_slots = completed_image_slot_count(product_dir) if step == "image_generation" else 0
-                if step == "image_generation" and after_image_slots > before_image_slots:
-                    partial = load_json(product_dir / "status.json")
-                    partial.setdefault("warnings", []).append(
-                        f"Image generation saved {after_image_slots - before_image_slots} new locked slots before the execution window ended; remaining slots will continue automatically."
+                if codex_worker_unavailable(log_path, codex_log_offset):
+                    waiting = mark_codex_service_waiting(product_dir, step, settings)
+                    performance_finish(product_dir, step, started, False, "waiting_for_ai_service")
+                    output.write(
+                        "\n[service-wait] Codex timed out after a transport/service failure; "
+                        "checkpoint preserved, local fallback disabled, online retry scheduled.\n"
                     )
-                    partial["last_run_at"] = now()
-                    partial["next_action"] = "image_generation"
-                    write_json_atomic(product_dir / "status.json", partial)
-                    performance_finish(product_dir, step, started, False, "partial_checkpoint")
                     return {
                         "product_id": product_dir.name,
-                        "outcome": "partial_checkpoint",
+                        "outcome": "waiting_for_ai_service",
                         "step": step,
-                        "completed_image_slots": after_image_slots,
+                        "retry_after": waiting["ai_service_retry_after"],
                     }
+                if step == "image_generation":
+                    stalled = isinstance(exc, ImageGenerationStalled)
+                    stall_seconds = int(settings.get("image_generation_stall_seconds", 600))
+                    stall_minutes = max(1, round(stall_seconds / 60))
+                    reason = (
+                        f"生图连续{stall_minutes}分钟没有新增图片，已自动重启Codex生图进程"
+                        if stalled else
+                        f"生图执行超过{product_step_timeout(product_dir, settings, step)}秒，已自动重启Codex生图进程"
+                    )
+                    recovery = recover_interrupted_image_generation(
+                        product_dir,
+                        settings,
+                        reason,
+                        "image_generation_stalled" if stalled else "image_generation_timeout",
+                    )
+                    performance_finish(
+                        product_dir, step, started, False,
+                        "automatic_recovery" if recovery["outcome"] == "retry" else "failed_after_recovery",
+                        int((load_json(product_dir / "status.json").get("retry_count_by_step") or {}).get(step, 0)),
+                    )
+                    return recovery
                 raise RuntimeError(
                     f"Step {step} timed out after {product_step_timeout(product_dir, settings, step)}s"
                 ) from exc
+            except OSError as exc:
+                output.write(f"\n[codex-worker-unavailable] {type(exc).__name__}: {exc}\n")
+                output.flush()
+                waiting = mark_codex_service_waiting(product_dir, step, settings)
+                performance_finish(product_dir, step, started, False, "waiting_for_ai_service")
+                output.write(
+                    "[service-wait] Codex worker could not start; checkpoint preserved, "
+                    "local fallback disabled, online retry scheduled.\n"
+                )
+                return {
+                    "product_id": product_dir.name,
+                    "outcome": "waiting_for_ai_service",
+                    "step": step,
+                    "retry_after": waiting["ai_service_retry_after"],
+                }
         if new_step_artifacts_are_complete():
             from pipeline_runtime import complete_step
             complete_step(product_dir, step)
-            if shared_cache_key:
-                shared_analysis_cache_store(product_dir, shared_cache_key)
+            if step == "image_generation":
+                clear_image_host_recovery(product_dir)
             cache_store(product_dir, step, cache_key)
             performance_finish(product_dir, step, started, False, "completed_from_artifact")
             with log_path.open("a", encoding="utf-8") as output:
@@ -1109,6 +1669,25 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
             cache_store(product_dir, step, cache_key)
             performance_finish(product_dir, step, started, False, "api_submitted", network_wait=time.monotonic() - started)
             return {"product_id": product_dir.name, "outcome": "api_submitted", "step": step}
+        # A temporary Codex transport outage is not a product-data error.
+        # Keep every existing checkpoint, pause this exact step and retry only
+        # the online model later. Never generate a local substitute analysis.
+        if (
+            completed.returncode != 0
+            and codex_worker_unavailable(log_path, codex_log_offset)
+        ):
+            waiting = mark_codex_service_waiting(product_dir, step, settings)
+            performance_finish(product_dir, step, started, False, "waiting_for_ai_service")
+            with log_path.open("a", encoding="utf-8") as output:
+                output.write(
+                    "\n[service-wait] Codex unavailable; checkpoint preserved, local fallback disabled, online retry scheduled.\n"
+                )
+            return {
+                "product_id": product_dir.name,
+                "outcome": "waiting_for_ai_service",
+                "step": step,
+                "retry_after": waiting["ai_service_retry_after"],
+            }
         made_progress = (
             after.get("status") in TERMINAL_STATES
             or list(after.get("completed_steps") or []) != before_completed
@@ -1122,8 +1701,8 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                 and step in (after.get("completed_steps") or [])
             ):
                 merged_qc = complete_embedded_image_qc(product_dir, settings, log_path)
-            if step == "product_analysis" and shared_cache_key:
-                shared_analysis_cache_store(product_dir, shared_cache_key)
+            if step == "image_generation":
+                clear_image_host_recovery(product_dir)
             cache_store(product_dir, step, cache_key)
             performance_finish(
                 product_dir, step, started, False,
@@ -1200,9 +1779,63 @@ def step_group(status: Dict[str, Any]) -> str:
         return "category"
     if step == "measurements":
         return "pricing"
-    if step in {"russian_copy", "product_positioning", "style_selector", "image_plan", "marketplace_content", "field_completion"}:
+    if step in {"ecommerce_design", "russian_copy", "product_positioning", "style_selector", "image_plan", "marketplace_content", "field_completion", "final_upload_check"}:
         return "copy"
     return "analysis"
+
+
+def mark_manual_upload_ready(product_dir: Path, status: Dict[str, Any]) -> Dict[str, Any]:
+    """Persist the manual-review boundary without pretending upload completed."""
+    recovered = any(
+        status.get(key) not in {None, "", "unknown", "UNKNOWN"}
+        for key in ("error_code", "error_message", "failed_step")
+    )
+    warning = (
+        "上次问题已恢复，商品资料和图片已保留；请重新确认店铺后上传"
+        if recovered else
+        "商品资料和图片已完成，等待用户检查并确认上传"
+    )
+    previous_status = str(status.get("status") or "unknown")
+    status.update({
+        "status": "WAITING_MANUAL_REVIEW",
+        "current_step": "final_upload_check",
+        "progress": max(95, int(status.get("progress") or 0)),
+        "completed_at": "unknown",
+        "next_action": "manual_ozon_upload",
+        "active_step": None,
+        "task_authorized": False,
+        "error_code": "unknown",
+        "error_message": "unknown",
+        "failed_step": "unknown",
+    })
+    ozon = dict(status.get("ozon") or {})
+    if int(status.get("api_write_count") or 0) == 0:
+        ozon.update({"upload_status": "not_started", "errors": []})
+    status["ozon"] = ozon
+    status["completed_steps"] = [
+        step for step in status.get("completed_steps") or [] if step != "ozon_upload"
+    ]
+    status["pending_steps"] = list(dict.fromkeys([
+        *(status.get("pending_steps") or []), "ozon_upload",
+    ]))
+    status.pop("target_store_ids_for_run", None)
+    warnings = status.setdefault("warnings", [])
+    warnings[:] = [
+        value for value in warnings
+        if "等待用户检查并确认上传" not in str(value)
+        and "上次问题已恢复" not in str(value)
+    ]
+    if warning not in warnings:
+        warnings.append(warning)
+    if previous_status != "WAITING_MANUAL_REVIEW":
+        status.setdefault("history", []).append({
+            "from": previous_status,
+            "to": "WAITING_MANUAL_REVIEW",
+            "at": now(),
+            "reason": "Production finished locally and is waiting for explicit manual review before upload.",
+        })
+    write_json_atomic(product_dir / "status.json", status)
+    return status
 
 
 def sync_batch(root: Path, batch: Dict[str, Any]) -> Dict[str, Any]:
@@ -1248,7 +1881,16 @@ def finalize_batch(root: Path, batch: Dict[str, Any]) -> Dict[str, Any]:
     ]
     failed = sum(row["status"] == "FAILED_HARD_BLOCKER" for row in rows)
     succeeded = sum(row["status"] in SUCCESS_STATES for row in rows)
-    if not rows:
+    waiting_manual_review = sum(
+        row["status"] in {"OZON_READY", "WAITING_MANUAL_REVIEW"} for row in rows
+    )
+    awaiting_manual_upload = (
+        not batch.get("auto_upload", False)
+        and waiting_manual_review > 0
+    )
+    if awaiting_manual_upload:
+        batch_status = "AWAITING_MANUAL_UPLOAD"
+    elif not rows:
         batch_status = "COMPLETED"
     elif failed and succeeded:
         batch_status = "COMPLETED_WITH_ERRORS"
@@ -1266,6 +1908,8 @@ def finalize_batch(root: Path, batch: Dict[str, Any]) -> Dict[str, Any]:
         "sku_count": sum(row["selected_sku_count"] for row in rows),
         "success_count": succeeded,
         "failed_count": failed,
+        "waiting_manual_review_count": waiting_manual_review,
+        "manual_upload_required": awaiting_manual_upload,
         "submitted_count": sum(row["api_write_count"] > 0 for row in rows),
         "pending_remote_count": sum(row["status"] == "PENDING_REMOTE" for row in rows),
         "uploaded_count": sum(row["status"] in {"UPLOADED", "ACTIVE"} for row in rows),
@@ -1277,13 +1921,21 @@ def finalize_batch(root: Path, batch: Dict[str, Any]) -> Dict[str, Any]:
         "performance": batch_performance(rows, root, batch["batch_id"]),
         "products": rows,
     }
+    progress_values = [
+        int(load_json(root / "products" / row["product_id"] / "status.json").get("progress") or 0)
+        for row in rows
+    ]
+    batch_progress = (
+        round(sum(progress_values) / len(progress_values))
+        if awaiting_manual_upload and progress_values else 100
+    )
     batch.update({
         "status": batch_status,
         "completed_at": report["completed_at"],
         "processing_count": 0,
         "success_count": succeeded,
         "failed_count": failed,
-        "progress": 100,
+        "progress": batch_progress,
     })
     write_json_atomic(batch_path(root, batch["batch_id"]), batch)
     write_json_atomic(batch_result_path(root, batch["batch_id"]), report)
@@ -1292,31 +1944,8 @@ def finalize_batch(root: Path, batch: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def recover_remote_pending_queue(root: Path, batch: Dict[str, Any], settings: Dict[str, Any]) -> None:
-    """Perform one read-only final pass for imports that did not finish in this batch."""
-    if app_mode(settings) != "production":
-        return
-    pending = [
-        root / "products" / entry["product_id"]
-        for entry in batch["products"]
-        if not deletion_requested(root, entry["product_id"])
-        and (root / "products" / entry["product_id"] / "status.json").is_file()
-        and load_json(root / "products" / entry["product_id"] / "status.json").get("status") == "PENDING_REMOTE"
-    ]
-    if not pending:
-        return
-    sys.path.insert(0, str(ROOT / "ozon-adapter"))
-    sys.path.insert(0, str(ROOT / "ozon-uploader"))
-    from ozon_adapter import OzonConfig
-    from ozon_uploader import OzonWriteClient, recover_remote_import
-    shop = str(settings.get("shop_name") or "zhonglian1")
-    client = OzonWriteClient(OzonConfig.from_shop(shop, ROOT / "ozon-adapter/shops.json"))
-    for product_dir in pending:
-        try:
-            recover_remote_import(product_dir, client, timeout_seconds=1, poll_interval_seconds=30)
-        except Exception as exc:
-            status = load_json(product_dir / "status.json")
-            status.setdefault("warnings", []).append(f"Read-only Ozon recovery query failed: {exc}")
-            write_json_atomic(product_dir / "status.json", status)
+    """Deprecated: task hand-off no longer performs automatic remote reads."""
+    return None
 
 
 def execute_batch(root: Path, batch: Dict[str, Any], settings: Dict[str, Any]) -> Dict[str, Any]:
@@ -1351,6 +1980,9 @@ def execute_batch(root: Path, batch: Dict[str, Any], settings: Dict[str, Any]) -
         if safe_stop_requested(batch["batch_id"]):
             return stop_batch_at_checkpoint(root, batch)
         active = []
+        locked_waiting = False
+        ai_service_waiting = False
+        nearest_ai_retry_seconds: Optional[float] = None
         groups: Dict[str, List[Path]] = {
             "analysis": [], "category": [], "pricing": [], "copy": [],
             "image_generation": [], "image_qc": [], "ozon": [],
@@ -1359,16 +1991,44 @@ def execute_batch(root: Path, batch: Dict[str, Any], settings: Dict[str, Any]) -
             if deletion_requested(root, product_dir.name) or not product_dir.is_dir():
                 continue
             status = load_json(product_dir / "status.json")
-            if status.get("status") == "OZON_READY" and not batch.get("auto_upload", False):
+            retry_remaining = codex_retry_remaining_seconds(status)
+            if retry_remaining > 0:
+                active.append(product_dir)
+                ai_service_waiting = True
+                nearest_ai_retry_seconds = (
+                    retry_remaining
+                    if nearest_ai_retry_seconds is None
+                    else min(nearest_ai_retry_seconds, retry_remaining)
+                )
                 continue
-            if status.get("next_action") == "ozon_upload" and not batch.get("auto_upload", False):
-                status.update({
-                    "status": "OZON_READY", "current_step": "field_completion",
-                    "progress": max(95, int(status.get("progress") or 0)),
-                    "completed_at": now(), "next_action": "manual_ozon_upload",
-                })
-                status.setdefault("warnings", []).append("批次已完成加工，等待用户明确点击上传")
-                write_json_atomic(product_dir / "status.json", status)
+            pipeline_lock = product_dir / ".pipeline.lock"
+            if pipeline_lock.is_file():
+                try:
+                    owner_pid = int(pipeline_lock.read_text(encoding="utf-8").strip())
+                except (OSError, ValueError):
+                    owner_pid = 0
+                worker_checkpoint = product_worker_path(product_dir.name)
+                # A worker can finish its checkpoint before the executor
+                # thread reaches its finally block. Do not let that brief
+                # window create a hot loop; a lock with no active step and no
+                # worker checkpoint is stale and can be released safely.
+                if (
+                    owner_pid == os.getpid()
+                    and status.get("active_step") is None
+                    and not worker_checkpoint.is_file()
+                ):
+                    pipeline_lock.unlink(missing_ok=True)
+                elif owner_pid == os.getpid():
+                    locked_waiting = True
+                    continue
+            # Workbench batches are continuous after the single Run Task
+            # authorization.  Keep legacy manual batches readable, but never
+            # insert a new manual-upload checkpoint into a workbench batch.
+            if not batch.get("auto_upload", False) and (
+                status.get("status") == "OZON_READY"
+                or status.get("next_action") in {"ozon_upload", "manual_ozon_upload"}
+            ):
+                mark_manual_upload_ready(product_dir, status)
                 continue
             if status.get("status") in TERMINAL_STATES:
                 continue
@@ -1385,13 +2045,59 @@ def execute_batch(root: Path, batch: Dict[str, Any], settings: Dict[str, Any]) -
         scheduled.extend(groups["image_qc"][: int(settings.get("image_qc_concurrency", 2))])
         scheduled.extend(groups["ozon"][: int(settings.get("ozon_write_concurrency", 1))])
         if not scheduled:
+            if ai_service_waiting:
+                time.sleep(max(0.2, min(
+                    float(settings.get("poll_interval_seconds", 3)),
+                    nearest_ai_retry_seconds or 0.2,
+                )))
+                continue
+            if locked_waiting:
+                time.sleep(max(0.2, float(settings.get("poll_interval_seconds", 3))))
+                continue
             for product_dir in active:
                 mark_hard_failure(product_dir, "validate_source", "No schedulable pipeline step was found.")
             break
         with ThreadPoolExecutor(max_workers=len(scheduled)) as executor:
-            futures = [executor.submit(run_one_step, product_dir, settings) for product_dir in scheduled]
-            for future in as_completed(futures):
-                future.result()
+            future_products = {
+                executor.submit(run_one_step, product_dir, settings): product_dir
+                for product_dir in scheduled
+            }
+            deferred_image_products: List[str] = []
+            for future in as_completed(future_products):
+                product_dir = future_products[future]
+                try:
+                    result = future.result()
+                    if (
+                        result.get("step") == "image_generation"
+                        and result.get("outcome") == "retry"
+                    ):
+                        deferred_image_products.append(product_dir.name)
+                except Exception as exc:
+                    # A worker must never abort the whole batch.  run_one_step
+                    # already converts normal failures into product status;
+                    # this is the final containment boundary for unexpected
+                    # executor errors (serialization, plugin, or coding bugs).
+                    status = load_json(product_dir / "status.json")
+                    step = str(status.get("next_action") or status.get("current_step") or "validate_source")
+                    status.setdefault("warnings", []).append(
+                        f"本商品工作线程异常，已隔离并继续批次：{type(exc).__name__}: {exc}"
+                    )
+                    write_json_atomic(product_dir / "status.json", status)
+                    mark_hard_failure(
+                        product_dir,
+                        step,
+                        f"Worker crashed in {step}: {type(exc).__name__}: {exc}",
+                    )
+            if deferred_image_products:
+                deferred = set(deferred_image_products)
+                batch["products"] = [
+                    item for item in batch["products"]
+                    if item.get("product_id") not in deferred
+                ] + [
+                    item for item in batch["products"]
+                    if item.get("product_id") in deferred
+                ]
+                write_json_atomic(batch_path(root, batch["batch_id"]), batch)
         sync_batch(root, batch)
         if safe_stop_requested(batch["batch_id"]):
             return stop_batch_at_checkpoint(root, batch)
@@ -1406,6 +2112,8 @@ def main() -> int:
     parser.add_argument("--product-id", help="Run one eligible product as a controlled validation batch")
     args = parser.parse_args()
     lock_fd = acquire_batch_lock()
+    completed_normally = False
+    active_batch_id = str(args.batch_id or "")
     try:
         BATCH_PID_PATH.write_text(str(os.getpid()), encoding="utf-8")
         settings = load_json(SETTINGS_PATH)
@@ -1428,10 +2136,21 @@ def main() -> int:
             print(json.dumps(sync_batch(ROOT, batch), ensure_ascii=False, indent=2))
             return 0
         report = execute_batch(ROOT, batch, settings)
+        completed_normally = True
         cleanup_images(ROOT, settings)
         print(json.dumps(report, ensure_ascii=False, indent=2))
         return 0
     finally:
+        if completed_normally and CURRENT_BATCH_PATH.is_file():
+            try:
+                current = load_json(CURRENT_BATCH_PATH)
+            except (OSError, ValueError, json.JSONDecodeError):
+                current = {}
+            if (
+                int(current.get("pid") or 0) == os.getpid()
+                or (active_batch_id and str(current.get("batch_id") or "") == active_batch_id)
+            ):
+                CURRENT_BATCH_PATH.unlink(missing_ok=True)
         os.close(lock_fd)
         BATCH_LOCK_PATH.unlink(missing_ok=True)
         BATCH_PID_PATH.unlink(missing_ok=True)

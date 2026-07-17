@@ -34,14 +34,21 @@
         "CONTENT_GENERATED",
         "IMAGES_GENERATED",
         "PRICED",
-      "OZON_READY",
+        "OZON_READY",
+        "WAITING_MANUAL_REVIEW",
+        "SUBMITTED",
+        "CREATED",
+        "PARTIAL",
+        "PARTIAL_FAILED",
       "STOPPED",
       "UPLOADING",
         "UPLOADED",
         "PENDING_REMOTE",
+        "HANDED_OFF_TO_OZON",
         "FAILED_HARD_BLOCKER",
         "OZON_MODERATION",
-        "ACTIVE"
+        "ACTIVE",
+        "ARCHIVED"
       ]
     },
     "current_step": { "$ref": "#/$defs/stepName" },
@@ -72,8 +79,29 @@
     "failed_step": { "$ref": "#/$defs/unknownableString" },
     "retry_count_by_step": { "type": "object", "additionalProperties": { "type": "integer", "minimum": 0 } },
     "api_write_count": { "type": "integer", "minimum": 0 },
+    "completed_image_slots": { "type": "integer", "minimum": 0 },
+    "planned_image_slots": { "type": "integer", "minimum": 0 },
     "last_run_at": { "$ref": "#/$defs/unknownableString" },
+    "ai_service_state": { "type": "string", "enum": ["normal", "waiting_for_recovery"] },
+    "ai_service_reason": { "$ref": "#/$defs/unknownableString" },
+    "ai_service_retry_after": { "$ref": "#/$defs/unknownableString" },
+    "ai_service_retry_count": { "type": "integer", "minimum": 0 },
     "next_action": { "$ref": "#/$defs/unknownableString" },
+    "local_lifecycle_status": { "$ref": "#/$defs/unknownableString" },
+    "archived_at": { "$ref": "#/$defs/unknownableString" },
+    "cleanup_after": { "$ref": "#/$defs/unknownableString" },
+    "archive_reason": { "$ref": "#/$defs/unknownableString" },
+    "remote_status_polling": { "$ref": "#/$defs/unknownableString" },
+    "full_data_retained": { "type": "boolean" },
+    "active_step": {
+      "type": ["object", "null"],
+      "additionalProperties": false,
+      "required": ["name", "started_at"],
+      "properties": {
+        "name": { "type": "string", "minLength": 1 },
+        "started_at": { "type": "string", "minLength": 1 }
+      }
+    },
     "remote_recovery": {
       "type": "object",
       "additionalProperties": false,
@@ -170,6 +198,7 @@
         "write_source",
         "product_analysis",
         "product_positioning",
+        "ecommerce_design",
         "style_selector",
         "russian_copy",
         "image_plan",
@@ -180,7 +209,8 @@
         "ozon_preflight",
         "ozon_upload",
         "ozon_update",
-        "ozon_status"
+        "ozon_status",
+        "archived"
       ]
     },
     "step": {

@@ -1,0 +1,129 @@
+{
+  "url": "http://127.0.0.1:4175/",
+  "checks": [
+    {
+      "name": "core heading visible",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "prototype safety boundary visible",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "real product id visible",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "real uploaded state visible",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "desktop has no page overflow",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "SKU inspector works",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "shop inspector works",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "next image changes the asset",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "image lightbox works",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "escape closes image lightbox",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "global search opens",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "capability search returns existing ability",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "mode toggle changes",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "capability drawer opens",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "drawer states no new functionality",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "publication result opens",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "publication modal states no remote request",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "product actions opens",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "permanent delete remains guarded",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "1024 has no page overflow",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "1024 keeps primary action",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile has no page overflow",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile keeps product canvas",
+      "passed": true,
+      "detail": ""
+    },
+    {
+      "name": "mobile keeps primary action",
+      "passed": true,
+      "detail": ""
+    }
+  ],
+  "consoleErrors": [],
+  "pageErrors": [],
+  "passed": true,
+  "capturedAt": "2026-07-14T05:46:33.501Z"
+}

@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import copy
+import difflib
 import json
 import os
 import re
@@ -528,6 +529,76 @@ def _allowed_value_status(value: Any, allowed_values: List[Dict[str, Any]]) -> s
     return "valid" if all(normalize_text(item) in allowed for item in values) else "invalid"
 
 
+_VALUE_SYNONYMS = {
+    "不锈钢": "нержавеющая сталь",
+    "stainless steel": "нержавеющая сталь",
+    "inox": "нержавеющая сталь",
+    "塑料": "пластик",
+    "塑胶": "пластик",
+    "plastic": "пластик",
+    "玻璃": "стекло",
+    "glass": "стекло",
+    "铝": "алюминий",
+    "алюминий": "алюминий",
+}
+
+
+def _value_variants(value: Any) -> List[str]:
+    """Return clean multilingual variants without provenance annotations."""
+    text = unicodedata.normalize("NFKC", str(value or "")).strip()
+    # Source notes are useful in analysis but must never enter an Ozon value.
+    text = re.split(r"(?:；|;|\n)\s*(?:来源|source|основан|confidence|置信度)", text, maxsplit=1, flags=re.I)[0]
+    parts = re.split(r"\s*/\s*|\s*[,，|]\s*", text)
+    variants = []
+    for part in [text, *parts]:
+        cleaned = normalize_text(part)
+        if cleaned and cleaned not in variants:
+            variants.append(cleaned)
+        # Look up synonyms before normalize_text removes non-Latin scripts.
+        # For example, Chinese "不锈钢" must resolve to Russian
+        # "нержавеющая сталь" before dictionary matching.
+        synonym = _VALUE_SYNONYMS.get(str(part).strip().casefold()) or _VALUE_SYNONYMS.get(cleaned)
+        if synonym and normalize_text(synonym) not in variants:
+            variants.append(normalize_text(synonym))
+    return variants
+
+
+def _canonical_allowed_value(value: Any, allowed_values: List[Dict[str, Any]]) -> Any:
+    """Map Chinese/Russian/annotated values to one official dictionary value."""
+    if _is_unknown(value) or not allowed_values:
+        return value
+    values = value if isinstance(value, list) else [value]
+    result = []
+    for raw in values:
+        variants = _value_variants(raw)
+        if not variants:
+            # An untranslated/empty candidate must not crash the whole batch.
+            # It remains unknown and is handled by the normal required/optional
+            # attribute validation below.
+            return "unknown"
+        exact = next(
+            (item for item in allowed_values
+             if any(normalize_text(item["value"]) == variant for variant in variants)),
+            None,
+        )
+        if exact is None:
+            # Conservative fuzzy matching: only accept a strong token overlap or
+            # a known synonym, never send the annotated/raw value to Ozon.
+            best = None
+            best_score = 0.0
+            for item in allowed_values:
+                target = normalize_text(item["value"])
+                score = max(difflib.SequenceMatcher(None, variant, target).ratio() for variant in variants)
+                if score > best_score:
+                    best, best_score = item, score
+            if best is not None and best_score >= 0.62:
+                exact = best
+        if exact is None:
+            return "unknown"
+        result.append(exact["value"])
+    return result if isinstance(value, list) else result[0]
+
+
 def build_live_attribute_mapping(
     product_id: str,
     category: Dict[str, Any],
@@ -565,6 +636,8 @@ def build_live_attribute_mapping(
             source = ", ".join(candidate["source_refs"])
             confidence = 0.95 if not _is_unknown(value) else 0.0
             field_key = candidate["field_key"]
+        if attribute["allowed_values"] and not _is_unknown(value):
+            value = _canonical_allowed_value(value, attribute["allowed_values"])
         status = _allowed_value_status(value, attribute["allowed_values"])
         mapped.append({
             "attribute_id": attribute["attribute_id"],
@@ -580,6 +653,14 @@ def build_live_attribute_mapping(
             "validation_status": status,
         })
     missing = [item for item in mapped if item["required"] and item["validation_status"] == "unknown"]
+    # Optional dictionary fields that cannot be matched are omitted rather than
+    # blocking the product. Required fields are expected to be resolved by the
+    # same canonicalization step; only an actually invalid value remains a hard
+    # validation error.
+    for item in mapped:
+        if not item["required"] and item["validation_status"] in {"invalid", "unknown"}:
+            item["value"] = "unknown"
+            item["validation_status"] = "unknown"
     invalid = [item for item in mapped if item["validation_status"] == "invalid"]
     return {
         "schema_version": "2.0.0",
@@ -835,20 +916,39 @@ def remap_cached_product_metadata(product_dir: Path) -> Dict[str, Dict[str, Any]
     output = product_dir / "output"
     category = load_json(output / "ozon-category.json")
     category_attributes = load_json(output / "ozon-category-attributes.json")
-    semantic_attributes = load_json(output / "attributes.json")
-    draft = load_json(output / "ozon-draft.json")
+    semantic_path = output / "attributes.json"
+    if semantic_path.is_file():
+        semantic_attributes = load_json(semantic_path)
+    else:
+        # Newer products keep the already-mapped package only. Reuse it as the
+        # semantic input so a normalization-rule upgrade can repair cached
+        # products without another network request.
+        cached = load_json(output / "ozon-attributes.json")
+        semantic_attributes = {
+            "attributes": [
+                {
+                    "field_key": item.get("field_key", "unknown"),
+                    "name_ru": item.get("attribute_name", "unknown"),
+                    "value": item.get("value", "unknown"),
+                    "source_refs": [item.get("source", "unknown")],
+                }
+                for item in cached.get("attributes", [])
+            ]
+        }
+    draft_path = output / "ozon-draft.json"
+    draft = load_json(draft_path) if draft_path.is_file() else None
     if category.get("metadata_source") != "ozon_seller_api":
         raise ValueError(f"{product_id}: cached category is not backed by Ozon Seller API")
     attributes = build_live_attribute_mapping(
         product_id, category, category_attributes, semantic_attributes
     )
     preflight = build_preflight(product_id, attributes, utc_timestamp())
-    updated_draft = update_draft(product_id, draft, category, attributes, preflight)
     package = {
         "ozon-attributes.json": attributes,
         "ozon-preflight.json": preflight,
-        "ozon-draft.json": updated_draft,
     }
+    if draft is not None:
+        package["ozon-draft.json"] = update_draft(product_id, draft, category, attributes, preflight)
     for filename, value in package.items():
         errors = schema_errors(value, SCHEMAS[filename])
         if errors:
@@ -861,7 +961,16 @@ def remap_cached_product_metadata(product_dir: Path) -> Dict[str, Dict[str, Any]
 def validate_live_metadata_package(product_dir: Path) -> List[str]:
     output = product_dir.resolve() / "output"
     errors = []
-    for filename, schema_path in SCHEMAS.items():
+    # Phase A ends with category/attribute metadata and must be verifiable
+    # before the phase-B marketplace draft exists.  Validate the draft only
+    # when it is present; requiring it here made a valid category cache look
+    # broken and blocked the batch before text generation.
+    metadata_schemas = {
+        filename: schema_path
+        for filename, schema_path in SCHEMAS.items()
+        if filename != "ozon-draft.json"
+    }
+    for filename, schema_path in metadata_schemas.items():
         path = output / filename
         if not path.is_file():
             errors.append(f"{path}: missing file")
@@ -872,13 +981,14 @@ def validate_live_metadata_package(product_dir: Path) -> List[str]:
     category = load_json(output / "ozon-category.json")
     attributes = load_json(output / "ozon-attributes.json")
     preflight = load_json(output / "ozon-preflight.json")
-    draft = load_json(output / "ozon-draft.json")
+    draft_path = output / "ozon-draft.json"
+    draft = load_json(draft_path) if draft_path.is_file() else None
     if category["metadata_source"] != "ozon_seller_api" or not isinstance(category["category_id"], int):
         errors.append("category is not backed by live Ozon metadata")
     if attributes["category_id"] != category["category_id"]:
         errors.append("attribute category does not match selected category")
-    if draft["description_category_id"] != category["category_id"]:
+    if draft is not None and draft["description_category_id"] != category["category_id"]:
         errors.append("draft category does not match selected category")
-    if preflight["upload_allowed"] is not False or draft["upload_allowed"] is not False:
+    if preflight["upload_allowed"] is not False or (draft is not None and draft["upload_allowed"] is not False):
         errors.append("stage 4.1 must never enable upload")
     return errors

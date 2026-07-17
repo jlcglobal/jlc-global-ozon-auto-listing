@@ -9,37 +9,58 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional
 
+try:
+    from scripts.production_input_guard import (
+        ProductionInputError,
+        source_snapshot_binding,
+        validate_formal_product_input,
+    )
+    from scripts.image_asset_boundaries import write_asset_contract
+except ModuleNotFoundError:
+    from production_input_guard import ProductionInputError, source_snapshot_binding, validate_formal_product_input
+    from image_asset_boundaries import write_asset_contract
+
 PHASE_A_STEPS = [
     "validate_source", "product_analysis", "category_match", "variant_rules",
     "measurements", "offer_exists_check", "upload_feasibility",
 ]
 PHASE_B_STEPS = [
-    "product_positioning", "russian_copy", "style_selector", "image_plan",
-    "image_generation", "image_qc", "marketplace_content", "field_completion",
-    "ozon_upload",
+    "product_positioning", "ecommerce_design", "russian_copy", "marketplace_content", "field_completion",
+    "style_selector", "image_plan", "image_generation", "image_qc",
+    "final_upload_check", "ozon_upload",
 ]
 PIPELINE_STEPS = [*PHASE_A_STEPS, *PHASE_B_STEPS]
 MAX_SELECTED_SKUS_PER_PRODUCT = 10
-# PENDING_REMOTE is terminal for the local batch worker: the product was
-# already submitted and must only be revisited by the read-only recovery queue.
-TERMINAL_STATES = {"UPLOADED", "OZON_MODERATION", "ACTIVE", "PENDING_REMOTE", "FAILED_HARD_BLOCKER"}
-BATCH_TERMINAL_STATES = {"COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED"}
+# HANDED_OFF_TO_OZON is terminal locally: task_id was accepted by Ozon and the
+# operator continues the product card in Ozon. No local remote poll is needed.
+TERMINAL_STATES = {
+    "UPLOADED", "OZON_MODERATION", "ACTIVE", "PENDING_REMOTE",
+    "HANDED_OFF_TO_OZON", "WAITING_MANUAL_REVIEW", "FAILED_HARD_BLOCKER",
+}
+BATCH_TERMINAL_STATES = {
+    "COMPLETED", "COMPLETED_WITH_ERRORS", "FAILED",
+    # The generation batch is finished, but the product remains available for
+    # a separate, user-triggered manual upload batch.
+    "AWAITING_MANUAL_UPLOAD",
+}
 STEP_STATUS = {
     "validate_source": "PROCESSING",
     "product_analysis": "PROCESSING",
     "product_positioning": "PROCESSING",
+    "ecommerce_design": "PROCESSING",
     "category_match": "CATEGORY_MATCHED",
     "variant_rules": "CATEGORY_MATCHED",
     "russian_copy": "PROCESSING",
-    "style_selector": "PROCESSING",
-    "image_plan": "PROCESSING",
+    "style_selector": "CONTENT_GENERATED",
+    "image_plan": "CONTENT_GENERATED",
     "marketplace_content": "PROCESSING",
     "measurements": "PRICED",
     "offer_exists_check": "PRICED",
     "upload_feasibility": "PRICED",
     "image_generation": "IMAGES_GENERATED",
     "image_qc": "IMAGES_GENERATED",
-    "field_completion": "OZON_READY",
+    "field_completion": "CONTENT_GENERATED",
+    "final_upload_check": "OZON_READY",
     "ozon_upload": "UPLOADING",
 }
 
@@ -71,6 +92,21 @@ def normalize_checkpoint(status: Dict[str, Any]) -> Dict[str, Any]:
         step for step in completed
         if step == "collect_source" or step in PIPELINE_STEPS
     ]
+    # A local, never-submitted product may have checkpoints from the older
+    # image-first order. Keep only the contiguous prefix in the new order so
+    # final text/attributes are guaranteed to exist before any image prompt.
+    remote_or_written = (
+        str(status.get("status") or "").upper()
+        in {"UPLOADING", "PENDING_REMOTE", "HANDED_OFF_TO_OZON", "OZON_MODERATION", "UPLOADED", "ACTIVE"}
+        or int(status.get("api_write_count") or 0) > 0
+    )
+    if not remote_or_written:
+        contiguous = ["collect_source"] if "collect_source" in completed else []
+        for step in PIPELINE_STEPS:
+            if step not in completed:
+                break
+            contiguous.append(step)
+        completed = contiguous
     pending = [step for step in PIPELINE_STEPS if step not in completed]
     status.update({
         "completed_steps": completed,
@@ -82,6 +118,10 @@ def normalize_checkpoint(status: Dict[str, Any]) -> Dict[str, Any]:
         "next_action": pending[0] if pending else "complete",
         "task_authorized": bool(status.get("task_authorized", False)),
         "batch_id": status.get("batch_id") or "unknown",
+        "ai_service_state": status.get("ai_service_state") or "normal",
+        "ai_service_reason": status.get("ai_service_reason") or "unknown",
+        "ai_service_retry_after": status.get("ai_service_retry_after") or "unknown",
+        "ai_service_retry_count": int(status.get("ai_service_retry_count") or 0),
     })
     return status
 
@@ -114,6 +154,9 @@ def queue_product(product_dir: Path, batch_id: str) -> Dict[str, Any]:
         "task_authorized": True, "batch_id": batch_id, "last_run_at": now(),
         "failed_step": "unknown", "next_action": status["pending_steps"][0],
         "warnings": [], "retry_count_by_step": {},
+        "host_recovery_state": "normal", "host_recovery_reason": "unknown",
+        "ai_service_state": "normal", "ai_service_reason": "unknown",
+        "ai_service_retry_after": "unknown", "ai_service_retry_count": 0,
     })
     status.setdefault("history", []).append({
         "from": previous, "to": "QUEUED", "at": now(),
@@ -216,13 +259,13 @@ def complete_step(product_dir: Path, step: str) -> Dict[str, Any]:
     status["pending_steps"] = [item for item in PIPELINE_STEPS if item not in status["completed_steps"]]
     target = STEP_STATUS[step]
     if step == "ozon_upload" and status.get("status") in {
-        "UPLOADED", "OZON_MODERATION", "ACTIVE", "PENDING_REMOTE", "FAILED_HARD_BLOCKER"
+        "UPLOADED", "OZON_MODERATION", "ACTIVE", "PENDING_REMOTE", "HANDED_OFF_TO_OZON", "FAILED_HARD_BLOCKER"
     }:
         target = status["status"]
     status.update({
         "status": target,
         "current_step": step,
-        "progress": 100 if target in {"UPLOADED", "OZON_MODERATION", "ACTIVE", "PENDING_REMOTE"} else min(
+        "progress": 100 if target in {"UPLOADED", "OZON_MODERATION", "ACTIVE", "PENDING_REMOTE", "HANDED_OFF_TO_OZON"} else min(
             99, round(100 * len(status["completed_steps"]) / (len(PIPELINE_STEPS) + 1))
         ),
         "failed_step": "unknown",
@@ -231,6 +274,9 @@ def complete_step(product_dir: Path, step: str) -> Dict[str, Any]:
         "last_run_at": now(),
         "next_action": status["pending_steps"][0] if status["pending_steps"] else "complete",
         "active_step": None,
+        "ai_service_state": "normal",
+        "ai_service_reason": "unknown",
+        "ai_service_retry_after": "unknown",
     })
     status.setdefault("steps", []).append({
         "name": step,
@@ -277,7 +323,9 @@ def request_single_image_regeneration(product_dir: Path, slots: List[str], reaso
         "error_code": "unknown", "error_message": "unknown", "failed_step": "unknown", "last_run_at": now(),
     })
     status.setdefault("warnings", []).append(
-        f"Only failed image slots will be regenerated once: {', '.join(slots)}."
+        f"只自动重试未完成图片一次：{', '.join(slots)}。"
+        if slots else
+        "图片文件已保留，只自动重试生图收尾检查一次。"
     )
     write_json_atomic(path, status)
     return status
@@ -362,11 +410,20 @@ def create_batch(
             if "1688.com/offer/" not in str(load_json(source_path).get("source_url") or ""):
                 raise ValueError(f"Requested product is not a 1688 capture: {product_id}")
             selected.append(product_dir)
+    prepared: List[tuple[Path, Dict[str, Any]]] = []
+    review_mode = "automatic" if auto_upload else "manual"
     for product_dir in selected:
+        try:
+            validate_formal_product_input(product_dir)
+        except ProductionInputError as exc:
+            raise ValueError(
+                f"{product_dir.name}: only the current workbench collection may enter a formal batch: {exc}"
+            ) from exc
         source_path = product_dir / "input/source.json"
         sku_count = len(load_json(source_path).get("skus") or []) if source_path.is_file() else 0
         product_stores = list(dict.fromkeys(product_store_overrides.get(product_dir.name, target_store_ids)))
-        product_entries.append({
+        binding = source_snapshot_binding(product_dir)
+        entry = {
             "product_id": product_dir.name,
             "selected_sku_count": sku_count,
             "status": "QUEUED",
@@ -377,7 +434,15 @@ def create_batch(
             "errors": [],
             "target_store_ids": product_stores,
             "publication_count": len(product_stores),
-        })
+            "collection_id": binding["collection_id"],
+            "source_manifest_sha256": binding["source_manifest_sha256"],
+            "source_snapshot_binding": binding,
+            "auto_upload": bool(auto_upload),
+            "review_mode": review_mode,
+            "manual_confirmation_required": not bool(auto_upload),
+        }
+        product_entries.append(entry)
+        prepared.append((product_dir, entry))
     batch = {
         "schema_version": "1.0.0",
         "batch_id": batch_id,
@@ -393,9 +458,29 @@ def create_batch(
         "progress": 0,
         "target_store_ids": target_store_ids,
         "auto_upload": bool(auto_upload),
+        "review_mode": review_mode,
         "manual_upload_required": not bool(auto_upload),
         "inventory_submission_enabled": False,
         "products": product_entries,
     }
     write_json_atomic(batch_path(root, batch_id), batch)
+    # All products and their store selections have already passed validation.
+    # Freeze one identical mode/source contract for single- and multi-product
+    # batches only after the batch record has been created successfully.
+    for product_dir, entry in prepared:
+        status_path = product_dir / "status.json"
+        status = load_json(status_path)
+        status.update({
+            "batch_id": batch_id,
+            "review_mode": entry["review_mode"],
+            "auto_upload": entry["auto_upload"],
+            "manual_confirmation_required": entry["manual_confirmation_required"],
+            "source_snapshot_binding": entry["source_snapshot_binding"],
+        })
+        write_json_atomic(status_path, status)
+        write_asset_contract(
+            product_dir,
+            collection_id=entry["collection_id"],
+            manual_confirmation_required=entry["manual_confirmation_required"],
+        )
     return batch

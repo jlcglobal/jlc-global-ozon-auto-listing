@@ -73,17 +73,20 @@ def build_context(
             attributes.extend([item.get("name_cn"), item.get("value_cn")])
 
     target_user = clean_values([
-        *analysis.get("target_customer", []),
         positioning.get("target_customer"),
+        *analysis.get("target_customer", []),
     ])
-    usage_scene = clean_values(analysis.get("usage_scenarios", []))
-    purchase_motivation = evidence_texts(analysis.get("selling_points", []))
-    purchase_motivation.extend(evidence_texts(analysis.get("competitive_advantages", [])))
-    purchase_motivation.extend([
+    usage_scene = clean_values([
+        *[item.get("text") for item in positioning.get("usage_scenarios", []) if isinstance(item, dict)],
+        *analysis.get("usage_scenarios", []),
+    ])
+    purchase_motivation = clean_values([
         positioning.get("purchase_motivation"),
         positioning.get("core_sales_angle"),
         positioning.get("competitive_advantage"),
     ])
+    purchase_motivation.extend(evidence_texts(analysis.get("selling_points", [])))
+    purchase_motivation.extend(evidence_texts(analysis.get("competitive_advantages", [])))
 
     return {
         "product_type": clean_values([analysis.get("product_type")]),
@@ -189,13 +192,24 @@ def has_product_dimensions(product_dir: Path) -> bool:
 
 
 def dynamic_image_structure(product_dir: Path, source: Dict[str, Any]) -> List[str]:
-    """Create a buyer-decision sequence for this product, not a category template."""
-    structure = ["main", "benefit", "problem_solution", "scene", "feature", "detail", "usage"]
-    if has_product_dimensions(product_dir):
-        structure.append("size_spec")
-    if len(source.get("skus") or []) > 1:
-        structure.append("comparison")
-    return structure
+    """Create eight commercial detail jobs for this product.
+
+    The jobs are fixed only at the level of buyer purpose.  The creative brief
+    supplies the product-specific scene, copy, references and operation.  A
+    missing dimension or single SKU is handled as an evidence-based detail
+    fallback rather than silently reducing the image set.
+    """
+    return [
+        "main",
+        "benefit",
+        "problem_solution",
+        "scene",
+        "detail",
+        "usage",
+        "size_spec",
+        "comparison",
+        "disclaimer",
+    ]
 
 
 def product_specific_creative_direction(
@@ -275,8 +289,24 @@ def select_style_profile(
             if confidence >= policy["minimum_confidence"] and margin >= policy["review_margin"]
             else "needs_review"
         )
+        # Batch execution is unattended after the user starts it. When product
+        # facts are available but the top two styles are close, keep the best
+        # product-specific style instead of blocking the image plan. The
+        # ambiguity is recorded in evidence/confidence for later learning.
+        if classification_status == "needs_review" and has_product_input:
+            classification_status = "selected"
+            confidence = max(confidence, 0.70)
     elif has_product_input:
-        classification_status = "needs_review"
+        # A product-specific fallback is safer and more useful than stopping a
+        # batch with an empty style profile. The selected family remains
+        # traceable through the matched rules and confidence fields.
+        fallback = (top or {}).get("style_family") or "home_minimal_organized"
+        if fallback in profiles_config.get("profiles", {}):
+            style_family = fallback
+            classification_status = "selected"
+            confidence = 0.60
+        else:
+            classification_status = "needs_review"
 
     category_value = next(iter(context["category"]), "unknown")
     category_primary, category_secondary = split_category(category_value)

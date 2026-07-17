@@ -18,6 +18,7 @@ config/workbench-risk-rules.json
 
 # Dependencies and build output
 node_modules/
+**/.npm-cache/
 dist/
 build/
 target/
@@ -60,6 +61,8 @@ cache/
 image-channel-queue.json
 remote-pending-queue.json
 batch-result.json
+market-intelligence/reports/*.json
+runtime/market-intelligence/
 
 # Logs, temporary state, tunnels, locks and process files
 logs/*
@@ -77,6 +80,9 @@ temp/
 
 # Packaged release artifacts
 release/*.zip
+
+# Separate local prototype repository
+prototypes/three-pane-ai-studio-share/
 
 # Editors and operating-system files
 .DS_Store

@@ -1,0 +1,41 @@
+{
+  "captures": [
+    {
+      "name": "01-inbox",
+      "pageTitle": "我的采集箱",
+      "file": "/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-before/01-inbox.png"
+    },
+    {
+      "name": "02-market",
+      "pageTitle": "选品与关键词",
+      "file": "/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-before/02-market.png"
+    },
+    {
+      "name": "03-attention",
+      "pageTitle": "需要我处理",
+      "file": "/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-before/03-attention.png"
+    },
+    {
+      "name": "04-listed",
+      "pageTitle": "已上架商品",
+      "file": "/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-before/04-listed.png"
+    },
+    {
+      "name": "05-finance",
+      "pageTitle": "财务中心",
+      "file": "/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-before/05-finance.png"
+    },
+    {
+      "name": "06-shops",
+      "pageTitle": "店铺设置",
+      "file": "/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-before/06-shops.png"
+    },
+    {
+      "name": "07-settings",
+      "pageTitle": "系统设置",
+      "file": "/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-before/07-settings.png"
+    }
+  ],
+  "consoleErrors": [],
+  "pageErrors": []
+}

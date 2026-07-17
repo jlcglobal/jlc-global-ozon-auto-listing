@@ -132,6 +132,29 @@ def validate_content_input(content: Dict[str, Any], product_id: str, rules: Dict
     if any(item["source"] not in rules["keywords"]["allowed_sources"] for item in basis):
         raise ValueError("keyword basis contains unsupported source type")
 
+    image_copy = content.get("image_copy_ru")
+    required_roles = {
+        "main", "benefit", "problem_solution", "scene", "feature",
+        "detail", "usage", "comparison", "disclaimer",
+    }
+    if image_copy is not None:
+        if not isinstance(image_copy, dict) or not required_roles.issubset(image_copy):
+            raise ValueError("image_copy_ru must contain short Russian copy for every image role")
+        for role in required_roles:
+            phrases = image_copy.get(role)
+            if not isinstance(phrases, list) or not 1 <= len(phrases) <= 3:
+                raise ValueError(f"image_copy_ru.{role} must contain 1 to 3 phrases")
+            if any(not isinstance(value, str) or not 2 <= len(value.strip()) <= 70 or value.strip().casefold() == "unknown" for value in phrases):
+                raise ValueError(f"image_copy_ru.{role} contains missing or overlong text")
+        main_by_sku = image_copy.get("main_by_sku") or {}
+        if not isinstance(main_by_sku, dict):
+            raise ValueError("image_copy_ru.main_by_sku must be an object")
+        for sku_id, phrases in main_by_sku.items():
+            if not str(sku_id).strip() or not isinstance(phrases, list) or not 1 <= len(phrases) <= 3:
+                raise ValueError("image_copy_ru.main_by_sku contains an invalid SKU entry")
+            if any(not isinstance(value, str) or not 2 <= len(value.strip()) <= 70 or value.strip().casefold() == "unknown" for value in phrases):
+                raise ValueError("image_copy_ru.main_by_sku contains missing or overlong text")
+
 
 def source_refs(product_id: str) -> List[str]:
     return [
@@ -143,7 +166,7 @@ def source_refs(product_id: str) -> List[str]:
 
 
 def build_title(product_id: str, content: Dict[str, Any]) -> Dict[str, Any]:
-    return {
+    result = {
         "schema_version": "1.0.0",
         "product_id": product_id,
         "source_refs": source_refs(product_id)[:3],
@@ -153,6 +176,7 @@ def build_title(product_id: str, content: Dict[str, Any]) -> Dict[str, Any]:
         "excluded_claims": content.get("excluded_claims", []),
         "warnings": content.get("warnings", []),
     }
+    return result
 
 
 def build_description(product_id: str, content: Dict[str, Any], unknown_fields: List[str]) -> Dict[str, Any]:
@@ -173,13 +197,18 @@ def build_description(product_id: str, content: Dict[str, Any], unknown_fields: 
 
 
 def build_keywords(product_id: str, content: Dict[str, Any]) -> Dict[str, Any]:
+    keyword_basis = [{
+        "keyword": item["keyword"],
+        "source": item["source"],
+        "evidence": list(item.get("evidence") or item.get("source_refs") or []),
+    } for item in content["keyword_basis"]]
     return {
         "schema_version": "1.0.0",
         "product_id": product_id,
         "source_refs": source_refs(product_id)[:3],
         "primary_keywords": content["primary_keywords"],
         "secondary_keywords": content["secondary_keywords"],
-        "keyword_basis": content["keyword_basis"],
+        "keyword_basis": keyword_basis,
         "excluded_keywords": content.get("excluded_claims", []),
         "warnings": content.get("warnings", []),
     }
@@ -293,15 +322,17 @@ def build_images(product_dir: Path, plan: Dict[str, Any]) -> List[Dict[str, Any]
     images = []
     for item in all_plan_items(plan):
         path = ROOT / item["output_path"]
-        if not path.is_file():
-            continue
         role = "main" if item["image_type"] == "main" else "disclaimer" if item["image_type"] == "disclaimer" else "detail"
+        exists = path.is_file()
         images.append({
             "slot": item["slot"],
             "role": role,
             "path": item["output_path"],
             "source_image_ids": item["reference_image_ids"],
-            "qc_status": qc_status if item["slot"] in checked_slots else "not_checked",
+            # Keep missing planned slots in the draft so the workbench can
+            # show exactly what is absent instead of silently shrinking the
+            # package and allowing a partial upload.
+            "qc_status": "missing" if not exists else qc_status if item["slot"] in checked_slots else "not_checked",
             "variant_scope": item.get("variant_scope", "shared"),
             "source_sku_id": item.get("source_sku_id", "all"),
             "variant_kind": ozon_draft_variant_kind(item.get("variant_kind")),
@@ -361,7 +392,6 @@ def preflight(
     errors = [
         "Ozon description_category_id and type_id are unknown.",
         "Ozon required attribute IDs are unknown.",
-        "Stock and warehouse_id are not configured.",
     ]
     if pricing_result["recommendation"] == "REJECT":
         errors.append("Pricing Engine rejected at least one SKU; upload is forbidden.")
@@ -377,6 +407,7 @@ def preflight(
             errors.append("Product qc-report.json has failed status.")
 
     warnings = [f"Unknown product fields: {', '.join(unknown_fields) or 'none' }."]
+    warnings.append("Inventory is intentionally not managed by this pipeline; stock and warehouse fields are excluded from upload requests.")
     if qc_status not in (None, "pass"):
         warnings.append(f"Product QC status is {qc_status}; automatic correction or a non-blocking warning is required.")
     if any(sku["sku_image_missing"] for sku in source["skus"]):
@@ -484,7 +515,7 @@ def build_copy_compatibility(
         )}
         for key in ("product_value", "usage_scenarios", "core_advantages")
     ]
-    return {
+    result = {
         "schema_version": "1.0.0",
         "product_id": product_id,
         "source_refs": description["source_refs"],
@@ -508,6 +539,9 @@ def build_copy_compatibility(
             "error": None,
         },
     }
+    if content.get("image_copy_ru"):
+        result["image_copy_ru"] = content["image_copy_ru"]
+    return result
 
 
 def build_package(product_dir: Path, content: Dict[str, Any], checked_at: str | None = None) -> Dict[str, Dict[str, Any]]:
@@ -515,7 +549,10 @@ def build_package(product_dir: Path, content: Dict[str, Any], checked_at: str | 
     rules = load_json(RULES_PATH)
     source = load_json(product_dir / "input" / "source.json")
     analysis = load_json(product_dir / "output" / "product-analysis.json")
-    plan = load_json(product_dir / "output" / "image-plan.json")
+    plan_path = product_dir / "output" / "image-plan.json"
+    plan = load_json(plan_path) if plan_path.is_file() else {
+        "main_images": [], "detail_images": [], "disclaimer_images": [],
+    }
     product_id = product_dir.name
     validate_content_input(content, product_id, rules)
     timestamp = checked_at or datetime.now().astimezone().replace(microsecond=0).isoformat()

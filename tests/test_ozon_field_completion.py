@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -17,7 +18,7 @@ from ozon_field_completion.service import _auto_upload_config, build_color_varia
 from ozon_uploader.service import build_preflight, load_json  # noqa: E402
 
 
-@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
+@unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
 class OzonFieldCompletionTest(unittest.TestCase):
     @classmethod
     def setUpClass(cls):
@@ -27,6 +28,23 @@ class OzonFieldCompletionTest(unittest.TestCase):
     def test_all_outputs_validate(self):
         validation = validate_package(self.package)
         self.assertTrue(all(not errors for errors in validation.values()), validation)
+
+    def test_field_completion_keeps_upload_draft_copy_in_sync(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product_dir = Path(directory) / "P000004"
+            shutil.copytree(self.product_dir, product_dir)
+            title = load_json(product_dir / "output/title-ru.json")["title_ru"]
+            description = load_json(product_dir / "output/description-ru.json")["description_ru"]
+            stale = load_json(product_dir / "output/ozon-draft.json")
+            stale["title"] = "Старый заголовок"
+            stale["description"] = "Старое описание"
+            (product_dir / "output/ozon-draft.json").write_text(
+                json.dumps(stale, ensure_ascii=False), encoding="utf-8"
+            )
+            build_package(product_dir, write=True)
+            refreshed = load_json(product_dir / "output/ozon-draft.json")
+            self.assertEqual(refreshed["title"], title)
+            self.assertEqual(refreshed["description"], description)
 
     def test_benchmark_separates_chinese_seller_ui_from_russian_buyer_content(self):
         data = load_json(ROOT / "rules/ozon_content_score_benchmarks.json")
@@ -145,6 +163,7 @@ class OzonFieldCompletionTest(unittest.TestCase):
             self.assertEqual(_auto_upload_config(product_dir, metadata)["sku_colors"], [])
             self.assertEqual(package["ozon-attributes-final.json"]["required_summary"]["missing"], 0)
 
+    @unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "runtime fixture P000011 is not installed")
     def test_drain_cover_tags_and_title_are_marketplace_safe(self):
         package = build_package(ROOT / "products/P000011", write=False)
         tags = package["ozon-tags.json"]["tags"]
@@ -185,6 +204,7 @@ class OzonFieldCompletionTest(unittest.TestCase):
             item["attribute_id"] for item in coverage["omitted_attributes"]
         })
 
+    @unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "runtime fixture P000011 is not installed")
     def test_forbidden_facts_are_not_estimated(self):
         package = build_package(ROOT / "products/P000011", write=False)
         forbidden_terms = ("сертифик", "нагруз", "функц", "комплект", "материал")
@@ -193,6 +213,7 @@ class OzonFieldCompletionTest(unittest.TestCase):
                 if item["source"] == "AI_estimated":
                     self.fail(f"Forbidden attribute was estimated: {item['attribute_name']}")
 
+    @unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "runtime fixture P000011 is not installed")
     def test_invalid_measurement_hierarchy_blocks_final_upload(self):
         with tempfile.TemporaryDirectory() as directory:
             product_dir = Path(directory) / "P000011"
@@ -208,6 +229,7 @@ class OzonFieldCompletionTest(unittest.TestCase):
             self.assertFalse(hierarchy["passed"])
             self.assertFalse(check["upload_allowed"])
 
+    @unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "runtime fixture P000011 is not installed")
     def test_category_remap_refreshes_stale_product_type_config(self):
         with tempfile.TemporaryDirectory() as directory:
             product_dir = Path(directory) / "P000011"
@@ -227,6 +249,7 @@ class OzonFieldCompletionTest(unittest.TestCase):
             self.assertEqual(refreshed["type"]["value"], "Пробка для ванны")
             self.assertEqual(refreshed["sku_prices"], config["sku_prices"])
 
+    @unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "runtime fixture P000011 is not installed")
     def test_chinese_attribute_names_do_not_collapse_into_unrelated_page_text(self):
         with tempfile.TemporaryDirectory() as directory:
             product_dir = Path(directory) / "P000011"

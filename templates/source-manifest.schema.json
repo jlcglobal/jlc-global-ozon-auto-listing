@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/source-manifest.schema.json",
+  "title": "Workbench Collection Source Manifest",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "collection_id", "source_kind", "generated_at", "records"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "collection_id": {"type": "string", "pattern": "^COL-[A-Za-z0-9._-]{8,80}$"},
+    "source_kind": {"const": "workbench_collection"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "records": {
+      "type": "array",
+      "minItems": 3,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["record_id", "product_id", "collection_id", "source_kind", "source_path", "sha256", "collected_at"],
+        "properties": {
+          "record_id": {"type": "string", "pattern": "^[a-f0-9]{20}$"},
+          "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+          "collection_id": {"type": "string", "pattern": "^COL-[A-Za-z0-9._-]{8,80}$"},
+          "source_kind": {"const": "workbench_collection"},
+          "source_path": {"type": "string", "pattern": "^products/P[0-9]{6}/input/"},
+          "sha256": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+          "collected_at": {"type": "string", "minLength": 1}
+        }
+      }
+    }
+  }
+}

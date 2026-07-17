@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -94,7 +95,8 @@ class VariantCompatibilityCheckerTests(unittest.TestCase):
         self.assertEqual(grouping["product_group_count"], 1)
         self.assertEqual(grouping["variant_count"], 3)
         self.assertEqual(grouping["variant_mapping_status"], "SEPARATE_CARDS_REQUIRED")
-        self.assertFalse(grouping["upload_allowed"])
+        self.assertTrue(grouping["upload_allowed"])
+        self.assertIsNone(grouping["mapping_requirements"]["missing_rule"])
         self.assertEqual(validate_grouping_result(grouping), [])
 
     def test_configuration_does_not_merge_when_attribute_is_not_an_aspect(self):
@@ -133,6 +135,47 @@ class VariantCompatibilityCheckerTests(unittest.TestCase):
         self.assertFalse(result["mapping_supported"])
         self.assertEqual(result["detected_difference_fields"][0]["difference_kind"], "unknown")
 
+    def test_per_sku_dimensions_do_not_become_duplicate_volume_aspects(self):
+        source = {
+            "skus": [
+                {
+                    "sku_id": "3l", "sku_name": "3L",
+                    "option_values": [
+                        {"name_cn": "容量", "value_cn": "3L"},
+                        {"name_cn": "外部尺寸", "value_cn": "14.5×14.5×12cm"},
+                    ],
+                },
+                {
+                    "sku_id": "5l", "sku_name": "5L",
+                    "option_values": [
+                        {"name_cn": "容量", "value_cn": "5L"},
+                        {"name_cn": "外部尺寸", "value_cn": "29×15.5×12cm"},
+                    ],
+                },
+            ],
+        }
+        rule = {
+            "categoryId": "1", "typeId": "2", "rule_data_complete": True,
+            "source": "official_test_metadata",
+            "attributes": [{
+                "attributeId": "6788", "nameRu": "Объем, мл",
+                "required": False, "isAspect": True, "values": [],
+            }],
+        }
+        decision = self.decision(source, rule)
+        grouping = build_grouping_result("P000001", source, decision)
+        self.assertTrue(decision["platform_can_merge"])
+        self.assertEqual(
+            [item["source_field"] for item in decision["detected_difference_fields"]],
+            ["容量"],
+        )
+        self.assertTrue(any("per-SKU specification" in item for item in decision["warnings"]))
+        self.assertTrue(all(
+            len(item["variant_attribute_values"]) == 1
+            and item["variant_attribute_values"][0]["attribute_id"] == 6788
+            for item in grouping["variants"]
+        ))
+
     def test_single_sku_is_one_non_variant_product_group(self):
         result = self.decision(source_with_values("颜色", ["黑色"]))
         self.assertFalse(result["can_merge"])
@@ -157,7 +200,42 @@ class VariantCompatibilityCheckerTests(unittest.TestCase):
         self.assertFalse(platform["platform_can_merge"])
         self.assertEqual(platform["upload_strategy"], "separate_cards")
 
+    def test_explicit_liters_win_over_weight_and_load_wording(self):
+        source = source_with_values("规格1", [
+            "10升特厚（390克）实装≥10斤油(1个装）",
+            "25升特厚自重2.8斤实装≥50斤油（1个装）",
+            "5升特厚（220克）实装≥10斤油（1个装）",
+            "2.5升特厚实装5.5斤水（1个装）",
+        ])
+        source.update({
+            "source_url": "https://detail.1688.com/offer/123456.html",
+            "captured_at": "2026-07-16T00:00:00Z",
+        })
+        rule = {
+            "categoryId": "1",
+            "typeId": "2",
+            "rule_data_complete": True,
+            "source": "official_test_metadata",
+            "attributes": [{
+                "attributeId": "6378",
+                "nameRu": "Объем, л",
+                "required": False,
+                "isAspect": True,
+                "values": [],
+            }],
+        }
+        decision = self.decision(source, rule)
+        grouping = build_grouping_result("P000006", source, decision)
+        values = [
+            variant["variant_attribute_values"][0]
+            for variant in grouping["variants"]
+        ]
+        self.assertEqual([item["value"] for item in values], ["10", "25", "5", "2.5"])
+        self.assertTrue(all(item["estimated"] is False for item in values))
+        self.assertTrue(all(item["dictionary_value_id"] is None for item in values))
+
     @unittest.skipUnless((ROOT / "products/P000005/status.json").is_file(), "optional runtime product fixture is not installed")
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
     def test_p000005_has_fixed_separate_card_policy_in_status(self):
         status = json.loads((ROOT / "products/P000005/status.json").read_text(encoding="utf-8"))
         grouping = status["platform_grouping"]

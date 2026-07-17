@@ -1,0 +1,10 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900001",
+  "identity": "offline_audit_fixture",
+  "source_kind": "manual_test",
+  "formal_production_allowed": false,
+  "workbench_visible": false,
+  "reason": "invalid_offline_acceptance_sample_migrated_out_of_products",
+  "migrated_at": "2026-07-16T21:10:58+08:00"
+}

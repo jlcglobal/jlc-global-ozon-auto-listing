@@ -40,10 +40,10 @@ class LanCollaborationTest(unittest.IsolatedAsyncioTestCase):
         with tempfile.TemporaryDirectory() as directory:
             pid_path = Path(directory) / "batch.pid"
             pid_path.write_text("12345", encoding="utf-8")
-            with patch.object(workbench, "BATCH_PID_PATH", pid_path), patch.object(workbench.os, "kill"):
+            with patch.object(workbench, "BATCH_PID_PATH", pid_path), patch.object(workbench, "_pid_is_alive", return_value=True):
                 self.assertEqual(workbench.running_batch_pid(), 12345)
             pid_path.write_text("12345", encoding="utf-8")
-            with patch.object(workbench, "BATCH_PID_PATH", pid_path), patch.object(workbench.os, "kill", side_effect=ProcessLookupError):
+            with patch.object(workbench, "BATCH_PID_PATH", pid_path), patch.object(workbench, "_pid_is_alive", return_value=False):
                 self.assertIsNone(workbench.running_batch_pid())
             self.assertFalse(pid_path.exists())
 
@@ -86,7 +86,7 @@ class LanCollaborationTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(result["batch_id"], "B-EXISTING")
             create_batch.assert_not_called()
 
-    def test_extension_and_workbench_include_lan_connection_controls(self):
+    def test_extension_and_workbench_use_automatic_device_identity(self):
         manifest = json.loads((ROOT / "collector/edge-extension/manifest.json").read_text(encoding="utf-8"))
         popup = (ROOT / "collector/edge-extension/popup.html").read_text(encoding="utf-8")
         popup_script = (ROOT / "collector/edge-extension/popup.js").read_text(encoding="utf-8")
@@ -95,23 +95,28 @@ class LanCollaborationTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("storage", manifest["permissions"])
         self.assertIn("http://*/*", manifest["host_permissions"])
         self.assertIn("factory-url", popup)
-        self.assertIn("X-Factory-Access-Code", popup_script)
+        self.assertIn("X-Factory-Device-Id", popup_script)
+        self.assertNotIn("factoryAccessCode", popup_script)
         self.assertNotIn('id="run-task"', popup)
         self.assertNotIn("runCollectedTasks", popup_script)
-        self.assertIn("cafAccessCode", workbench_script)
+        self.assertIn("cafDeviceId", workbench_script)
+        self.assertIn("X-Factory-Device-Id", workbench_script)
+        self.assertNotIn("cafAccessCode", workbench_script)
         self.assertIn("already_queued", workbench_script)
-        self.assertIn("access-dialog", workbench_html)
+        self.assertNotIn("access-dialog", workbench_html)
+        self.assertIn("所有电脑共享商品与任务", workbench_html)
         self.assertNotIn("window.prompt", workbench_script)
 
-    async def test_remote_api_requires_shared_code_but_accepts_correct_code(self):
+    async def test_remote_api_needs_no_code_and_is_identified_as_lan_device(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             write_json(root / "config/lan-access.json", {
-                "enabled": True, "access_code": "studio-code",
+                "enabled": True, "access_code": "",
                 "allowed_cidrs": ["192.168.0.0/16"],
             })
             def request_with(headers=None):
-                encoded = [(key.lower().encode(), value.encode()) for key, value in (headers or {}).items()]
+                values = {"Host": "factory.local:8765", **(headers or {})}
+                encoded = [(key.lower().encode(), value.encode()) for key, value in values.items()]
                 return Request({
                     "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
                     "method": "GET", "scheme": "http", "path": "/api/workbench/summary",
@@ -119,16 +124,30 @@ class LanCollaborationTest(unittest.IsolatedAsyncioTestCase):
                     "client": ("192.168.1.25", 50000), "server": ("factory.local", 8765),
                 })
 
-            async def accepted(_request):
-                return JSONResponse({"ok": True})
+            async def accepted(request):
+                return JSONResponse({"operator": request.state.operator})
 
             with patch.object(workbench, "ROOT", root), patch.object(workbench, "PRODUCTS_DIR", root / "products"):
-                denied = await workbench.local_network_only(request_with(), accepted)
                 allowed = await workbench.local_network_only(
-                    request_with({"X-Factory-Access-Code": "studio-code"}), accepted
+                    request_with({"Origin": "http://factory.local:8765", "X-Factory-Device-Id": "browser-123"}),
+                    accepted,
                 )
-            self.assertEqual(denied.status_code, 401)
             self.assertEqual(allowed.status_code, 200)
+            body = json.loads(allowed.body)
+            self.assertEqual(body["operator"]["display_name"], "工作室电脑 25")
+            self.assertEqual(body["operator"]["client_device_id"], "browser-123")
+            self.assertFalse(body["operator"]["is_host_device"])
+
+    def test_products_and_batches_are_shared_across_devices(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product_dir = root / "products/P000001"
+            write_json(product_dir / "input/owner.json", {"owner_id": "old-member"})
+            write_json(product_dir / "status.json", {"status": "COLLECTED"})
+            write_json(root / "batches/B-SHARED/batch.json", {"batch_id": "B-SHARED"})
+            with patch.object(workbench, "ROOT", root), patch.object(workbench, "PRODUCTS_DIR", root / "products"):
+                self.assertTrue(workbench.product_is_owned(product_dir, operator_id="different-device"))
+                self.assertTrue(workbench.batch_is_owned("B-SHARED"))
 
     async def test_cross_site_page_cannot_inherit_loopback_owner(self):
         def request_with(headers=None):
@@ -148,11 +167,20 @@ class LanCollaborationTest(unittest.IsolatedAsyncioTestCase):
             accepted,
         )
         same_origin = await workbench.local_network_only(
-            request_with({"Origin": "http://127.0.0.1:8765", "Sec-Fetch-Site": "same-origin"}),
+            request_with({"Host": "127.0.0.1:8765", "Origin": "http://127.0.0.1:8765", "Sec-Fetch-Site": "same-origin"}),
             accepted,
         )
-        self.assertEqual(cross_site.status_code, 401)
+        self.assertEqual(cross_site.status_code, 403)
         self.assertEqual(same_origin.status_code, 200)
+
+    def test_only_host_device_can_manage_settings(self):
+        token = workbench.CURRENT_OPERATOR.set({"id": "device-remote", "role": "member", "is_host_device": False})
+        try:
+            with self.assertRaisesRegex(Exception, "只有主电脑"):
+                workbench.require_owner_role()
+        finally:
+            workbench.CURRENT_OPERATOR.reset(token)
+        self.assertTrue(workbench.current_operator()["is_host_device"])
 
     async def test_main_computer_1688_collector_can_use_implicit_owner(self):
         async def accepted(_request):
@@ -169,6 +197,21 @@ class LanCollaborationTest(unittest.IsolatedAsyncioTestCase):
             "client": ("127.0.0.1", 50000), "server": ("127.0.0.1", 8765),
         })
         response = await workbench.local_network_only(request, accepted)
+        self.assertEqual(response.status_code, 200)
+
+    async def test_extension_popup_can_test_workbench_connection(self):
+        async def accepted(_request):
+            return JSONResponse({"ok": True})
+
+        request = Request({
+            "type": "http", "asgi": {"version": "3.0"}, "http_version": "1.1",
+            "method": "GET", "scheme": "http", "path": "/api/workbench/summary",
+            "raw_path": b"/api/workbench/summary", "query_string": b"",
+            "headers": [(b"origin", b"chrome-extension://collector-id"), (b"sec-fetch-site", b"cross-site")],
+            "client": ("192.168.1.25", 50000), "server": ("factory.local", 8765),
+        })
+        with patch.object(workbench, "load_lan_access_config", return_value={"enabled": True, "allowed_cidrs": ["192.168.0.0/16"]}):
+            response = await workbench.local_network_only(request, accepted)
         self.assertEqual(response.status_code, 200)
 
 

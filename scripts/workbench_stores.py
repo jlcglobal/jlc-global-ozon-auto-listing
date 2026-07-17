@@ -192,6 +192,21 @@ def set_enabled(root: Path, store_id: str, enabled: bool) -> Dict[str, Any]:
     return public_store(root, shop)
 
 
+def mark_store_validation_failed(root: Path, store_id: str, error: str) -> Dict[str, Any]:
+    """Persist a definitive credential failure found during an upload attempt."""
+    registry = load_registry(root)
+    shop = next((item for item in registry.get("shops") or [] if item["id"] == store_id), None)
+    if shop is None:
+        raise KeyError(store_id)
+    shop.update({
+        "validation_status": "failed",
+        "last_validated_at": now(),
+        "last_validation_error": str(error)[:240],
+    })
+    write_json(registry_path(root), registry)
+    return public_store(root, shop)
+
+
 def delete_store(root: Path, store_id: str) -> None:
     registry = load_registry(root)
     before = len(registry.get("shops") or [])

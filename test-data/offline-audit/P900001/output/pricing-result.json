@@ -1,0 +1,16 @@
+{
+  "sku_pricing": [
+    {
+      "sku_id": "5477283792300",
+      "selling_price_rub": 499
+    },
+    {
+      "sku_id": "5477283792301",
+      "selling_price_rub": 599
+    },
+    {
+      "sku_id": "5477283792302",
+      "selling_price_rub": 699
+    }
+  ]
+}

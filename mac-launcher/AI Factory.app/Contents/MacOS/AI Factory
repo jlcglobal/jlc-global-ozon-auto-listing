@@ -1,0 +1,51 @@
+#!/bin/zsh
+
+set -u
+
+PROJECT_DIR="/Users/apple/Documents/crossborder-ai-factory"
+LOG_FILE="$PROJECT_DIR/logs/mac-app-launcher.log"
+WORKBENCH_URL="http://127.0.0.1:8765/workbench"
+HEALTH_URL="http://127.0.0.1:8765/health"
+PID_FILE="$PROJECT_DIR/runtime/workbench-server.pid"
+STOP_FILE="$PROJECT_DIR/runtime/workbench-stop-requested"
+
+mkdir -p "$PROJECT_DIR/logs" "$PROJECT_DIR/runtime"
+
+is_healthy() {
+  /usr/bin/curl --silent --fail --max-time 2 "$HEALTH_URL" >/dev/null 2>&1
+}
+
+if is_healthy; then
+  echo "[$(/bin/date -Iseconds)] AI Factory.app 复用已运行的工作台" >> "$LOG_FILE"
+  /usr/bin/open "$WORKBENCH_URL"
+  exit 0
+fi
+
+if /usr/sbin/lsof -nP -iTCP:8765 -sTCP:LISTEN >/dev/null 2>&1; then
+  /usr/bin/osascript -e 'display alert "AI Factory 无法启动" message "端口8765已被其他程序占用。" as critical'
+  exit 1
+fi
+
+PYTHON_BIN="$PROJECT_DIR/.venv/bin/python3"
+if [[ ! -x "$PYTHON_BIN" ]] || ! "$PYTHON_BIN" -c "import fastapi, uvicorn" >/dev/null 2>&1; then
+  /usr/bin/osascript -e 'display alert "AI Factory 无法启动" message "项目Python环境不完整，请检查 .venv。" as critical'
+  exit 1
+fi
+
+rm -f "$STOP_FILE" "$PID_FILE"
+/usr/bin/nohup /bin/zsh "$PROJECT_DIR/scripts/run_workbench_service.sh" \
+  "$PYTHON_BIN" "$PROJECT_DIR" >> "$PROJECT_DIR/logs/workbench-server.log" 2>&1 < /dev/null &
+SERVER_PID=$!
+echo "$SERVER_PID" > "$PID_FILE"
+
+for attempt in {1..40}; do
+  /bin/sleep 0.25
+  if is_healthy; then
+    echo "[$(/bin/date -Iseconds)] AI Factory.app 启动工作台" >> "$LOG_FILE"
+    /usr/bin/open "$WORKBENCH_URL"
+    exit 0
+  fi
+done
+
+/usr/bin/osascript -e 'display alert "AI Factory 启动超时" message "请查看项目 logs/workbench-server.log。" as critical'
+exit 1

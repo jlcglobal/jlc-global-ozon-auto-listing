@@ -1,0 +1,359 @@
+{
+  "values": [
+    {
+      "id": 971394391,
+      "value": "Тефлоновое",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394425,
+      "value": "Керамическое",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394426,
+      "value": "Мраморное",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394427,
+      "value": "Гранитное",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394428,
+      "value": "Титановое",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394429,
+      "value": "Нанокомпозитное",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394430,
+      "value": "Алмазное",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394431,
+      "value": "Глазурь",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394432,
+      "value": "Эмалевое",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394433,
+      "value": "Серебряное",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394434,
+      "value": "Daikin Silkware",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394435,
+      "value": "DIAMANTEK",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394436,
+      "value": "Duramax",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394437,
+      "value": "Duraslate",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394438,
+      "value": "Eco-Cera",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394439,
+      "value": "GREBLON",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394440,
+      "value": "Greblon C 3+",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394441,
+      "value": "ILAG Basic",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394442,
+      "value": "ILAG Granitec",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394443,
+      "value": "ILAG Premium",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394444,
+      "value": "ILAG Ultimate",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394445,
+      "value": "IperTek",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394446,
+      "value": "MicroCERAMIC",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394447,
+      "value": "Pfluon",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394448,
+      "value": "PFLUON COOKMARK",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394449,
+      "value": "QuanTanium",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394450,
+      "value": "Quantum2",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394451,
+      "value": "QuarzoTek Pro",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394452,
+      "value": "Resistek",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394453,
+      "value": "STONE TITAN",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394454,
+      "value": "TopTek",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394455,
+      "value": "TouchStone",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394456,
+      "value": "VEGETEK",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394457,
+      "value": "Eclipse",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394458,
+      "value": "Xylan",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394459,
+      "value": "Xylan Plus",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394460,
+      "value": "Без покрытия",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394461,
+      "value": "Покрытие на водно-кремниевой основе",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394462,
+      "value": "Покрытие на водной основе",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394506,
+      "value": "QuarzoTek",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394507,
+      "value": "EXP",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971394508,
+      "value": "TITAN Resistence",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971454542,
+      "value": "Skandia X-treme",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971932370,
+      "value": "Whitford Skandia",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971932375,
+      "value": "ILAG Ilaflon Select R",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971932376,
+      "value": "ILAFLON Resist R Plus",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971951828,
+      "value": "SILVER PROTECT",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 971983881,
+      "value": "ROCK SHELL-3X",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972061354,
+      "value": "Hydraloe",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972131976,
+      "value": "Plustek",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972141090,
+      "value": "Polygo Maxxi",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972172541,
+      "value": "ILAG Professional",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972266562,
+      "value": "Lotan",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972752477,
+      "value": "Sol-gel керамическое покрытие",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972782345,
+      "value": "Ultra granit",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972838821,
+      "value": "TriTitan",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972841890,
+      "value": "Xynflon",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 972989297,
+      "value": "ECO SHELL-3X",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 973039104,
+      "value": "Mineralia+",
+      "info": "",
+      "picture": ""
+    }
+  ],
+  "truncated": false
+}

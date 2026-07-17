@@ -1,0 +1,13 @@
+{
+  "product_dimensions": {
+    "length": 29,
+    "width": 15.5,
+    "height": 15.5,
+    "unit": "cm",
+    "source": "selected_6l_sku",
+    "estimated": false,
+    "confidence": 100,
+    "source_ref": "input/source.json#/skus/2/source_data/external_dimensions_cm"
+  },
+  "note": "三款准确尺寸按SKU保存在source.json；本字段只用于兼容旧结构，不覆盖SKU尺寸。"
+}

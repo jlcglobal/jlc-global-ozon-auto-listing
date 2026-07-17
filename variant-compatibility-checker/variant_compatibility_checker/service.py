@@ -123,8 +123,37 @@ def likely_label_noise(values: List[str]) -> bool:
     return bool(ratios) and min(ratios) >= 0.72
 
 
+_COLOR_VALUE_TOKENS = (
+    "黑曜石", "曜石黑", "奶油白", "米白", "暖白", "象牙白", "酒红", "酒红色",
+    "砖红", "玫红", "粉红", "藏青", "墨绿", "深绿", "浅绿", "淡绿", "深蓝", "浅蓝",
+    "透明", "银色", "金色", "黑色", "白色", "红色", "蓝色", "绿色", "灰色", "棕色",
+    "咖啡色", "卡其色", "粉色", "黄色", "橙色", "紫色", "褐色", "乳白",
+    "черн", "бел", "красн", "син", "зелен", "серебр", "золот", "сер", "коричн",
+    "беж", "бордов", "винн", "кремов", "прозрач",
+)
+
+
+def is_color_value(value: Any) -> bool:
+    """Recognise seller colour names, including stylised Chinese names.
+
+    1688 frequently uses values such as ``黑曜石`` or ``奶油白`` without the
+    literal ``色`` suffix.  They are still colour variants when every selected
+    SKU value is colour-like.  The helper intentionally uses a small, explicit
+    vocabulary instead of treating arbitrary text as a colour.
+    """
+    text = normalize(value).split("【", 1)[0].split("[", 1)[0]
+    # A value such as ``银色>iPhone17`` contains a colour token but is a
+    # compound model option, not a colour-only value.  Compound values are
+    # handled by ``difference_kind`` below, which compares their remainders.
+    if re.search(r"[>/#*_]", text):
+        return False
+    return bool(text) and any(token in text for token in _COLOR_VALUE_TOKENS)
+
+
 def difference_kind(source_name: str, values: List[str]) -> str:
     combined = normalize(source_name + " " + " ".join(values))
+    if values and all(is_color_value(value) for value in values):
+        return "color"
     has_color = any(token in combined for token in ("颜色", "色号", "colour", "color")) or bool(
         re.search(r"(?:黑|白|红|蓝|绿|银|金|粉|紫|灰|棕|橙|黄)色", combined)
     )
@@ -225,6 +254,14 @@ def detect_differences(skus: List[Dict[str, Any]], allowed: List[Dict[str, Any]]
                 f"Ignored likely source-label inconsistency in {name}: {', '.join(values)}"
             )
             continue
+        normalized_name = normalize(name)
+        if any(token in normalized_name for token in (
+            "外部尺寸", "产品尺寸", "商品尺寸", "长宽高", "габарит", "размеры товара",
+        )):
+            warnings.append(
+                f"Preserved {name} as a per-SKU specification; it is not a separate Ozon variant aspect."
+            )
+            continue
         kind = difference_kind(name, values)
         matches = field_matches(kind, allowed, name, values)
         differences.append({
@@ -234,6 +271,33 @@ def detect_differences(skus: List[Dict[str, Any]], allowed: List[Dict[str, Any]]
             "mapped_variant_fields": matches,
             "compatible": bool(matches),
         })
+
+    # The seller's structured SKU metadata is stronger evidence than the
+    # generic UI label (often just ``规格1``).  When all selected SKUs expose
+    # the same colour property, classify that dimension as colour even if the
+    # option label itself is unhelpful.
+    colour_props = {
+        normalize((sku.get("source_data") or {}).get("sku_image_prop_name"))
+        for sku in skus
+        if (sku.get("source_data") or {}).get("sku_image_prop_name")
+    }
+    if len(colour_props) == 1 and next(iter(colour_props)) in {"颜色", "色号", "colour", "color"}:
+        sku_names = distinct(str(sku.get("sku_name") or "") for sku in skus)
+        if len(sku_names) > 1 and all(is_color_value(value) for value in sku_names):
+            existing = next((item for item in differences if item["source_values"] == sku_names), None)
+            if existing:
+                existing["difference_kind"] = "color"
+                existing["mapped_variant_fields"] = field_matches("color", allowed, "颜色", sku_names)
+                existing["compatible"] = bool(existing["mapped_variant_fields"])
+            else:
+                matches = field_matches("color", allowed, "颜色", sku_names)
+                differences.append({
+                    "source_field": "颜色",
+                    "source_values": sku_names,
+                    "difference_kind": "color",
+                    "mapped_variant_fields": matches,
+                    "compatible": bool(matches),
+                })
 
     if not differences and len(skus) > 1:
         sku_names = distinct(str(sku.get("sku_name") or "") for sku in skus)
@@ -463,8 +527,62 @@ def _capacity_variant_value(
     category_id: int,
     type_id: int,
     attribute_id: int,
+    attribute_name: str,
 ) -> Optional[Dict[str, Any]]:
     normalized = unicodedata.normalize("NFKC", source_value)
+    explicit = re.search(
+        r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(毫升|ml|мл|升|l|л)",
+        normalized,
+        re.IGNORECASE,
+    )
+    if explicit:
+        amount = float(explicit.group(1).replace(",", "."))
+        source_unit = explicit.group(2).casefold()
+        amount_ml = amount if source_unit in {"毫升", "ml", "мл"} else amount * 1000
+        target_name = attribute_name.casefold()
+        target_is_ml = "мл" in target_name
+        target_amount = amount_ml if target_is_ml else amount_ml / 1000
+        numeric_value = f"{target_amount:.6f}".rstrip("0").rstrip(".")
+
+        # Dictionary-backed capacity aspects require the official label/id;
+        # scalar Decimal fields require a bare number without a unit.
+        values = _cached_attribute_values(category_id, type_id, attribute_id)
+        selected = next(
+            (
+                item for item in values
+                if (match := re.search(
+                    r"(\d+(?:[.,]\d+)?)\s*(мл|л)",
+                    str(item.get("value") or ""),
+                    re.IGNORECASE,
+                ))
+                and abs(
+                    (
+                        float(match.group(1).replace(",", "."))
+                        if match.group(2).casefold() == "мл"
+                        else float(match.group(1).replace(",", ".")) * 1000
+                    ) - amount_ml
+                ) < 0.01
+            ),
+            None,
+        )
+        return {
+            "value": str(selected.get("value") if selected else numeric_value),
+            "dictionary_value_id": (
+                int(selected["id"])
+                if selected and selected.get("id") is not None else None
+            ),
+            "estimated": False,
+            "confidence": 1.0,
+            "conversion_note": (
+                f"源SKU明确标注{explicit.group(1)}{explicit.group(2)}；"
+                f"按Ozon属性“{attribute_name}”规范化为{numeric_value}"
+            ),
+        }
+
+    # Weight/load wording is not capacity evidence.  Only the legacy nominal
+    # ``斤装`` style (for example rice-bin SKUs) may use the documented estimate.
+    if any(token in normalized for token in ("自重", "净重", "实装", "承重", "斤油", "斤水")):
+        return None
     jin_match = re.search(r"(\d+(?:\.\d+)?)\s*斤", normalized)
     if not jin_match:
         return None
@@ -581,6 +699,7 @@ def build_grouping_result(
                         int(decision["category_id"]),
                         int(decision["type_id"]),
                         int(field["attribute_id"]),
+                        str(field["attribute_name"]),
                     )
                     if capacity:
                         attribute_value.update(capacity)
@@ -616,7 +735,9 @@ def build_grouping_result(
         "platform_can_merge": platform_can_merge,
         "upload_strategy": "single_card_variants" if platform_can_merge else "separate_cards",
         "variant_mapping_status": mapping_status,
-        "upload_allowed": mapping_status != "SEPARATE_CARDS_REQUIRED",
+        # A missing official aspect only forbids merging.  The same selected
+        # SKUs are still safe to upload as independent Ozon cards.
+        "upload_allowed": True,
         "category_id": decision["category_id"],
         "type_id": decision["type_id"],
         "model_name_for_merge": model_name,
@@ -636,10 +757,7 @@ def build_grouping_result(
         "mapping_requirements": {
             "difference_types": [item["difference_kind"] for item in difference_fields],
             "allowed_variant_fields": decision["allowed_variant_fields"],
-            "missing_rule": (
-                "unknown SKU difference requires a local Ozon variant mapping"
-                if mapping_status == "SEPARATE_CARDS_REQUIRED" else None
-            ),
+            "missing_rule": None,
         },
         "warnings": decision["warnings"],
     }

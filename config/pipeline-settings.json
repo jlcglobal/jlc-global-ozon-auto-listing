@@ -8,7 +8,9 @@
   "image_slot_concurrency": 3,
   "merge_image_generation_and_qc": true,
   "codex_concurrency": 2,
-  "image_generation_run_max_seconds": 1200,
+  "codex_outage_retry_seconds": 30,
+  "image_generation_run_max_seconds": 1800,
+  "image_generation_stall_seconds": 600,
   "image_qc_concurrency": 2,
   "image_channel_concurrency": 4,
   "image_channel_max_hours": 24,
@@ -26,11 +28,13 @@
   "artifact_poll_interval_seconds": 0.5,
   "codex_reasoning_effort_by_step": {
     "product_analysis": "medium",
+    "ecommerce_design": "high",
     "russian_copy": "medium",
     "default": "high"
   },
   "timeouts_seconds": {
     "product_analysis": 300,
+    "ecommerce_design": 600,
     "category_match": 300,
     "attribute_query": 300,
     "image_generation": 600,

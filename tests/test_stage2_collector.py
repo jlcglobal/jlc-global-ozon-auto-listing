@@ -203,6 +203,16 @@ class Stage2CollectorTest(unittest.TestCase):
             return PNG_BYTES + b"detail", "image/png"
         return PNG_BYTES, "image/png"
 
+    def test_source_image_download_blocks_local_and_untrusted_hosts(self):
+        for url in (
+            "http://127.0.0.1:8765/health",
+            "http://192.168.1.10/private.png",
+            "https://untrusted.example/image.png",
+            "https://alicdn.com.evil.example/image.png",
+        ):
+            with self.subTest(url=url), self.assertRaises(ValueError):
+                local_ingest_app.download_url(url)
+
     def test_normal_product_data_write(self):
         with patch.object(local_ingest_app, "download_url", self.fake_download):
             result = local_ingest_app.ingest_capture(sample_payload())
@@ -270,7 +280,7 @@ class Stage2CollectorTest(unittest.TestCase):
         self.assertEqual(source["detail_images"][0]["download_status"], "failed")
         self.assertTrue(any("Image download failed" in item for item in source["capture_warnings"]))
 
-    def test_missing_sku_image_is_marked_and_not_downloaded(self):
+    def test_missing_selected_sku_image_is_saved_with_warning(self):
         payload = sample_payload()
         payload["skus"][0]["image_url"] = "unknown"
         payload["skus"][0]["sku_image_missing"] = True
@@ -280,13 +290,26 @@ class Stage2CollectorTest(unittest.TestCase):
             result = local_ingest_app.ingest_capture(payload)
         product_dir = self.products_dir / result["product_id"]
         source = json.loads((product_dir / "input/source.json").read_text(encoding="utf-8"))
-        raw_snapshot = json.loads((product_dir / "input/raw-snapshot.json").read_text(encoding="utf-8"))
-        self.assertEqual(source["skus"][0]["image_url"], "unknown")
-        self.assertEqual(source["skus"][0]["local_image_path"], "unknown")
+        self.assertEqual(result["status"], "COLLECTED")
         self.assertTrue(source["skus"][0]["sku_image_missing"])
-        self.assertEqual(list((product_dir / "input/sku-images").glob("*")), [])
-        self.assertEqual(raw_snapshot["sku_debug"]["sku_with_image"], 0)
-        self.assertEqual(raw_snapshot["sku_debug"]["missing_image_skus"], ["sku-1"])
+        self.assertEqual(source["skus"][0]["local_image_path"], "unknown")
+        self.assertTrue(any("生图前必须人工确认参考图" in item for item in result["warnings"]))
+
+    def test_new_plugin_preflight_warns_without_blocking_unselected_missing_sku_images(self):
+        payload = many_sku_payload(total=4, selected=1)
+        payload["raw_snapshot"]["all_raw_skus"][2]["image_url"] = "unknown"
+        payload["raw_snapshot"]["all_raw_skus"][2]["sku_image_missing"] = True
+        payload["sku_image_preflight"] = {
+            "status": "WARNING",
+            "total_skus": 4,
+            "sku_with_images": 3,
+            "missing_count": 1,
+            "missing_sku_ids": [payload["raw_snapshot"]["all_raw_skus"][2]["sku_id"]],
+        }
+        with patch.object(local_ingest_app, "download_url", self.fake_download):
+            result = local_ingest_app.ingest_capture(payload)
+        self.assertEqual(result["status"], "COLLECTED")
+        self.assertTrue(any("缺图SKU仍可选择和采集" in item for item in result["warnings"]))
 
     def test_selected_skus_only_are_saved_and_raw_snapshot_keeps_all_skus(self):
         payload = many_sku_payload(total=12, selected=3)

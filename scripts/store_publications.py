@@ -74,6 +74,19 @@ def default_record(product_dir: Path, store_id: str) -> Dict[str, Any]:
 
 
 def load_publications(product_dir: Path, store_ids: Iterable[str] = ()) -> Dict[str, Any]:
+    try:
+        try:
+            from task_database import cutover_active, publications_from_db
+        except ModuleNotFoundError:
+            from scripts.task_database import cutover_active, publications_from_db
+        root = product_dir.parents[1]
+        if cutover_active(root):
+            projected = publications_from_db(root, product_dir, store_ids)
+            if projected is not None:
+                return projected
+    except Exception:
+        # A malformed legacy record must remain readable during rollback.
+        pass
     path = publication_path(product_dir)
     data = load(path, {"schema_version": "1.0.0", "product_id": product_dir.name, "stores": {}})
     data.setdefault("stores", {})
@@ -84,7 +97,25 @@ def load_publications(product_dir: Path, store_ids: Iterable[str] = ()) -> Dict[
 
 def save_publications(product_dir: Path, data: Dict[str, Any]) -> Dict[str, Any]:
     data.update({"schema_version": "1.0.0", "product_id": product_dir.name, "updated_at": now()})
-    write(publication_path(product_dir), data)
+    root = product_dir.parents[1]
+    try:
+        try:
+            from task_database import cutover_active, sync_publications_json
+        except ModuleNotFoundError:
+            from scripts.task_database import cutover_active, sync_publications_json
+        if cutover_active(root):
+            backup = publication_path(product_dir).with_name("store-publications.json.readonly-backup")
+            if publication_path(product_dir).is_file() and not backup.exists():
+                backup.write_bytes(publication_path(product_dir).read_bytes())
+            sync_publications_json(root, product_dir, data)
+            return data
+        # Migration window: JSON is still written for rollback, while SQLite
+        # receives the same projection. The explicit cutover marker ends this.
+        write(publication_path(product_dir), data)
+        sync_publications_json(root, product_dir, data)
+    except Exception:
+        if not cutover_active(root):
+            write(publication_path(product_dir), data)
     return data
 
 

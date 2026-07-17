@@ -7,12 +7,15 @@
   "required": [
     "schema_version",
     "product_id",
+    "collection_id",
+    "source_kind",
     "source_refs",
     "style_profile_ref",
     "style_family",
     "image_structure_rule_ref",
     "image_set_structure",
     "creative_direction",
+    "listing_context",
     "buyer_objections",
     "generator_contract",
     "reference_images",
@@ -28,8 +31,12 @@
   "properties": {
     "schema_version": { "type": "string", "const": "1.0.0" },
     "product_id": { "$ref": "#/$defs/productId" },
+    "collection_id": { "type": "string", "pattern": "^COL-[A-Za-z0-9._-]{8,80}$" },
+    "source_kind": { "const": "workbench_collection" },
     "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
     "style_profile_ref": { "type": "string", "minLength": 1 },
+    "creative_brief_ref": { "type": "string", "minLength": 1 },
+    "ecommerce_design_ref": { "type": "string", "minLength": 1 },
     "style_family": { "$ref": "#/$defs/styleFamily" },
     "image_structure_rule_ref": { "type": "string", "minLength": 1 },
     "image_set_structure": { "type": "array", "items": { "type": "string", "minLength": 1 } },
@@ -41,7 +48,7 @@
         "mode": {"type": "string", "enum": ["single_shared_main", "sku_specific_main_shared_details"]},
         "variant_kinds": {"type": "array", "items": {"type": "string", "enum": ["color", "size_or_measurement", "configuration", "seller_specification"]}},
         "variant_main_count": {"type": "integer", "minimum": 1, "maximum": 10},
-        "shared_detail_count": {"type": "integer", "minimum": 6, "maximum": 8},
+        "shared_detail_count": {"type": "integer", "const": 8},
         "shared_disclaimer_count": {"type": "integer", "minimum": 0, "maximum": 1}
       }
     },
@@ -81,9 +88,15 @@
         ,"target_total_seconds": { "type": "integer", "minimum": 1 }
         ,"quality_gate": { "type": "string" }
         ,"typography_strategy": { "type": "string" }
+        ,"prompt_first_required": { "type": "boolean", "const": true }
+        ,"empty_placeholder_panels_forbidden": { "type": "boolean", "const": true }
+        ,"exact_shared_detail_count": { "type": "integer", "const": 8 }
+        ,"creative_brief_required": { "type": "boolean", "const": true }
+        ,"ecommerce_design_required": { "type": "boolean", "const": true }
       }
     },
     "creative_direction": { "type": "object" },
+    "listing_context": { "type": "object" },
     "learned_image_preferences": { "type": "array", "items": { "type": "object" } },
     "reference_images": { "type": "array", "items": { "$ref": "#/$defs/referenceImage" } },
     "buyer_analysis": {
@@ -95,11 +108,12 @@
         "why_buy": { "type": "array", "items": { "type": "string" } },
         "main_pain_point": { "type": "string" },
         "strongest_selling_point": { "type": "string" },
+        "selling_points": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "proof_strategy": { "type": "array", "items": { "type": "string" } }
       }
     },
-    "main_images": { "type": "array", "items": { "$ref": "#/$defs/plannedImage" } },
-    "detail_images": { "type": "array", "items": { "$ref": "#/$defs/plannedImage" } },
+    "main_images": { "type": "array", "minItems": 1, "maxItems": 10, "items": { "$ref": "#/$defs/plannedImage" } },
+    "detail_images": { "type": "array", "minItems": 8, "maxItems": 8, "items": { "$ref": "#/$defs/plannedImage" } },
     "disclaimer_images": { "type": "array", "items": { "$ref": "#/$defs/plannedImage" } },
     "must_preserve": { "type": "array", "items": { "type": "string" } },
     "must_not_change": { "type": "array", "items": { "type": "string" } },
@@ -115,6 +129,8 @@
         "electronics_clean_tech",
         "outdoor_rugged_lifestyle",
         "kitchen_warm_home",
+        "portable_kitchen_appliance_fresh",
+        "fresh_fridge_organization",
         "home_minimal_organized",
         "pet_friendly_lifestyle",
         "beauty_clean_premium",
@@ -164,6 +180,8 @@
         "type": { "type": "string", "minLength": 1 },
         "slot": { "type": "string", "minLength": 1 },
         "image_type": { "type": "string", "minLength": 1 },
+        "layout_type": {"type": "string", "enum": ["sku_main", "core_benefit", "structure_callout", "usage_scene", "sku_comparison", "purchase_notice"]},
+        "overlay_modules": {"type": "array", "items": {"type": "string"}},
         "requested_image_type": {"type": "string", "minLength": 1},
         "fallback_reason": {"type": "string", "minLength": 1},
         "purchase_reason": { "type": "string", "minLength": 1 },

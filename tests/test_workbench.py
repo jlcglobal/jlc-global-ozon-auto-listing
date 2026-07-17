@@ -55,12 +55,12 @@ def make_product(root: Path, product_id: str = "P000101") -> Path:
     write_json(product_dir / "output/pricing-result.json", {
         "sku_pricing": [{"sku_id": "sku-1", "purchase_cost_cny": 10, "selling_price_rub": 500, "estimated_profit_cny": 12}],
     })
-    image_path = product_dir / "output/generated-images/main/main-001.png"
+    image_path = product_dir / "output/images/main/main-001.png"
     image_path.parent.mkdir(parents=True, exist_ok=True)
     image_path.write_bytes(b"png")
     write_json(product_dir / "output/image-plan.json", {
-        "main_images": [{"slot": "main-001", "image_type": "main", "prompt": "真实商品像素锁", "output_path": f"products/{product_id}/output/generated-images/main/main-001.png"}],
-        "detail_images": [{"slot": "detail-001", "image_type": "benefit", "prompt": "功能图", "output_path": f"products/{product_id}/output/generated-images/detail/detail-001.png"}],
+        "main_images": [{"slot": "main-001", "image_type": "main", "prompt": "真实商品像素锁", "output_path": f"products/{product_id}/output/images/main/main-001.png"}],
+        "detail_images": [{"slot": "detail-001", "image_type": "benefit", "prompt": "功能图", "output_path": f"products/{product_id}/output/images/detail/detail-001.png"}],
     })
     write_json(product_dir / "output/image-qc-report.json", {
         "score": 73, "decision": "reject", "issues": [{"code": "simple_background", "message": "只是换背景", "image_slots": ["main-001"]}],
@@ -80,6 +80,17 @@ class FakeRequest:
 
 
 class WorkbenchTest(unittest.IsolatedAsyncioTestCase):
+    def test_manual_test_product_is_not_listed_as_a_formal_workbench_product(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            source_path = product / "input/source.json"
+            source = json.loads(source_path.read_text(encoding="utf-8"))
+            source["source_kind"] = "manual_test"
+            source_path.write_text(json.dumps(source, ensure_ascii=False), encoding="utf-8")
+            with patch.object(workbench, "ROOT", root), patch.object(workbench, "PRODUCTS_DIR", root / "products"):
+                self.assertEqual(workbench.owned_product_dirs(), [])
+
     def test_live_worker_overrides_stale_stopped_status(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -111,6 +122,7 @@ class WorkbenchTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(summary["counts"]["失败"], 1)
             self.assertEqual(summary["high_risk_count"], 1)
             self.assertEqual(products["total"], 1)
+            self.assertEqual(products["items"][0]["workflow_bucket"], "处理失败")
 
     def test_detail_exposes_copy_images_attributes_pricing_and_risk(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -124,6 +136,50 @@ class WorkbenchTest(unittest.IsolatedAsyncioTestCase):
             self.assertEqual(detail["attributes"]["summary"]["required_count"], 1)
             self.assertEqual(detail["pricing"]["sku_pricing"][0]["selling_price_rub"], 500)
             self.assertEqual(detail["risk"]["level"], "high")
+
+    def test_detail_groups_each_sku_with_own_main_and_shared_details(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            source = json.loads((product / "input/source.json").read_text(encoding="utf-8"))
+            source["skus"] = [
+                {"sku_id": "sku-1", "sku_name": "350毫升", "purchase_price": 10, "option_values": [{"value": "350毫升"}]},
+                {"sku_id": "sku-2", "sku_name": "400毫升", "purchase_price": 11, "option_values": [{"value": "400毫升"}]},
+            ]
+            write_json(product / "input/source.json", source)
+            plan = {
+                "main_images": [
+                    {"slot": "main-sku-1", "image_type": "main", "variant_scope": "sku", "source_sku_id": "sku-1", "output_path": "products/P000101/output/images/main/sku-1.png"},
+                    {"slot": "main-sku-2", "image_type": "main", "variant_scope": "sku", "source_sku_id": "sku-2", "output_path": "products/P000101/output/images/main/sku-2.png"},
+                ],
+                "detail_images": [
+                    {"slot": "detail-001", "image_type": "benefit", "variant_scope": "shared", "source_sku_id": "all", "shared_across_variants": True, "output_path": "products/P000101/output/images/detail/detail-001.png"},
+                    {"slot": "detail-002", "image_type": "scene", "variant_scope": "shared", "source_sku_id": "all", "shared_across_variants": True, "output_path": "products/P000101/output/images/detail/detail-002.png"},
+                ],
+            }
+            write_json(product / "output/image-plan.json", plan)
+            for relative in (
+                "output/images/main/sku-1.png", "output/images/main/sku-2.png",
+                "output/images/detail/detail-001.png", "output/images/detail/detail-002.png",
+            ):
+                path = product / relative
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(b"png")
+            write_json(product / "output/image-qc-report.json", {
+                "score": 100, "decision": "pass", "critical_failures": [], "issues": [],
+            })
+            with patch.object(workbench, "ROOT", root), patch.object(workbench, "PRODUCTS_DIR", root / "products"):
+                detail = workbench.workbench_product_detail("P000101")
+            self.assertEqual(len(detail["image_groups"]), 2)
+            self.assertEqual(
+                [group["main_image"]["slot"] for group in detail["image_groups"]],
+                ["main-sku-1", "main-sku-2"],
+            )
+            self.assertEqual(
+                [[item["slot"] for item in group["detail_images"]] for group in detail["image_groups"]],
+                [["detail-001", "detail-002"], ["detail-001", "detail-002"]],
+            )
+            self.assertEqual({item["source_sku_id"] for item in detail["images"][:2]}, {"sku-1", "sku-2"})
 
     def test_detail_overlays_generated_final_attribute_values(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -213,7 +269,8 @@ class WorkbenchTest(unittest.IsolatedAsyncioTestCase):
     def test_workbench_ui_contains_navigation_and_review_actions(self):
         html = (ROOT / "collector/local-ingest/static/workbench.html").read_text(encoding="utf-8")
         script = (ROOT / "collector/local-ingest/static/workbench.js").read_text(encoding="utf-8")
-        self.assertIn("采集箱", html)
+        self.assertIn("工作室商品", html)
+        self.assertIn("所有电脑共享商品与任务", html)
         self.assertIn("需要我处理", html)
         self.assertIn("已上架商品", html)
         self.assertIn("自动模式已关闭", html)
@@ -222,8 +279,33 @@ class WorkbenchTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("data-draft-field", script)
         self.assertIn("彻底删除", script)
         self.assertIn("按店铺修改售价（可选）", script)
+        self.assertIn("查看失败原因并继续", script)
+        self.assertIn("data-card-product", script)
+        self.assertIn("从失败步骤继续", script)
+        self.assertIn("每个已选SKU必须且只能有1张自己的主图", script)
         self.assertIn("确认彻底删除", html)
         self.assertIn("不会删除、撤回或下架Ozon后台商品", html)
+        self.assertRegex(html, r"workbench\.js\?v=[^\"]+")
+        self.assertRegex(html, r"workbench\.css\?v=[^\"]+")
+
+    def test_missing_sku_reference_error_requests_manual_sku_confirmation(self):
+        result = workbench.friendly_pipeline_error({
+            "failed_step": "image_generation",
+            "error_message": "MISSING_REQUIRED_SKU_REFERENCE: 缺少真实参考图",
+        })
+        self.assertEqual(result["title"], "SKU图片需要确认")
+        self.assertEqual(result["action"], "确认SKU图片")
+        self.assertEqual(result["tab"], "sku")
+        self.assertIn("不会自动猜测", result["message"])
+
+    def test_workbench_static_files_disable_stale_browser_cache(self):
+        with patch.object(workbench, "trigger_image_cleanup"), \
+             patch.object(workbench, "ensure_image_status_monitor"), \
+             patch.object(workbench, "sync_remote_ozon_status_once"):
+            page = workbench.workbench_page()
+        self.assertEqual(page.headers.get("cache-control"), "no-store, max-age=0")
+        self.assertEqual(workbench.workbench_css().headers.get("cache-control"), "no-store, max-age=0")
+        self.assertEqual(workbench.workbench_js().headers.get("cache-control"), "no-store, max-age=0")
 
     def test_manual_workbench_tags_are_used_only_when_all_30_are_valid(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -236,6 +318,19 @@ class WorkbenchTest(unittest.IsolatedAsyncioTestCase):
             write_json(product_dir / "output/workbench-draft.json", {"tags": tags[:29]})
             with self.assertRaises(ValueError):
                 build_tags(product_dir)
+
+    def test_researched_tags_replace_stale_materialized_tags(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product_dir = Path(directory) / "P000101"
+            researched = [f"#товар{i}" for i in range(30)]
+            stale = [f"#старый{i}" for i in range(30)]
+            write_json(product_dir / "output/marketplace-content-input.json", {
+                "hashtags_ru": researched,
+            })
+            write_json(product_dir / "output/ozon-tags.json", {"tags": stale})
+            result = build_tags(product_dir)
+            self.assertEqual(result["tags"], researched)
+            self.assertIn("marketplace-content-input.json", result["source_refs"][0])
 
 
 if __name__ == "__main__":

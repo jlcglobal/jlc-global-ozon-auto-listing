@@ -1,4 +1,4 @@
-const PLUGIN_VERSION = "0.4.7";
+const PLUGIN_VERSION = "0.4.11";
 const MAX_SELECTED_SKUS = 10;
 const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
 let latestDrawerCapture = null;
@@ -8,12 +8,22 @@ let pageWindowProductData = [];
 let pageProbeInjected = false;
 const PAGE_PROBE_ATTR = "data-caf-window-product-data";
 
-async function loadFactoryConnection() {
-  const stored = await chrome.storage.local.get(["factoryBaseUrl", "factoryAccessCode"]);
-  return {
-    baseUrl: String(stored.factoryBaseUrl || DEFAULT_FACTORY_URL).replace(/\/$/, ""),
-    accessCode: String(stored.factoryAccessCode || "").trim()
-  };
+// 1688 页面是 HTTPS，直接从内容脚本请求局域网 HTTP 会被浏览器按混合内容拦截。
+// 统一交给扩展 service worker 请求，仍然只访问用户配置的本地主机。
+async function factoryRequest(path, options = {}) {
+  return new Promise((resolve, reject) => {
+    chrome.runtime.sendMessage({ type: "FACTORY_FETCH", path, options }, (result) => {
+      const runtimeError = chrome.runtime.lastError;
+      if (runtimeError) return reject(new Error(runtimeError.message));
+      if (!result?.ok) return reject(new Error(result?.error || `工作台连接失败（HTTP ${result?.status || "未知"}）`));
+      let body = {};
+      try { body = result.body ? JSON.parse(result.body) : {}; } catch { body = {}; }
+      if (result.status < 200 || result.status >= 300) {
+        return reject(new Error(body.detail?.message || body.detail || `HTTP ${result.status}`));
+      }
+      resolve(body);
+    });
+  });
 }
 
 window.addEventListener("CAF_PAGE_PRODUCT_DATA_READY", () => {
@@ -382,7 +392,42 @@ function extractSupplier(structured) {
   return { value: clean[0] || "unknown", candidates, selectors };
 }
 
-function extractAttributes() {
+function isUsableProductAttribute(name, value) {
+  const key = cleanText(name);
+  const text = cleanText(value);
+  if (!key || !text || key.length > 40 || text.length > 220) return false;
+  // 1688 exposes platform price explanations in the same generic attribute
+  // rows as real product facts.  They are not product properties and must not
+  // reach product-analysis or Ozon field completion.
+  if (/(活动前价格|划线价格|未划线价格|平台活动|平台价格|同款|免责声明|说明仅适用|仅供参考|价格说明|发布价|全网销量|优惠券|分销场景)/i.test(`${key} ${text}`)) return false;
+  if (/^(\*?注|说明|备注|价格|活动|服务|物流|配送)$/i.test(key)) return false;
+  return true;
+}
+
+function collectStructuredProductAttributes(value, out = [], depth = 0) {
+  if (out.length >= 80 || depth > 7 || value == null) return out;
+  if (Array.isArray(value)) {
+    value.slice(0, 160).forEach((item) => collectStructuredProductAttributes(item, out, depth + 1));
+    return out;
+  }
+  if (typeof value !== "object") return out;
+  const keys = Object.keys(value);
+  const keyText = keys.join(" ");
+  const name = firstDefined(value.propertyName, value.attrName, value.attributeName, value.propName, value.name_cn, value.label);
+  const attributeValue = firstDefined(value.propertyValue, value.attrValue, value.attributeValue, value.value_cn, value.valueName, value.text);
+  if (/(property|attribute|attr|prop|spec)/i.test(keyText) && isUsableProductAttribute(name, attributeValue)) {
+    out.push({
+      name_cn: cleanText(name),
+      value_cn: cleanText(attributeValue),
+      source: "script_init_data",
+      source_text: `${cleanText(name)}: ${cleanText(attributeValue)}`
+    });
+  }
+  Object.values(value).slice(0, 160).forEach((child) => collectStructuredProductAttributes(child, out, depth + 1));
+  return out;
+}
+
+function extractAttributes(structured = []) {
   const attrs = [];
   const selectors = [
     "[data-name][data-value]",
@@ -410,7 +455,7 @@ function extractAttributes() {
           }
         }
       }
-      if (name && value && name.length <= 30 && value.length <= 200) {
+      if (isUsableProductAttribute(name, value)) {
         attrs.push({
           name_cn: name,
           value_cn: value,
@@ -420,6 +465,7 @@ function extractAttributes() {
       }
     });
   });
+  structured.forEach((item) => collectStructuredProductAttributes(item.data, attrs));
   const seen = new Set();
   return { values: attrs.filter((item) => {
     const key = `${item.name_cn}:${item.value_cn}`;
@@ -1108,6 +1154,68 @@ function findSkuContainers() {
   return [...new Set(roots)];
 }
 
+function sleep(milliseconds) {
+  return new Promise((resolve) => window.setTimeout(resolve, milliseconds));
+}
+
+function scrollableAncestors(node) {
+  const result = [];
+  let current = node;
+  while (current && current !== document.body && current !== document.documentElement) {
+    if (current instanceof HTMLElement) {
+      const style = window.getComputedStyle(current);
+      if ((/(auto|scroll|overlay)/.test(style.overflowY) || /(auto|scroll|overlay)/.test(style.overflow)) && current.scrollHeight > current.clientHeight + 4) {
+        result.push(current);
+      }
+    }
+    current = current.parentElement;
+  }
+  return result;
+}
+
+function triggerLazyImageLoad(node) {
+  if (!(node instanceof HTMLImageElement)) return;
+  const lazy = node.getAttribute("data-src") || node.getAttribute("data-lazyload-src") || node.getAttribute("data-original") || node.getAttribute("data-img");
+  if (lazy && !node.getAttribute("src")) node.setAttribute("src", lazy);
+  node.loading = "eager";
+}
+
+async function warmAllSkuImages() {
+  // 1688 virtualizes the SKU list.  Reading the DOM once can therefore return
+  // 21/25 images even though the remaining rows exist and load when scrolled.
+  // Walk every SKU row/scroll container before extracting data, without
+  // clicking any option (clicking can change the user's selection).
+  const originalX = window.scrollX;
+  const originalY = window.scrollY;
+  const roots = findSkuContainers();
+  const targets = [];
+  roots.forEach((root) => {
+    targets.push(root);
+    root.querySelectorAll("img, li, [role='button'], [class*='item'], [class*='value'], [data-value]").forEach((node) => targets.push(node));
+  });
+  const uniqueTargets = [...new Set(targets)].slice(0, 600);
+  for (const target of uniqueTargets) {
+    try {
+      target.scrollIntoView({ block: "center", inline: "nearest" });
+      target.dispatchEvent(new MouseEvent("mouseenter", { bubbles: true, view: window }));
+      target.dispatchEvent(new MouseEvent("mouseover", { bubbles: true, view: window }));
+      target.querySelectorAll?.("img").forEach(triggerLazyImageLoad);
+      triggerLazyImageLoad(target);
+      scrollableAncestors(target).forEach((scroller) => {
+        scroller.scrollTop = Math.min(scroller.scrollHeight, Math.max(0, target.offsetTop - scroller.clientHeight / 2));
+      });
+      await sleep(35);
+    } catch (_) {
+      // One virtualized row may disappear while the list re-renders; continue.
+    }
+  }
+  const allImages = [...document.querySelectorAll("img")];
+  allImages.forEach(triggerLazyImageLoad);
+  await sleep(180);
+  window.scrollTo(originalX, originalY);
+  await sleep(30);
+}
+
 function extractDomSkuGroups() {
   const dimensionWords = /(颜色|尺寸|规格|型号|款式|套餐|容量|数量|口味|尺码|类别|样式|花色|高度|长度|宽度)/;
   const groups = [];
@@ -1331,7 +1439,8 @@ function skuDimensions(sku) {
 }
 
 function isSkuSelectable(sku) {
-  return !["out_of_stock"].includes(sku.availability);
+  return !["out_of_stock"].includes(sku.availability)
+    && Boolean(sku?.sku_id && isRealSkuId(sku.sku_id));
 }
 
 function getFilterValues(skus) {
@@ -1522,30 +1631,17 @@ function showToast(text, isError = false) {
 }
 
 async function postSelectedCapture(capture) {
-  const connection = await loadFactoryConnection();
-  const headers = { "Content-Type": "application/json" };
-  if (connection.accessCode) headers["X-Factory-Access-Code"] = connection.accessCode;
-  const response = await fetch(`${connection.baseUrl}/api/collector/products`, {
+  return factoryRequest("/api/collector/products", {
     method: "POST",
-    headers,
+    headers: { "Content-Type": "application/json" },
     body: JSON.stringify(capture)
   });
-  const body = await response.json();
-  if (!response.ok) {
-    throw new Error(body.detail ? JSON.stringify(body.detail) : `HTTP ${response.status}`);
-  }
-  return body;
 }
 
 async function collectorApi(path, options = {}) {
-  const connection = await loadFactoryConnection();
   const headers = { ...(options.headers || {}) };
   if (options.body && !headers["Content-Type"]) headers["Content-Type"] = "application/json";
-  if (connection.accessCode) headers["X-Factory-Access-Code"] = connection.accessCode;
-  const response = await fetch(`${connection.baseUrl}${path}`, { ...options, headers });
-  const body = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(body.detail?.message || body.detail || `HTTP ${response.status}`);
-  return body;
+  return factoryRequest(path, { ...options, headers });
 }
 
 async function loadLocalCategoryTreeCache() {
@@ -1967,29 +2063,42 @@ function showSkuDrawer(capture, options = {}) {
   });
   categorySearchButton.addEventListener("click", () => runCategorySearch());
   root.querySelector(".caf-category-recent").addEventListener("click", async () => {
-    const prefs = await collectorApi("/api/collector/categories/preferences");
-    renderCategoryResults(prefs.recent || []);
+    try {
+      const prefs = await collectorApi("/api/collector/categories/preferences");
+      renderCategoryResults(prefs.recent || []);
+    } catch (error) {
+      categoryResults.textContent = `最近类目读取失败：${error.message}`;
+    }
   });
   root.querySelector(".caf-category-favorites").addEventListener("click", async () => {
-    const prefs = await collectorApi("/api/collector/categories/preferences");
-    renderCategoryResults(prefs.favorites || []);
+    try {
+      const prefs = await collectorApi("/api/collector/categories/preferences");
+      renderCategoryResults(prefs.favorites || []);
+    } catch (error) {
+      categoryResults.textContent = `收藏类目读取失败：${error.message}`;
+    }
   });
   root.querySelector(".caf-category-favorite-current").addEventListener("click", async () => {
     if (!selectedCategory) {
       setMessage("请先选择一个最终Ozon类目。");
       return;
     }
-    await collectorApi("/api/collector/categories/favorite", {
-      method: "PUT",
-      body: JSON.stringify({ category_id: selectedCategory.category_id, type_id: selectedCategory.type_id, favorite: true })
-    });
-    categorySelected.textContent = `${categorySelected.textContent} · 已收藏`;
+    try {
+      await collectorApi("/api/collector/categories/favorite", {
+        method: "PUT",
+        body: JSON.stringify({ category_id: selectedCategory.category_id, type_id: selectedCategory.type_id, favorite: true })
+      });
+      categorySelected.textContent = `${categorySelected.textContent} · 已收藏`;
+    } catch (error) {
+      setMessage(`收藏失败：${error.message}`);
+    }
   });
   loadCategoryTree();
 
   function renderStats(visibleCount = skus.length) {
     const realIdCount = skus.filter((sku) => isRealSkuId(sku.sku_id)).length;
-    stats.textContent = `原始SKU总数：${skus.length} | 真实SKU ID：${realIdCount}/${skus.length} | 当前显示：${visibleCount} | 已选：${selected.size} | 最大可选数量：${MAX_SELECTED_SKUS}`;
+    const imageCount = skus.filter((sku) => sku.image_url && sku.image_url !== "unknown" && sku.sku_image_missing !== true).length;
+    stats.textContent = `原始SKU总数：${skus.length} | SKU图片：${imageCount}/${skus.length} | 真实SKU ID：${realIdCount}/${skus.length} | 当前显示：${visibleCount} | 已选：${selected.size} | 最大可选数量：${MAX_SELECTED_SKUS}`;
   }
 
   function renderFilters() {
@@ -2062,7 +2171,10 @@ function showSkuDrawer(capture, options = {}) {
         rowImg.title = "1688未提供SKU专属图片";
       }
       row.querySelector(".caf-name").textContent = skuDisplayName(sku);
-      row.querySelector(".caf-meta").textContent = `${skuDimensions(sku) || "规格: unknown"} | ¥${sku.purchase_price ?? "unknown"} | ${sku.price_source || "unknown"} | ${sku.availability || "unknown"} | 起订量: ${capture.minimum_order_quantity?.raw_text || "unknown"}`;
+      const imageState = sku.image_url && sku.image_url !== "unknown" && sku.sku_image_missing !== true
+        ? "有SKU图"
+        : "无SKU图 · 可采集，生图前需人工确认参考图";
+      row.querySelector(".caf-meta").textContent = `${skuDimensions(sku) || "规格: unknown"} | ¥${sku.purchase_price ?? "unknown"} | ${sku.price_source || "unknown"} | ${sku.availability || "unknown"} | ${imageState} | 起订量: ${capture.minimum_order_quantity?.raw_text || "unknown"}`;
       row.querySelector(".caf-id").textContent = `sku_id: ${isRealSkuId(sku.sku_id) ? sku.sku_id : "unknown（未解析真实1688 sku_id）"}`;
       row.querySelector("input").addEventListener("change", (event) => {
         if (event.target.checked) {
@@ -2200,7 +2312,7 @@ function buildCapture() {
   const structured = parseJsonScripts();
   const title = extractTitle(structured);
   const supplier = extractSupplier(structured);
-  const attrs = extractAttributes();
+  const attrs = extractAttributes(structured);
   const price = extractPriceInfo(structured);
   const moq = extractMinimumOrder();
   const mainImages = extractMainImages();
@@ -2277,9 +2389,24 @@ function buildCapture() {
       sku_property_image_debug: skuPropertyImageDebug,
       sku_source: skus.source || "unknown"
     },
+    sku_image_preflight: {
+      status: skuDebug.missing_image_skus.length ? "WARNING" : "PASS",
+      total_skus: skus.values.length,
+      sku_with_images: skuDebug.sku_with_images,
+      missing_count: skuDebug.missing_image_skus.length,
+      missing_sku_ids: skuDebug.missing_image_skus,
+      checked_at: new Date().toISOString(),
+      collection_allowed: true,
+      rule: "缺图SKU保留真实缺图标记并允许采集；生图前必须由人工确认参考图，系统不得自动猜测"
+    },
     is_collectable: /1688\.com/.test(location.hostname),
     reason: /1688\.com/.test(location.hostname) ? null : "Not a 1688 page"
   };
+}
+
+async function buildReadyCapture() {
+  await warmAllSkuImages();
+  return buildCapture();
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -2291,13 +2418,20 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
     return true;
   }
   if (message.type === "COLLECTOR_PREVIEW" || message.type === "COLLECTOR_CAPTURE") {
-    sendResponse(buildCapture());
+    buildReadyCapture().then(sendResponse).catch((error) => sendResponse({
+      is_collectable: /1688\.com/.test(location.hostname),
+      reason: `SKU图片加载失败：${error?.message || "页面未完成加载"}`,
+      capture_warnings: ["SKU图片加载失败"]
+    }));
+    return true;
   }
   if (message.type === "EXPORT_SKU_DEBUG") {
-    const capture = buildCapture();
-    const debug = buildSkuDebugExport(capture);
-    downloadJson("sku-debug.json", debug);
-    sendResponse(debug);
+    buildReadyCapture().then((capture) => {
+      const debug = buildSkuDebugExport(capture);
+      downloadJson("sku-debug.json", debug);
+      sendResponse(debug);
+    }).catch((error) => sendResponse({ error: error?.message || "SKU图片加载失败" }));
+    return true;
   }
   return true;
 });

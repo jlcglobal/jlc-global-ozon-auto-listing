@@ -1,0 +1,14 @@
+{
+  "attributes": [
+    {
+      "attribute_name": "Бренд",
+      "value": "Нет бренда",
+      "source": "project_rule"
+    },
+    {
+      "attribute_name": "Материал",
+      "value": "нержавеющая сталь",
+      "source": "source.json"
+    }
+  ]
+}

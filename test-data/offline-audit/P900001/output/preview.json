@@ -1,0 +1,80 @@
+{
+  "product_id": "P900001",
+  "title_ru": "Термоконтейнер для еды из нержавеющей стали с секциями",
+  "brief": "products/P900001/output/ecommerce-creative-brief.json",
+  "image_plan": "products/P900001/output/image-plan.json",
+  "generated_images": [
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/variant-main/5477283792300.png",
+      "role": "sku_main",
+      "operation": "compose_from_real_images",
+      "source": "products/P900001/input/sku-images/sku-001.jpg"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/variant-main/5477283792301.png",
+      "role": "sku_main",
+      "operation": "compose_from_real_images",
+      "source": "products/P900001/input/sku-images/sku-002.jpg"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/variant-main/5477283792302.png",
+      "role": "sku_main",
+      "operation": "compose_from_real_images",
+      "source": "products/P900001/input/sku-images/sku-003.jpg"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/detail/detail-001.png",
+      "role": "benefit",
+      "operation": "edit_real_image",
+      "source": "products/P900001/input/main-images/main-005.webp"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/detail/detail-002.png",
+      "role": "detail",
+      "operation": "compose_from_real_images",
+      "source": "products/P900001/input/sku-images/sku-002.jpg"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/detail/detail-003.png",
+      "role": "scene",
+      "operation": "edit_real_image",
+      "source": "products/P900001/input/main-images/main-005.webp"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/detail/detail-004.png",
+      "role": "usage",
+      "operation": "edit_real_image",
+      "source": "products/P900001/input/sku-images/sku-001.jpg"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/detail/detail-005.png",
+      "role": "size_spec",
+      "operation": "compose_from_real_images",
+      "source": "products/P900001/input/main-images/main-005.webp"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/detail/detail-006.png",
+      "role": "comparison",
+      "operation": "compose_from_real_images",
+      "source": "products/P900001/input/sku-images/sku-003.jpg"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/detail/detail-007.png",
+      "role": "feature",
+      "operation": "edit_real_image",
+      "source": "products/P900001/input/sku-images/sku-002.jpg"
+    },
+    {
+      "path": "products/P900001/output/generated-images/stage3.4/detail/detail-008.png",
+      "role": "disclaimer",
+      "operation": "edit_real_image",
+      "source": "products/P900001/input/main-images/main-005.webp"
+    }
+  ],
+  "technical_checks": {
+    "ratio": "3:4",
+    "missing_images": 0,
+    "placeholder_frames": 0,
+    "ozon_calls": 0
+  }
+}

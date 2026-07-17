@@ -19,6 +19,8 @@
   "properties": {
     "schema_version": { "type": "string", "const": "1.0.0" },
     "product_id": { "$ref": "#/$defs/productId" },
+    "collection_id": { "type": "string", "pattern": "^COL-[A-Za-z0-9._-]{8,80}$" },
+    "source_kind": { "type": "string", "const": "workbench_collection" },
     "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
     "title_ru": { "$ref": "#/$defs/unknownableString" },
     "short_title": { "$ref": "#/$defs/unknownableString" },
@@ -29,6 +31,7 @@
     "keywords_ru": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
     "keywords": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
     "usage_scenarios": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+    "image_copy_ru": { "$ref": "#/$defs/imageCopy" },
     "warning": { "type": "array", "items": { "type": "string" } },
     "excluded_unknown_fields": { "type": "array", "items": { "type": "string" } },
     "warnings": { "type": "array", "items": { "type": "string" } },
@@ -45,6 +48,32 @@
         "text_ru": { "type": "string", "minLength": 1 },
         "evidence": { "type": "array", "items": { "type": "string", "minLength": 1 } }
       }
+    },
+    "imageCopy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["main", "benefit", "problem_solution", "scene", "feature", "detail", "usage", "comparison", "disclaimer"],
+      "properties": {
+        "main": { "$ref": "#/$defs/imagePhrases" },
+        "benefit": { "$ref": "#/$defs/imagePhrases" },
+        "problem_solution": { "$ref": "#/$defs/imagePhrases" },
+        "scene": { "$ref": "#/$defs/imagePhrases" },
+        "feature": { "$ref": "#/$defs/imagePhrases" },
+        "detail": { "$ref": "#/$defs/imagePhrases" },
+        "usage": { "$ref": "#/$defs/imagePhrases" },
+        "comparison": { "$ref": "#/$defs/imagePhrases" },
+        "disclaimer": { "$ref": "#/$defs/imagePhrases" },
+        "main_by_sku": {
+          "type": "object",
+          "additionalProperties": { "$ref": "#/$defs/imagePhrases" }
+        }
+      }
+    },
+    "imagePhrases": {
+      "type": "array",
+      "minItems": 1,
+      "maxItems": 3,
+      "items": { "type": "string", "minLength": 2, "maxLength": 70 }
     },
     "processingStep": {
       "type": "object",

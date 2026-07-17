@@ -1,0 +1,28 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900001",
+  "status": "PASS",
+  "sku_references": [
+    {
+      "source_sku_id": "5477283792300",
+      "sku_name": "单格",
+      "preferred_reference_path": "products/P900001/input/sku-images/sku-001.jpg",
+      "status": "ready",
+      "reason": "离线样品真实SKU图可用"
+    },
+    {
+      "source_sku_id": "5477283792301",
+      "sku_name": "双格",
+      "preferred_reference_path": "products/P900001/input/sku-images/sku-002.jpg",
+      "status": "ready",
+      "reason": "离线样品真实SKU图可用"
+    },
+    {
+      "source_sku_id": "5477283792302",
+      "sku_name": "三格",
+      "preferred_reference_path": "products/P900001/input/sku-images/sku-003.jpg",
+      "status": "ready",
+      "reason": "离线样品真实SKU图可用"
+    }
+  ]
+}

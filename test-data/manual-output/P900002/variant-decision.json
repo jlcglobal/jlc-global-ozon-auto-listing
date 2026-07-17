@@ -1,0 +1,9 @@
+{
+  "decision": "VARIANT_GROUP_ALLOWED",
+  "detected_difference_fields": [
+    {
+      "source_field": "容量",
+      "difference_kind": "size_or_measurement"
+    }
+  ]
+}

@@ -1,0 +1,114 @@
+{
+  "schema_version": "1.0.0",
+  "acceptance_id": "fridge-organizer-3sku-2026-07-16",
+  "product_id": "P900002",
+  "status": "active_offline_acceptance",
+  "purpose": "验证AI Factory从真实SKU图到自然俄文文案、商品专属图片和人工预览的离线生产链",
+  "source_mode": "user_supplied_local_images_and_confirmed_facts",
+  "confirmed_at": "2026-07-16T08:00:00+08:00",
+  "locked_category": {
+    "category_id": 17027933,
+    "type_id": 970742618,
+    "name_ru": "Органайзер для холодильника",
+    "name_zh": "冰箱收纳盒",
+    "path_ru": [
+      "Дом и сад",
+      "Хранение продуктов",
+      "Органайзер для холодильника"
+    ],
+    "path_zh": [
+      "家居园艺",
+      "食品储藏",
+      "冰箱收纳盒"
+    ],
+    "provenance": "collector/edge-extension/category-rules-cache.json#rules_by_key[17027933:970742618]"
+  },
+  "confirmed_shared_facts": {
+    "product_type_zh": "透明冰箱食品收纳盒",
+    "material": "PP5塑料",
+    "color": "透明",
+    "structure": [
+      "透明盒体",
+      "透明盖子",
+      "前置把手"
+    ],
+    "use": "冰箱食品分类收纳",
+    "selling_point": "密封，不易串味",
+    "quantity_per_order": 1
+  },
+  "unknown_facts": [
+    "品牌",
+    "采购价",
+    "商品重量",
+    "包装尺寸",
+    "包装重量",
+    "认证",
+    "耐温范围"
+  ],
+  "skus": [
+    {
+      "sku_id": "fridge-organizer-3l",
+      "name_zh": "3L小号款",
+      "capacity_ml": 3000,
+      "external_dimensions_cm": {
+        "length": 14.5,
+        "width": 14.5,
+        "height": 12
+      },
+      "source_image": "references/fridge-organizer-3sku-2026-07-16/source-images/sku-3l.png",
+      "sha256": "2045114d5e8428d2f8652458c4ab142eb2f77186ed9fc06e50f0604d8ed02d9b"
+    },
+    {
+      "sku_id": "fridge-organizer-5l",
+      "name_zh": "5L中号款",
+      "capacity_ml": 5000,
+      "external_dimensions_cm": {
+        "length": 29,
+        "width": 15.5,
+        "height": 12
+      },
+      "source_image": "references/fridge-organizer-3sku-2026-07-16/source-images/sku-5l.png",
+      "sha256": "7f5d08efc5b5603566f4c595314493af283c234ed1a7b053d4e11f94f3112a9f"
+    },
+    {
+      "sku_id": "fridge-organizer-6l",
+      "name_zh": "6L大号款",
+      "capacity_ml": 6000,
+      "external_dimensions_cm": {
+        "length": 29,
+        "width": 15.5,
+        "height": 15.5
+      },
+      "source_image": "references/fridge-organizer-3sku-2026-07-16/source-images/sku-6l.png",
+      "sha256": "d5404f6bc1d596caa3953c4fa5b78e3cc8a93a57e27143f1294258df8b9966b6"
+    }
+  ],
+  "image_cleanup_rules": [
+    "删除商品上的日文贴纸",
+    "删除原图中的中文营销文字、中文尺寸文字和网页控件",
+    "保留真实透明材质、盖子、把手、结构比例和SKU差异",
+    "需要文字时只叠加准确且可读的俄文"
+  ],
+  "image_contract": {
+    "main_count": 3,
+    "detail_count": 8,
+    "total_count": 11,
+    "main_rule": "每个SKU一张独立主图，只引用该SKU真实原图",
+    "detail_roles": [
+      "核心卖点",
+      "密封与防串味",
+      "透明盒体、盖子和前置把手结构",
+      "3L使用场景",
+      "5L使用场景",
+      "6L使用场景",
+      "三款尺寸与容量对比",
+      "单个装与购买前说明"
+    ]
+  },
+  "network_contract": {
+    "ozon_read_api_calls": 0,
+    "ozon_write_api_calls": 0,
+    "inventory_api_calls": 0,
+    "upload_forbidden": true
+  }
+}

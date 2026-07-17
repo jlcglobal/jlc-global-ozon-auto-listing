@@ -1,4 +1,5 @@
 import json
+import os
 import sys
 import tempfile
 import unittest
@@ -12,7 +13,12 @@ from scripts.pipeline_observability import (
     shared_analysis_cache_store,
     shared_analysis_input_hash,
 )
-from scripts.run_batch import BatchSafeStopRequested, complete_embedded_image_qc, run_registered_process
+from scripts.run_batch import (
+    BatchSafeStopRequested,
+    complete_embedded_image_qc,
+    run_registered_process,
+    russian_copy_quality_errors,
+)
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -30,6 +36,37 @@ class FakeOzonReadClient:
 
 
 class PipelineSpeedOptimizationTests(unittest.TestCase):
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
+    def test_russian_copy_quality_gate_rejects_old_offline_copy(self):
+        copy_value = {
+            "bullets_ru": [{"text_ru": f"Пункт {index}"} for index in range(3)],
+            "description_ru": "Только два предложения. Без полной структуры.",
+        }
+        content_value = {"hashtags_ru": ["#товар"] * 30}
+        keyword_value = {
+            "approved_keywords": [{
+                "source": "source_fact", "evidence": ["input/source.json"]
+            }]
+        }
+        errors = russian_copy_quality_errors(copy_value, content_value, keyword_value)
+        self.assertEqual(len(errors), 4)
+
+    def test_russian_copy_quality_gate_accepts_live_complete_copy(self):
+        copy_value = {
+            "bullets_ru": [{"text_ru": f"Пункт {index}"} for index in range(5)],
+            "description_ru": "\n\n".join(f"Абзац {index}." for index in range(5)),
+        }
+        content_value = {"hashtags_ru": [f"#товар{index}" for index in range(30)]}
+        keyword_value = {
+            "approved_keywords": [{
+                "source": "ozon_public_search",
+                "evidence": ["https://www.ozon.ru/category/test/"],
+            }]
+        }
+        self.assertEqual(
+            russian_copy_quality_errors(copy_value, content_value, keyword_value), []
+        )
+
     def test_safe_stop_interrupts_active_child_process_group(self):
         with tempfile.TemporaryDirectory() as temporary:
             root = Path(temporary)
@@ -97,6 +134,52 @@ class PipelineSpeedOptimizationTests(unittest.TestCase):
             result = pending_slots(product, 3)
             self.assertEqual(result["pending_slot_count"], 1)
             self.assertEqual(result["waves"][0][0]["slot"], "missing-slot")
+
+    def test_requested_needs_review_slots_are_rescheduled_with_deterministic_work_first(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P100001"
+            write_json(product / "output/image-regeneration-request.json", {
+                "failed_slots": ["detail-ai", "detail-compose"],
+            })
+            write_json(product / "output/image-plan.json", {
+                "main_images": [],
+                "detail_images": [
+                    {
+                        "slot": "detail-ai", "image_type": "benefit",
+                        "operation": "edit_real_image", "status": "needs_review",
+                        "output_path": str(Path(directory) / "detail-ai.png"),
+                    },
+                    {
+                        "slot": "detail-compose", "image_type": "size_spec",
+                        "operation": "compose_from_real_images", "status": "needs_review",
+                        "output_path": str(Path(directory) / "detail-compose.png"),
+                    },
+                ],
+                "disclaimer_images": [],
+            })
+            result = pending_slots(product, 3)
+            self.assertEqual(result["pending_slot_count"], 2)
+            self.assertEqual(
+                [item["slot"] for item in result["waves"][0]],
+                ["detail-compose", "detail-ai"],
+            )
+
+    def test_legacy_plan_counts_saved_png_without_pixel_lock(self):
+        """A saved image from the pre-lock plan must not freeze progress at 78%."""
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P100001"
+            output = Path(directory) / "saved.png"
+            output.write_bytes(b"png")
+            write_json(product / "output/image-plan.json", {
+                "generator_contract": {"product_pixel_lock_required": False},
+                "main_images": [{
+                    "slot": "main-1", "status": "generated", "image_type": "main",
+                    "output_path": str(output),
+                }],
+                "detail_images": [], "disclaimer_images": [],
+            })
+            from scripts.run_batch import completed_image_slot_count
+            self.assertEqual(completed_image_slot_count(product), 1)
 
     def test_shared_analysis_cache_uses_source_and_image_fingerprints(self):
         with tempfile.TemporaryDirectory() as directory:

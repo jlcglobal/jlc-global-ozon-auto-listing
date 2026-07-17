@@ -35,6 +35,7 @@ def estimate_product_dimensions(
     source: Dict[str, Any], analysis: Dict[str, Any], profiles: list[Dict[str, Any]]
 ) -> Dict[str, Any]:
     profile = select_profile(source, analysis, profiles)
+    profile_name = profile["name"]
     source_values = _source_product_dimensions(source)
     facts = analysis.get("facts", {}).get("dimensions", {})
     facts = facts if isinstance(facts, dict) else {}
@@ -44,6 +45,38 @@ def estimate_product_dimensions(
         source_name, source_ref, confidence, estimated = (
             "1688", "source.product_attributes.product_dimensions", 100, False
         )
+    elif isinstance(facts.get("by_sku_cm"), dict) and facts["by_sku_cm"]:
+        sku_dimensions = [
+            item for item in facts["by_sku_cm"].values()
+            if isinstance(item, dict) and all(
+                isinstance(item.get(key), (int, float)) and float(item[key]) > 0
+                for key in ("length", "width", "height")
+            )
+        ]
+        if len(sku_dimensions) != len(facts["by_sku_cm"]):
+            sku_dimensions = []
+        if sku_dimensions:
+            length, width, height = (
+                max(float(item[key]) for item in sku_dimensions)
+                for key in ("length", "width", "height")
+            )
+            source_name, source_ref, confidence, estimated = (
+                "product_analysis",
+                "product-analysis.facts.dimensions.by_sku_cm",
+                95,
+                facts.get("provenance") != "confirmed_source",
+            )
+            profile_name = (
+                "manual_confirmation"
+                if facts.get("provenance") == "estimated_human_approved"
+                else profile_name
+            )
+        else:
+            estimate = profile["dimensions_cm"]
+            length, width, height = (float(estimate[key]) for key in ("length", "width", "height"))
+            source_name, source_ref, confidence, estimated = (
+                "estimated", f"pricing_rules.measurement_profiles.{profile['name']}", int(profile["confidence"]), True
+            )
     elif all(isinstance(value, (int, float)) and value > 0 for value in fact_values):
         length, width, height = (float(value) for value in fact_values)
         source_name, source_ref, confidence, estimated = (
@@ -73,7 +106,7 @@ def estimate_product_dimensions(
         "source_ref": source_ref,
         "confidence": confidence,
         "estimated": estimated,
-        "profile": profile["name"],
+        "profile": profile_name,
         "validation": {
             "status": "valid" if valid else "corrected",
             "original_value": original,

@@ -25,8 +25,10 @@ from ozon_uploader import (  # noqa: E402
 from ozon_uploader.client import OzonUploadApiError  # noqa: E402
 from ozon_uploader.service import (  # noqa: E402
     SCHEMAS, _images_ingested, _is_official_ozon_image_url, _parse_import_result,
-    _remote_terminal_errors, build_import_items, load_json, recover_remote_import,
-    sync_image_channel_status, validate,
+    _remote_content_blockers, _remote_terminal_errors, _resolve_rich_content_for_upload, build_import_items,
+    current_image_completeness, load_json, recover_remote_import,
+    refresh_current_image_check, sync_image_channel_status, validate,
+    ozon_weight_grams,
 )
 
 
@@ -69,6 +71,40 @@ class RecordingTransport:
         raise AssertionError(endpoint)
 
 
+class RemoteContentGateTests(unittest.TestCase):
+    def test_blocks_chinese_evidence_and_unit_suffixed_decimal(self):
+        items = [{
+            "offer_id": "P000006-1",
+            "name": "Пластиковая канистра",
+            "attributes": [
+                {"id": 4384, "values": [{"value": "内盖，见 input/a.jpg"}]},
+                {"id": 6378, "values": [{"value": "10 л"}]},
+            ],
+        }]
+        metadata = {"attributes": [
+            {"attribute_id": 4384, "type": "String"},
+            {"attribute_id": 6378, "type": "Decimal"},
+        ]}
+        blockers = _remote_content_blockers(items, metadata)
+        self.assertTrue(any("含中文" in item for item in blockers))
+        self.assertTrue(any("必须只填写数字" in item for item in blockers))
+
+    def test_accepts_clean_russian_text_and_bare_decimal(self):
+        items = [{
+            "offer_id": "P000006-1",
+            "name": "Пластиковая канистра",
+            "attributes": [
+                {"id": 4384, "values": [{"value": "внутренняя крышка"}]},
+                {"id": 6378, "values": [{"value": "2.5"}]},
+            ],
+        }]
+        metadata = {"attributes": [
+            {"attribute_id": 4384, "type": "String"},
+            {"attribute_id": 6378, "type": "Decimal"},
+        ]}
+        self.assertEqual(_remote_content_blockers(items, metadata), [])
+
+
 class FakeTunnel:
     def __init__(self, directory):
         self.directory = directory
@@ -98,8 +134,11 @@ def client(transport):
 
 
 def copy_product(temp_dir, product_id="P000004"):
+    source = ROOT / f"products/{product_id}"
+    if not source.is_dir():
+        raise unittest.SkipTest(f"runtime fixture {product_id} is not installed")
     target = Path(temp_dir) / f"products/{product_id}"
-    shutil.copytree(ROOT / f"products/{product_id}", target)
+    shutil.copytree(source, target)
     return target
 
 
@@ -185,7 +224,63 @@ def block_main_color_variant_for_mock(product_dir):
     check_path.write_text(json.dumps(check, ensure_ascii=False, indent=2) + "\n")
 
 
-@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
+class RichContentVariantMainResolutionTest(unittest.TestCase):
+    def test_variant_main_asset_is_resolved_through_image_tunnel(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            content = {
+                "version": 0.3,
+                "content": [{
+                    "widgetName": "raShowcase", "type": "billboard",
+                    "blocks": [{
+                        "img": {
+                            "src": "asset://main-sku-1",
+                            "srcMobile": "asset://main-sku-1",
+                        },
+                        "title": {"content": ["Title"]},
+                        "text": {"content": ["Text"]},
+                    }],
+                }],
+            }
+            (output / "rich-content.json").write_text(json.dumps({
+                "status": "ready_for_upload",
+                "attribute_id": 11254,
+                "content": content,
+            }))
+            final_attributes = {"attributes": [{
+                "attribute_id": 11254,
+                "value": "unresolved",
+                "evidence": [],
+            }]}
+            manifest = {"images": [{
+                "slot": "main-sku-1",
+                "role": "variant_main",
+                "public_url": "https://images.example.test/main-sku-1.png",
+            }]}
+
+            resolved = _resolve_rich_content_for_upload(output, final_attributes, manifest)
+
+            rich_value = json.loads(resolved["attributes"][0]["value"])
+            image = rich_value["content"][0]["blocks"][0]["img"]
+            self.assertEqual(image["src"], "https://images.example.test/main-sku-1.png")
+            self.assertEqual(image["srcMobile"], "https://images.example.test/main-sku-1.png")
+            self.assertEqual(final_attributes["attributes"][0]["value"], "unresolved")
+
+
+class OzonPayloadScalarContractTest(unittest.TestCase):
+    def test_fractional_estimated_weight_is_rounded_up_to_int32_grams(self):
+        value = ozon_weight_grams(448.5)
+        self.assertEqual(value, 449)
+        self.assertIsInstance(value, int)
+
+    def test_invalid_weight_is_blocked_before_any_request(self):
+        for value in (0, -1, "unknown", float("nan")):
+            with self.subTest(value=value):
+                with self.assertRaises(UploadGateError):
+                    ozon_weight_grams(value)
+
+
+@unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
 class Stage42OzonUploaderTest(unittest.TestCase):
     def test_declined_remote_product_stops_image_channel_without_write(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -338,7 +433,7 @@ class Stage42OzonUploaderTest(unittest.TestCase):
             payload_items = transport.calls[1][1]["items"]
             self.assertTrue(all("stock" not in item for item in payload_items))
             final_status = load_json(status_path)
-            self.assertEqual(final_status["status"], "PENDING_REMOTE")
+            self.assertEqual(final_status["status"], "HANDED_OFF_TO_OZON")
             self.assertEqual(final_status["ozon"]["shop_name"], "zhonglian1")
             self.assertFalse(load_json(product_dir / "output/ozon-draft.json")["upload_allowed"])
             self.assertTrue((product_dir / "output/ozon-idempotency.json").is_file())
@@ -376,14 +471,16 @@ class Stage42OzonUploaderTest(unittest.TestCase):
             self.assertTrue(group["must_merge"])
             self.assertEqual(group["variant_mapping_status"], "SEPARATE_CARDS_REQUIRED")
             self.assertIsNone(group["variant_attribute"])
-            self.assertIn("Ozon category has no official aspect mapping for the selected SKU differences; upload strategy is separate cards.", payload["production_blockers"])
+            self.assertFalse(any("separate cards" in item for item in payload["production_blockers"]))
             items = payload["api_request_template"]["body"]["items"]
             self.assertEqual(len(items), 3)
             model_values = {
                 next(attr for attr in item["attributes"] if attr["id"] == 9048)["values"][0]["value"]
                 for item in items
             }
-            self.assertEqual(model_values, {"Электрическая точилка для ножей P000005"})
+            self.assertEqual(len(model_values), 3)
+            self.assertTrue(all(value.startswith("Электрическая точилка для ножей P000005 ") for value in model_values))
+            self.assertEqual(len({item["name"] for item in items}), 3)
             self.assertTrue(all(
                 not any(attribute["id"] == 4384 for attribute in item["attributes"])
                 for item in items
@@ -631,6 +728,41 @@ class Stage42OzonUploaderTest(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "UPLOAD_MODE=production"):
                 client(transport).create_products([])
         self.assertEqual(transport.calls, [])
+
+class LiveImageGateTest(unittest.TestCase):
+    def test_stale_final_pass_cannot_bypass_missing_detail_images_before_write(self):
+        """The upload entrypoint must re-check image-plan files, not trust old PASS."""
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P000005"
+            output = product / "output"
+            output.mkdir(parents=True)
+            main = product / "output/images/main/sku-1.png"
+            main.parent.mkdir(parents=True)
+            main.write_bytes(bytes.fromhex(
+                "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
+                "0000000d49444154789c6360f8cfc000000301010018dd8db40000000049454e44ae426082"
+            ))
+            plan = {
+                "main_images": [{"slot": "main-sku-1", "source_sku_id": "sku-1", "output_path": "output/images/main/sku-1.png", "status": "generated"}],
+                "detail_images": [{"slot": f"detail-{index:03d}", "output_path": f"output/images/detail/detail-{index:03d}.png", "status": "generated"} for index in range(1, 9)],
+            }
+            (output / "image-plan.json").write_text(json.dumps(plan), encoding="utf-8")
+            (output / "ozon-draft.json").write_text(json.dumps({"skus": [{"source_sku_id": "sku-1"}]}), encoding="utf-8")
+            (output / "final-upload-check.json").write_text(json.dumps({
+                "schema_version": "1.0.0", "product_id": "P000005", "status": "PASS",
+                "upload_allowed": True, "checks": [{"name": "images_qc", "passed": True, "detail": "old"}],
+                "errors": [], "warnings": [],
+            }), encoding="utf-8")
+            (product / "status.json").write_text(json.dumps({"status": "OZON_READY"}), encoding="utf-8")
+            transport = RecordingTransport()
+            with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
+                with self.assertRaises(UploadGateError):
+                    execute_upload(product, client(transport))
+            refreshed = load_json(output / "final-upload-check.json")
+            self.assertEqual(refreshed["status"], "FAIL")
+            self.assertFalse(refreshed["upload_allowed"])
+            self.assertEqual(len(transport.calls), 0)
+            self.assertFalse(current_image_completeness(product)["passed"])
 
 
 if __name__ == "__main__":

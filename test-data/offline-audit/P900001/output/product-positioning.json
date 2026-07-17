@@ -1,0 +1,48 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900001",
+  "target_customer": "需要把不同菜品分开携带、并希望运输更整齐的家庭和小型餐饮用户。",
+  "usage_scenarios": [
+    {
+      "text": "外带午餐和家庭便当",
+      "claim_type": "supported_inference"
+    },
+    {
+      "text": "餐饮配送与学校配餐",
+      "claim_type": "fact"
+    },
+    {
+      "text": "户外聚餐时的分区携带",
+      "claim_type": "supported_inference"
+    }
+  ],
+  "purchase_motivation": "单格、双格和三格可按餐食组合选择，减少混装和取用混乱。",
+  "core_sales_angle": "按餐食组合选择分格数量，运输和分餐更清楚。",
+  "customer_pain_points": [
+    "多种食物混在一起，运输时不易分开和整理"
+  ],
+  "buyer_selling_points": [
+    {
+      "text": "单格、双格和三格配置，适配不同分餐需求。",
+      "claim_type": "fact",
+      "source_refs": [
+        "source.json#/skus"
+      ]
+    },
+    {
+      "text": "不锈钢箱体用于冷热食品的临时运输，具体保温时长不作承诺。",
+      "claim_type": "fact",
+      "source_refs": [
+        "source.json#/title_cn"
+      ]
+    },
+    {
+      "text": "顶部和侧面提手便于短距离搬运，前部锁扣帮助合上箱盖。",
+      "claim_type": "supported_inference",
+      "source_refs": [
+        "main-images/main-001.webp",
+        "main-images/main-003.webp"
+      ]
+    }
+  ]
+}

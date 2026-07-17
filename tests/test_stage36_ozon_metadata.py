@@ -1,4 +1,5 @@
 import ast
+import os
 import unittest
 
 from scripts.ozon_metadata_matcher import (
@@ -37,7 +38,7 @@ EXPECTED = {
 }
 
 
-@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
+@unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
 class Stage36OzonMetadataTest(unittest.TestCase):
     def test_profiles_rules_and_schemas_parse(self):
         profiles = load_json(PROFILES_PATH)

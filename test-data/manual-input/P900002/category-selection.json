@@ -1,0 +1,33 @@
+{
+  "schema_version": "1.0.0",
+  "selection_source": "user_confirmed_offline_acceptance",
+  "category_id": 17027933,
+  "type_id": 970742618,
+  "name_ru": "Органайзер для холодильника",
+  "name_zh": "冰箱收纳盒",
+  "path_ru": [
+    "Дом и сад",
+    "Хранение продуктов",
+    "Органайзер для холодильника"
+  ],
+  "path_zh": [
+    "家居园艺",
+    "食品储藏",
+    "冰箱收纳盒"
+  ],
+  "provenance": "collector/edge-extension/category-rules-cache.json#rules_by_key[17027933:970742618]",
+  "category_name_zh": "冰箱收纳盒",
+  "category_name_ru": "Органайзер для холодильника",
+  "category_path_zh": [
+    "家居园艺",
+    "食品储藏",
+    "冰箱收纳盒"
+  ],
+  "category_path": [
+    "Дом и сад",
+    "Хранение продуктов",
+    "Органайзер для холодильника"
+  ],
+  "locked_for_batch": true,
+  "allow_runtime_rematch": false
+}

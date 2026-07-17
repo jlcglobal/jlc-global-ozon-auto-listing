@@ -1,0 +1,29 @@
+{
+  "values": [
+    {
+      "id": 970742311,
+      "value": "Металл",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970742312,
+      "value": "Пластик",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970742314,
+      "value": "Стекло",
+      "info": "",
+      "picture": ""
+    },
+    {
+      "id": 970825033,
+      "value": "Керамика",
+      "info": "",
+      "picture": ""
+    }
+  ],
+  "truncated": false
+}

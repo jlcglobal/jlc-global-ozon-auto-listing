@@ -1,0 +1,41 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/store-publications.schema.json",
+  "title": "Per-store Ozon publication state",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "stores"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "updated_at": {"type": ["string", "null"]},
+    "stores": {
+      "type": "object",
+      "additionalProperties": {"$ref": "#/$defs/store"}
+    }
+  },
+  "$defs": {
+    "store": {
+      "type": "object",
+      "required": ["selected", "status", "sku_publications"],
+      "properties": {
+        "selected": {"type": "boolean"},
+        "status": {"type": "string"},
+        "sku_publications": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "required": ["sku_id", "offer_id", "task_id", "ozon_product_id"],
+            "properties": {
+              "sku_id": {"type": "string"},
+              "offer_id": {"type": ["string", "null"]},
+              "task_id": {"type": ["string", "null"]},
+              "ozon_product_id": {"type": ["string", "null"]},
+              "errors": {"type": "array"}
+            }
+          }
+        }
+      }
+    }
+  }
+}

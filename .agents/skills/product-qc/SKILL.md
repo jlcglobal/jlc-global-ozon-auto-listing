@@ -1,3 +1,8 @@
+---
+name: product-qc
+description: Validate product facts, copy, images, and upload readiness.
+---
+
 # product-qc
 
 ## 触发条件

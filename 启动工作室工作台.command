@@ -6,6 +6,8 @@ PROJECT_DIR="${0:A:h}"
 WORKBENCH_URL="http://127.0.0.1:8765/workbench"
 HEALTH_URL="http://127.0.0.1:8765/health"
 PID_FILE="$PROJECT_DIR/runtime/workbench-server.pid"
+LOG_FILE="$PROJECT_DIR/logs/workbench-server.log"
+STOP_FILE="$PROJECT_DIR/runtime/workbench-stop-requested"
 
 cd "$PROJECT_DIR" || {
   echo "无法进入项目目录：$PROJECT_DIR"
@@ -53,27 +55,33 @@ if [[ -z "$PYTHON_BIN" ]]; then
 fi
 
 mkdir -p "$PROJECT_DIR/runtime" "$PROJECT_DIR/logs"
-echo $$ > "$PID_FILE"
-trap 'rm -f "$PID_FILE"' EXIT INT TERM
-
-(
-  for attempt in {1..40}; do
-    /bin/sleep 0.25
-    if is_healthy; then
-      /usr/bin/open "$WORKBENCH_URL"
-      exit 0
-    fi
-  done
-  echo "工作台启动超时，请查看当前终端中的错误。"
-) &
+rm -f "$PID_FILE"
+rm -f "$STOP_FILE"
 
 echo "正在启动跨境AI工厂工作台..."
 echo "工作台地址：$WORKBENCH_URL"
 echo "局域网服务端口：8765"
-echo "请保持这个终端窗口开启。"
-echo
+echo "启动后可以关闭这个终端窗口。"
 
-exec /usr/bin/caffeinate -dims "$PYTHON_BIN" -m uvicorn app:app \
-  --app-dir "$PROJECT_DIR/collector/local-ingest" \
-  --host 0.0.0.0 \
-  --port 8765
+/usr/bin/nohup /bin/zsh "$PROJECT_DIR/scripts/run_workbench_service.sh" \
+  "$PYTHON_BIN" "$PROJECT_DIR" \
+  >> "$LOG_FILE" 2>&1 < /dev/null &
+
+SERVER_PID=$!
+echo "$SERVER_PID" > "$PID_FILE"
+disown "$SERVER_PID" 2>/dev/null || true
+
+for attempt in {1..40}; do
+  /bin/sleep 0.25
+  if is_healthy; then
+    echo "工作台已在后台运行。"
+    /usr/bin/open "$WORKBENCH_URL"
+    exit 0
+  fi
+done
+
+echo "工作台启动失败，最近错误如下："
+/usr/bin/tail -30 "$LOG_FILE" 2>/dev/null || true
+rm -f "$PID_FILE"
+read "?按回车键关闭..."
+exit 1

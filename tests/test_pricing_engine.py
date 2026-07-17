@@ -1,5 +1,6 @@
 import ast
 import json
+import os
 import sys
 import unittest
 from pathlib import Path
@@ -9,6 +10,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "pricing-engine"))
 
 from pricing_engine.pricing_calculator import calculate_base_price  # noqa: E402
+from pricing_engine.dimension_estimator import estimate_product_dimensions  # noqa: E402
 from pricing_engine.service import build_pricing_package  # noqa: E402
 from pricing_engine.weight_estimator import estimate_weight  # noqa: E402
 from pricing_engine.xlsx_rets import load_rets_rules  # noqa: E402
@@ -101,6 +103,31 @@ class PricingEngineTest(unittest.TestCase):
         self.assertEqual(result["value"], 1500)
         self.assertEqual(result["source"], "sku_specification")
 
+    def test_human_approved_per_sku_dimensions_use_largest_variant_for_shipping(self):
+        result = estimate_product_dimensions(
+            {"title_cn": "冰箱收纳盒", "skus": [{}, {}, {}]},
+            {
+                "product_type": "冰箱收纳盒",
+                "facts": {
+                    "dimensions": {
+                        "provenance": "estimated_human_approved",
+                        "by_sku_cm": {
+                            "3l": {"length": 14.5, "width": 14.5, "height": 12},
+                            "5l": {"length": 29, "width": 15.5, "height": 12},
+                            "6l": {"length": 29, "width": 15.5, "height": 15.5},
+                        },
+                    },
+                },
+            },
+            self.rules["measurement_profiles"],
+        )
+        self.assertEqual(
+            (result["length"], result["width"], result["height"]),
+            (29.0, 15.5, 15.5),
+        )
+        self.assertEqual(result["profile"], "manual_confirmation")
+        self.assertEqual(result["confidence"], 95)
+
     @unittest.skipUnless((ROOT / "products/P000011/input/source.json").is_file(), "optional runtime product fixture is not installed")
     def test_product_and_package_estimates_are_separate_and_strictly_ordered(self):
         package = build_pricing_package(
@@ -135,6 +162,7 @@ class PricingEngineTest(unittest.TestCase):
         })
 
     @unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
+    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
     def test_real_product_pricing_uses_required_fees_and_no_api(self):
         package = build_pricing_package(
             ROOT / "products/P000004", "2026-07-11T00:00:00+00:00"

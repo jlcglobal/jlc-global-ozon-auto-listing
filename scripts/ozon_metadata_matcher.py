@@ -450,28 +450,32 @@ def validate_metadata_package(product_dir: Path) -> List[str]:
         "attributes": output / "ozon-attributes.json",
         "draft": output / "ozon-draft.json",
     }
-    for path in paths.values():
+    for key in ("category", "attributes"):
+        path = paths[key]
         if not path.is_file():
             return [f"{path}: missing file"]
     category = load_json(paths["category"])
     attributes = load_json(paths["attributes"])
-    draft = load_json(paths["draft"])
+    draft = load_json(paths["draft"]) if paths["draft"].is_file() else None
     errors = []
-    for value, schema_path in (
+    schema_values = [
         (category, CATEGORY_SCHEMA_PATH),
         (attributes, ATTRIBUTES_SCHEMA_PATH),
-        (draft, DRAFT_SCHEMA_PATH),
-    ):
+    ]
+    if draft is not None:
+        schema_values.append((draft, DRAFT_SCHEMA_PATH))
+    for value, schema_path in schema_values:
         errors.extend(schema_errors(value, schema_path))
 
-    if any(value["product_id"] != product_dir.name for value in (category, attributes, draft)):
+    product_values = [category, attributes, *([draft] if draft is not None else [])]
+    if any(value["product_id"] != product_dir.name for value in product_values):
         errors.append("product_id mismatch in metadata package")
     if attributes.get("schema_version") == "2.0.0":
         if category.get("metadata_source") != "ozon_seller_api":
             errors.append("live attributes require an Ozon Seller API category")
         if not isinstance(category.get("category_id"), int):
             errors.append("live category must contain a numeric category_id")
-        if draft["upload_allowed"] is not False or draft["preflight"]["status"] != "failed":
+        if draft is not None and (draft["upload_allowed"] is not False or draft["preflight"]["status"] != "failed"):
             errors.append("live metadata must not enable upload")
         return errors
     if category["category_id"] != "unknown":
@@ -487,16 +491,17 @@ def validate_metadata_package(product_dir: Path) -> List[str]:
         errors.append("missing attribute count mismatch")
     if summary["unknown_count"] != len(attributes["unknown_attributes"]):
         errors.append("unknown attribute count mismatch")
-    if draft["category"]["category_name"] != category["category_name"]:
-        errors.append("ozon-draft category does not match ozon-category.json")
-    if draft["category"]["confidence"] != category["confidence"]:
-        errors.append("ozon-draft category confidence mismatch")
-    if draft["upload_allowed"] is not False or draft["preflight"]["status"] != "failed":
-        errors.append("metadata matching must not enable upload")
-    if draft["description_category_id"] != "unknown" or draft["type_id"] != "unknown":
-        errors.append("offline metadata must keep Ozon IDs unknown")
-    if any(item["attribute_id"] != "unknown" for item in draft["attributes"]):
-        errors.append("offline metadata must keep attribute IDs unknown")
+    if draft is not None:
+        if draft["category"]["category_name"] != category["category_name"]:
+            errors.append("ozon-draft category does not match ozon-category.json")
+        if draft["category"]["confidence"] != category["confidence"]:
+            errors.append("ozon-draft category confidence mismatch")
+        if draft["upload_allowed"] is not False or draft["preflight"]["status"] != "failed":
+            errors.append("metadata matching must not enable upload")
+        if draft["description_category_id"] != "unknown" or draft["type_id"] != "unknown":
+            errors.append("offline metadata must keep Ozon IDs unknown")
+        if any(item["attribute_id"] != "unknown" for item in draft["attributes"]):
+            errors.append("offline metadata must keep Ozon IDs unknown")
     return errors
 
 

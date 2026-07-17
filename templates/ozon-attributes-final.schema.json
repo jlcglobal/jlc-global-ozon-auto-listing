@@ -10,7 +10,7 @@
     "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
     "category_id": {"type": "integer", "minimum": 1},
     "type_id": {"type": "integer", "minimum": 1},
-    "schema_source": {"type": "string", "const": "ozon_seller_api"},
+    "schema_source": {"type": "string", "enum": ["ozon_seller_api", "official_bulk_offline_cache"]},
     "attributes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/attribute"}},
     "required_summary": {
       "type": "object",

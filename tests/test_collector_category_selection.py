@@ -183,6 +183,15 @@ class CollectorCategorySelectionTest(unittest.TestCase):
             self.assertTrue((product / "input/source.json").exists())
             self.assertEqual(result["ozon_write_api_calls"], 0)
             self.assertEqual(result["inventory_api_calls"], 0)
+            updated_status = json.loads((product / "status.json").read_text(encoding="utf-8"))
+            self.assertIsNone(updated_status.get("active_step"))
+            self.assertEqual(updated_status.get("next_action"), "wait_for_run_task")
+            self.assertEqual(updated_status.get("warnings"), [])
+            self.assertEqual(updated_status.get("retry_count_by_step"), {})
+            self.assertEqual(updated_status.get("steps"), [{
+                "name": "collect_source", "status": "completed", "retry_count": 0,
+                "retryable": True, "error": None,
+            }])
 
     def test_edge_extension_build_contains_mandatory_category_gate(self):
         source = (PROJECT_ROOT / "collector/edge-extension/src/content.ts").read_text(encoding="utf-8")
@@ -201,6 +210,9 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertIn("正在搜索", built)
         self.assertIn("rememberCategoryRules", built)
         self.assertIn("cachedCategoryRules", built)
+        self.assertIn("最近类目读取失败", built)
+        self.assertIn("收藏类目读取失败", built)
+        self.assertIn("收藏失败：", built)
         self.assertIn("allow_readonly_fetch: false", built)
         self.assertIn("本地中文类目树（点击逐级展开", built)
         self.assertIn("选择SKU（勾选下方商品）", built)
@@ -209,7 +221,9 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertIn(".caf-category { border-top: 1px solid #e5e7eb; padding: 10px 16px; background: #f8fafc; overflow: auto", built)
         self.assertNotIn("collectorApi(`/api/collector/categories/tree", built)
         self.assertIn("请先选择最终Ozon类目", built)
-        self.assertEqual(manifest["version"], "0.4.7")
+        self.assertEqual(manifest["version"], "0.4.11")
+        self.assertIn("无SKU图 · 可采集，生图前需人工确认参考图", built)
+        self.assertIn('status: skuDebug.missing_image_skus.length ? "WARNING" : "PASS"', built)
         resources = manifest["web_accessible_resources"][0]["resources"]
         self.assertIn("category-rules-cache.json", resources)
 

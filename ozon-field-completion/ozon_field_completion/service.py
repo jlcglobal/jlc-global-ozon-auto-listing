@@ -222,6 +222,55 @@ def build_tags(product_dir: Path) -> Dict[str, Any]:
             "source_refs": [f"products/{product_id}/output/workbench-draft.json"],
             "warnings": ["Hashtags were manually edited and locked in the workbench."],
         }
+    def validated_tags(values: Any) -> List[str] | None:
+        if not isinstance(values, list):
+            return None
+        tags = [str(value).strip() for value in values]
+        if (
+            len(tags) == 30
+            and len({tag.casefold() for tag in tags}) == 30
+            and all(
+                re.fullmatch(r"#[А-Яа-яЁё0-9_]+", tag)
+                and 3 <= len(tag) <= 30
+                and not tag[1:].isdigit()
+                for tag in tags
+            )
+        ):
+            return tags
+        return None
+
+    # The researched Russian-copy artifact is newer and more specific than a
+    # previously materialized field-completion file. Prefer it so rerunning
+    # field completion cannot restore stale mechanically derived tags.
+    content_path = product_dir / "output/marketplace-content-input.json"
+    if content_path.is_file():
+        content = load_json(content_path)
+        researched_tags = validated_tags(content.get("hashtags_ru"))
+        if researched_tags:
+            return {
+                "schema_version": "1.0.0", "product_id": product_id,
+                "tags": researched_tags, "count": 30, "language": "ru",
+                "source_refs": [
+                    f"products/{product_id}/output/marketplace-content-input.json"
+                ],
+                "warnings": [
+                    "Live-researched Russian-copy hashtags were preserved during field completion."
+                ],
+            }
+
+    existing_path = product_dir / "output/ozon-tags.json"
+    if existing_path.is_file():
+        existing = load_json(existing_path)
+        existing_tags = validated_tags(existing.get("tags"))
+        if existing_tags:
+            return {
+                **existing,
+                "tags": existing_tags,
+                "count": 30,
+                "warnings": list(existing.get("warnings") or []) + [
+                    "Validated Russian-copy hashtags were preserved during field completion."
+                ],
+            }
     family = _product_family(product_dir)
     bank = {
         "luggage_scale": LUGGAGE_SCALE_TAGS,
@@ -337,6 +386,15 @@ def build_rich_content(product_dir: Path, result: Dict[str, Any]) -> Dict[str, A
 
 
 def _color_from_sku_name(name: str) -> str:
+    # 1688 seller names often use marketing colour names rather than the
+    # literal ``黑色/白色`` form.  Keep the mapping conservative and map only
+    # to values that are present in the cached Ozon colour dictionary.
+    if any(token in name for token in ("黑曜石", "曜石黑")):
+        return "черный"
+    if any(token in name for token in ("奶油白", "乳白")):
+        return "кремовый"
+    if any(token in name for token in ("酒红", "酒红色", "深酒红")):
+        return "бордовый"
     if any(token in name for token in ("浅绿", "淡绿", " светло-зелен")):
         return "светло-зеленый"
     if any(token in name for token in ("深绿", "墨绿", " темно-зелен")):
@@ -377,9 +435,51 @@ def _color_from_sku_name(name: str) -> str:
 
 
 def _dictionary_value(metadata: Dict[str, Any], value: str) -> Tuple[str, int] | None:
+    """Resolve a value against the live Ozon dictionary without inventing values.
+
+    Ozon dictionaries often use a shorter Russian label than the wording in
+    the 1688 source (for example ``нержавейка`` vs ``Нержавеющая сталь`` or
+    ``без`` vs ``Нет``).  We first require an exact normalized match, then use
+    a deliberately small synonym table.  The returned value always comes from
+    ``allowed_values``; source wording is never sent to Ozon directly.
+    """
     normalized = _normalized_attribute_name(value)
+    if not normalized:
+        return None
+
+    def canonical(raw: Any) -> str:
+        token = _normalized_attribute_name(raw)
+        aliases = {
+            "нержавейка": "нержавеющаясталь",
+            "нержсталь": "нержавеющаясталь",
+            "нержавеющаясталь316s": "нержавеющаясталь",
+            "нержавеющаясталь304s": "нержавеющаясталь",
+            "stainlesssteel": "нержавеющаясталь",
+            "без": "нет",
+            "отсутствует": "нет",
+            "отсутствие": "нет",
+            "none": "нет",
+            "no": "нет",
+            "ручнойблендер": "ручной",
+            "ручноймиксер": "ручной",
+            "portable": "портативный",
+            "портативный": "портативный",
+            "портативная": "портативный",
+            "проводной": "сеть",
+            "отсети": "сеть",
+            "аккумуляторный": "беспроводной",
+            "зарядный": "беспроводной",
+            "нержавеющая": "нержавеющаясталь",
+            "металлический": "металл",
+            "металлическая": "металл",
+        }
+        return aliases.get(token, token)
+
+    canonical_value = canonical(normalized)
     for item in metadata.get("allowed_values") or []:
         if _normalized_attribute_name(item.get("value")) == normalized:
+            return str(item["value"]), int(item["id"])
+        if canonical(item.get("value")) == canonical_value:
             return str(item["value"]), int(item["id"])
     return None
 
@@ -395,6 +495,54 @@ def _source_attribute_value(source: Dict[str, Any], names: Iterable[str]) -> str
         if name in expected and value and value.casefold() != "unknown" and len(value) <= 200:
             return value
     return None
+
+
+def _dictionary_match_from_source_text(
+    metadata: Dict[str, Any], source_text: str,
+) -> Tuple[str, int] | None:
+    """Choose one live dictionary value explicitly supported by source text.
+
+    This is intentionally conservative: values shorter than three normalized
+    characters are ignored and a match is accepted only when exactly one
+    dictionary entry is supported.  The value returned is always the live
+    dictionary label, never the source wording.
+    """
+    text = _normalized_attribute_name(source_text)
+    if not text:
+        return None
+    source_aliases = {
+        "不锈钢": "нержавеющаясталь",
+        "不锈钢316s": "нержавеющаясталь",
+        "不锈钢304s": "нержавеющаясталь",
+        "塑料": "пластик",
+        "硅胶": "силикон",
+        "橡胶": "резина",
+        "陶瓷": "керамика",
+        "木制": "дерево",
+        "木质": "дерево",
+        "无": "нет",
+        "没有": "нет",
+        "不带": "нет",
+        "带盖": "крышка",
+        "含盖": "крышка",
+        "配盖": "крышка",
+    }
+    for raw, canonical in source_aliases.items():
+        if _normalized_attribute_name(raw) in text:
+            text += canonical
+    matches = []
+    for item in metadata.get("allowed_values") or []:
+        candidate = _normalized_attribute_name(item.get("value"))
+        if len(candidate) < 3:
+            continue
+        # Exact source occurrence handles Chinese/Russian/English labels;
+        # aliases above handle common 1688 wording differences.
+        if candidate in text:
+            matches.append(item)
+    if len(matches) != 1:
+        return None
+    item = matches[0]
+    return str(item["value"]), int(item["id"])
 
 
 def _explicit_dimensions_mm(source: Dict[str, Any]) -> Tuple[float, float, float | None] | None:
@@ -439,12 +587,16 @@ def _reliable_dynamic_attributes(
     product_dir: Path, metadata: Dict[str, Any]
 ) -> Dict[int, Tuple[Any, str, float, List[str], int | None]]:
     source = load_json(product_dir / "input/source.json")
+    manual_path = product_dir / "input/manual-confirmation.json"
+    manual = load_json(manual_path) if manual_path.is_file() else {}
+    manual_fields = manual.get("fields") or {}
     analysis_path = product_dir / "output/product-analysis.json"
     analysis = load_json(analysis_path) if analysis_path.is_file() else {}
     title = str(source.get("title_cn") or "")
     result: Dict[int, Tuple[Any, str, float, List[str], int | None]] = {}
 
     material_terms = (
+        (("pp5", "polypropylene", "полипропилен"), "Полипропилен (PP)"),
         (("硅胶", "силикон", "silicone"), "Силикон"),
         (("不锈钢", "нержавеющая сталь", "stainless steel"), "Нержавеющая сталь"),
         (("铝合金", "алюминий", "aluminium", "aluminum"), "Алюминий"),
@@ -455,8 +607,10 @@ def _reliable_dynamic_attributes(
     )
     material_raw = _source_attribute_value(source, ("材质", "产品材质", "主要材质")) or ""
     analysis_materials = (analysis.get("facts") or {}).get("materials") or []
-    material_text = f"{title} {material_raw} {json.dumps(analysis_materials, ensure_ascii=False)}".casefold()
-    material_meta = _find_attribute_by_names(metadata, ("Материал", "Материал изделия"))
+    material_text = f"{title} {material_raw} {manual_fields.get('material') or ''} {json.dumps(analysis_materials, ensure_ascii=False)}".casefold()
+    material_meta = _find_attribute_by_names(metadata, (
+        "Материал", "Материал изделия", "Основной материал контейнера",
+    ))
     if material_meta:
         material = next(
             (russian for terms, russian in material_terms if any(term.casefold() in material_text for term in terms)),
@@ -475,19 +629,25 @@ def _reliable_dynamic_attributes(
         for sku in source.get("skus") or []
     }
     colors.discard("unknown")
+    manual_color = _color_from_sku_name(str(manual_fields.get("color") or ""))
+    if manual_color != "unknown":
+        colors = {manual_color}
     if len(colors) == 1:
         color = next(iter(colors))
         color_meta = _find_attribute_by_names(metadata, ("Цвет товара", "Цвет"))
         selected = _dictionary_value(color_meta, color) if color_meta else None
         if selected:
-            evidence = ["source.skus[].sku_name"]
+            evidence = (
+                ["input/manual-confirmation.json#/fields/color"]
+                if manual_color != "unknown" else ["source.skus[].sku_name"]
+            )
             result[int(color_meta["attribute_id"])] = (
-                selected[0], "1688", 1.0, evidence, selected[1]
+                selected[0], "human_override" if manual_color != "unknown" else "1688", 1.0, evidence, selected[1]
             )
             color_name_meta = _find_attribute_by_names(metadata, ("Название цвета",))
             if color_name_meta:
                 result[int(color_name_meta["attribute_id"])] = (
-                    selected[0], "1688", 1.0, evidence, None
+                    selected[0], "human_override" if manual_color != "unknown" else "1688", 1.0, evidence, None
                 )
 
     dimensions = _explicit_dimensions_mm(source)
@@ -557,6 +717,9 @@ def _safe_optional_attributes(
 ) -> Dict[int, Tuple[Any, str, float, List[str], int | None]]:
     """Fill low-risk optional fields from source text or recorded visual inference."""
     source = load_json(product_dir / "input/source.json")
+    manual_path = product_dir / "input/manual-confirmation.json"
+    manual = load_json(manual_path) if manual_path.is_file() else {}
+    manual_fields = manual.get("fields") or {}
     analysis_path = product_dir / "output/product-analysis.json"
     analysis = load_json(analysis_path) if analysis_path.is_file() else {}
     result: Dict[int, Tuple[Any, str, float, List[str], int | None]] = {}
@@ -591,6 +754,200 @@ def _safe_optional_attributes(
                 selected[1],
             )
 
+    # The analysis stage intentionally separates explicit seller facts from AI
+    # inferences.  Optional Ozon fields may still be derived from those facts
+    # when the category dictionary makes the meaning unambiguous.  This keeps
+    # the workbench useful without inventing power, certification, warranty,
+    # safety systems or other claims that are not present in the source.
+    facts = analysis.get("facts") or {}
+    sku_text = " ".join(
+        " ".join([
+            str(sku.get("sku_name") or ""),
+            *[
+                str(option.get("value_cn") or option.get("value") or "")
+                for option in sku.get("option_values") or []
+            ],
+        ])
+        for sku in source.get("skus") or []
+    )
+    fact_text = " ".join([
+        str(source.get("title_cn") or ""),
+        str(analysis.get("product_type") or ""),
+        str(analysis.get("category") or ""),
+        sku_text,
+        json.dumps(facts.get("functions") or [], ensure_ascii=False),
+        json.dumps(facts.get("materials") or [], ensure_ascii=False),
+        json.dumps(facts.get("accessories") or [], ensure_ascii=False),
+        str(manual_fields.get("structure") or ""),
+    ]).casefold()
+
+    def add_dictionary(
+        attribute_names: Iterable[str],
+        value: str,
+        *,
+        source_name: str,
+        confidence: float,
+        evidence: List[str],
+    ) -> bool:
+        attribute = _find_attribute_by_names(metadata, attribute_names)
+        selected = _dictionary_value(attribute, value) if attribute else None
+        if not selected:
+            return False
+        result[int(attribute["attribute_id"])] = (
+            selected[0], source_name, confidence, evidence, selected[1]
+        )
+        return True
+
+    def add_text(
+        attribute_names: Iterable[str],
+        value: str,
+        *,
+        source_name: str,
+        confidence: float,
+        evidence: List[str],
+    ) -> bool:
+        attribute = _find_attribute_by_names(metadata, attribute_names)
+        value = value.strip()
+        if not attribute or not value:
+            return False
+        result[int(attribute["attribute_id"])] = (
+            value, source_name, confidence, evidence, None
+        )
+        return True
+
+    if any(token in fact_text for token in ("带盖", "透明盖", "含盖", "крыш")):
+        add_dictionary(
+            ("Особенности посуды",), "Крышка в комплекте",
+            source_name="human_override" if manual_fields.get("structure") else "1688",
+            confidence=1.0,
+            evidence=["input/manual-confirmation.json#/fields/structure"],
+        )
+        add_text(
+            ("Комплектация",), "контейнер, прозрачная крышка, передняя ручка",
+            source_name="human_override" if manual_fields.get("structure") else "1688",
+            confidence=1.0,
+            evidence=["input/manual-confirmation.json#/fields/structure"],
+        )
+
+    portable_mixer = (
+        any(token in fact_text for token in (
+            "榨汁杯", "便携式", "充电", "портатив", "миксер-стакан",
+        ))
+        and any(token in fact_text for token in ("榨汁", "миксер", "сок"))
+    )
+    if portable_mixer:
+        derived_evidence = [
+            "source.title_cn describes a portable rechargeable juicer cup",
+            "product-analysis.product_type",
+        ]
+        add_dictionary(
+            ("Тип миксера",), "Ручной",
+            source_name="AI_estimated", confidence=0.96,
+            evidence=derived_evidence,
+        )
+        add_dictionary(
+            ("Вращающаяся чаша",), "Нет",
+            source_name="AI_estimated", confidence=0.93,
+            evidence=derived_evidence,
+        )
+        add_dictionary(
+            ("Планетарный механизм",), "Нет",
+            source_name="AI_estimated", confidence=0.97,
+            evidence=derived_evidence,
+        )
+        if any(token in fact_text for token in ("充电", "recharge", "аккумулятор")):
+            add_dictionary(
+                ("Конструктивные особенности",), "Беспроводной",
+                source_name="AI_estimated", confidence=0.94,
+                evidence=["source.title_cn explicitly describes rechargeable operation"],
+            )
+
+    stainless_sku_count = sum(
+        any(token in " ".join([
+            str(sku.get("sku_name") or ""),
+            *[str(option.get("value_cn") or "") for option in sku.get("option_values") or []],
+        ]).casefold() for token in ("不锈钢", "stainless", "нержаве"))
+        for sku in source.get("skus") or []
+    )
+    selected_sku_count = len(source.get("skus") or [])
+    if selected_sku_count and stainless_sku_count == selected_sku_count:
+        material_evidence = [
+            "source.skus[].sku_name explicitly identifies stainless steel for every selected SKU",
+            "product-analysis.facts.materials",
+        ]
+        add_dictionary(
+            ("Материал чаши",), "Металл",
+            source_name="1688", confidence=1.0, evidence=material_evidence,
+        )
+        add_dictionary(
+            ("Материал корпуса",), "Нержавеющая сталь",
+            source_name="1688", confidence=0.98, evidence=material_evidence,
+        )
+
+    title_path = product_dir / "output/title-ru.json"
+    if title_path.is_file():
+        title_ru = str(load_json(title_path).get("title_ru") or "").split(",", 1)[0].strip()
+        if title_ru:
+            add_text(
+                ("Название модели для шаблона наименования",), title_ru,
+                source_name="AI_estimated", confidence=0.96,
+                evidence=["title-ru.title_ru", "product-analysis.product_type"],
+            )
+
+    # Analysis facts may contain Chinese evidence prose and local image paths.
+    # Those are useful internally but must never be copied into an Ozon-facing
+    # text field.  Convert only explicit, supported accessory nouns to concise
+    # Russian labels; discard unsupported evidence rather than inventing it.
+    structural_tokens = (
+        "带盖", "含盖", "配盖", "内盖", "外盖", "外旋盖", "带门",
+        "крыш", "дверц", "крышка",
+    )
+    package_parts: List[str] = []
+
+    def append_package_part(value: str) -> None:
+        if value and value not in package_parts:
+            package_parts.append(value)
+
+    for item in facts.get("accessories") or []:
+        text = str(item).strip()
+        if not text or text.casefold() in {"unknown", "неизвестно"}:
+            continue
+        lowered = text.casefold()
+        has_variant_marker = bool(re.search(
+            r"(?:sku\s*)?(\d+(?:\.\d+)?)\s*(?:ml|мл|毫升)", lowered,
+            re.IGNORECASE,
+        ))
+        if "内盖" in text:
+            append_package_part("внутренняя крышка")
+        if "外旋盖" in text:
+            append_package_part("внешняя винтовая крышка")
+        elif "外盖" in text:
+            append_package_part("внешняя крышка")
+        if any(token in lowered for token in structural_tokens):
+            match = re.search(
+                r"(\d+(?:\.\d+)?)\s*(?:ml|мл|毫升)", lowered,
+                re.IGNORECASE,
+            )
+            if match and has_variant_marker:
+                append_package_part(f"крышка для варианта {match.group(1)} мл")
+            # Structural wording has now either been converted or deliberately
+            # ignored.  Never append its raw evidence sentence.
+            continue
+        if re.search(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]", text):
+            continue
+        if re.search(r"(?:[/\\]|\.(?:jpe?g|png|webp)\b)", text, re.IGNORECASE):
+            continue
+        append_package_part(text)
+    if package_parts:
+        add_text(
+            ("Комплектация",), " ".join(package_parts),
+            source_name="1688",
+            confidence=0.95,
+            evidence=[
+                "product-analysis.facts.accessories",
+            ],
+        )
+
     inference_fields = {
         str(item.get("field") or "").casefold(): item
         for item in analysis.get("inferences") or []
@@ -623,23 +980,6 @@ def _safe_optional_attributes(
 
 
 def build_color_variants(product_dir: Path, source: Dict[str, Any]) -> Dict[str, Any]:
-    verified_fallbacks = {
-        "3993658310173": {
-            "image": "products/P000004/input/main-images/main-001.webp",
-            "confidence": 0.92,
-            "reason": "Visual analysis confirms the silver body and illuminated green display in the real main image; the image also contains the black variant and is not represented as an exclusive SKU photo.",
-        },
-        "3993658310175": {
-            "image": "products/P000004/input/main-images/main-005.webp",
-            "confidence": 0.96,
-            "reason": "Visual analysis confirms a silver body with the display not illuminated in the real main image.",
-        },
-        "3993658310174": {
-            "image": "products/P000004/input/main-images/main-002.webp",
-            "confidence": 0.99,
-            "reason": "Visual analysis confirms the black body and illuminated green display in the real main image.",
-        },
-    }
     variants = []
     warnings = []
     if source["skus"] and all(_color_from_sku_name(item["sku_name"]) == "unknown" for item in source["skus"]):
@@ -717,12 +1057,6 @@ def build_color_variants(product_dir: Path, source: Dict[str, Any]) -> Dict[str,
             status = "mapped"
             resolution_level, confidence = 1, 1.0
             reason = "The image is directly associated with this SKU in the 1688 source data."
-        elif product_dir.name == "P000004" and sku_id in verified_fallbacks:
-            match = verified_fallbacks[sku_id]
-            image = match["image"]
-            status, image_source = "mapped", "main_image_match"
-            resolution_level, confidence = 2, match["confidence"]
-            reason = match["reason"]
         else:
             image = "missing"
             status, image_source = "missing", "missing"
@@ -797,22 +1131,43 @@ def build_color_variant_policy(
 def build_attributes(
     product_dir: Path, metadata: Dict[str, Any], config: Dict[str, Any],
     description: Dict[str, Any], tags: Dict[str, Any], rich: Dict[str, Any],
+    include_rich_content: bool = True,
 ) -> Dict[str, Any]:
     product_id = product_dir.name
-    package_measurements_source = (
-        "1688"
-        if config["package_weight"]["source_status"] == "confirmed_source"
+    source = load_json(product_dir / "input/source.json")
+    sku_dimension_values = {
+        tuple(
+            float((sku.get("source_data") or {}).get("external_dimensions_cm", {}).get(key) or 0)
+            for key in ("length", "width", "height")
+        )
+        for sku in source.get("skus") or []
+        if isinstance((sku.get("source_data") or {}).get("external_dimensions_cm"), dict)
+    }
+    varying_sku_dimensions = len(sku_dimension_values) > 1 and all(
+        all(value > 0 for value in dimensions) for dimensions in sku_dimension_values
+    )
+    # Attribute provenance uses the schema's stable source enum.  The richer
+    # ``estimated_human_approved`` provenance remains in upload-config and in
+    # the evidence path, while the attribute itself stays AI_estimated rather
+    # than introducing an invalid new enum value.
+    package_manual = (
+        config["package_weight"]["source_status"] == "estimated_human_approved"
+        and config["package_dimensions"]["source_status"] == "estimated_human_approved"
+    )
+    package_measurements_source = "1688" if (
+        config["package_weight"]["source_status"] == "confirmed_source"
         and config["package_dimensions"]["source_status"] == "confirmed_source"
-        else "AI_estimated"
+    ) else "AI_estimated"
+    package_measurements_confidence = 1.0 if package_manual or package_measurements_source == "1688" else 0.68
+    product_manual = (
+        config["product_weight"]["source_status"] == "estimated_human_approved"
+        and config["product_dimensions"]["source_status"] == "estimated_human_approved"
     )
-    package_measurements_confidence = 1.0 if package_measurements_source == "1688" else 0.68
-    product_measurements_source = (
-        "1688"
-        if config["product_weight"]["source_status"] == "confirmed_source"
+    product_measurements_source = "1688" if (
+        config["product_weight"]["source_status"] == "confirmed_source"
         and config["product_dimensions"]["source_status"] == "confirmed_source"
-        else "AI_estimated"
-    )
-    product_measurements_confidence = 1.0 if product_measurements_source == "1688" else 0.68
+    ) else "AI_estimated"
+    product_measurements_confidence = 1.0 if product_manual or product_measurements_source == "1688" else 0.68
     supplied: Dict[int, Tuple[Any, str, float, List[str], int | None]] = {
         int(config["model_name"]["attribute_id"]): (config["model_name"]["value"], "AI_estimated", 0.95, ["ozon-upload-config.model_name", "product-analysis.product_type"], None),
         int(config["brand"]["attribute_id"]): (config["brand"]["value"], "AI_estimated", 0.90, ["store policy: products without a confirmed brand use Нет бренда"], config["brand"]["dictionary_value_id"]),
@@ -859,6 +1214,10 @@ def build_attributes(
             " x ".join(display_number(config["package_dimensions"][key]) for key in ("length_mm", "width_mm", "height_mm")),
             package_measurements_source, package_measurements_confidence, [config["package_dimensions"]["source"]], None,
         ),
+        "product_dimensions": (
+            " x ".join(display_number(config["product_dimensions"][key]) for key in ("length_mm", "width_mm", "height_mm")),
+            product_measurements_source, product_measurements_confidence, [config["product_dimensions"]["source"]], None,
+        ),
         "description": (description["description_ru"], "AI_estimated", 0.95, ["description-ru.description_ru", "product-positioning"], None),
         "product_name": (config["merge_product_name"], "AI_estimated", 0.99, ["title-ru.title_ru"], None),
         "tags": (" ".join(tags["tags"]), "AI_estimated", 0.95, ["ozon-tags.json"], None),
@@ -870,7 +1229,8 @@ def build_attributes(
         "product_width": ("Ширина, мм", "Ширина товара, мм"),
         "product_height": ("Высота, мм", "Высота товара, мм"),
         "package_weight": ("Вес товара с упаковкой", "Вес с упаковкой", "Вес с упаковкой, г", "Вес упаковки"),
-        "package_dimensions": ("Размер упаковки", "Габариты упаковки", "Размеры, мм"),
+        "package_dimensions": ("Размер упаковки", "Габариты упаковки"),
+        "product_dimensions": ("Размеры, мм", "Размеры товара, мм"),
         "description": ("Аннотация", "Описание товара", "Описание"),
         "product_name": ("Название", "Название товара"),
         "tags": ("Хештеги", "#Хештеги", "Теги"),
@@ -891,9 +1251,46 @@ def build_attributes(
                 None,
             )
     for role, aliases in role_aliases.items():
+        if role == "rich_content" and not include_rich_content:
+            continue
+        if varying_sku_dimensions and role in {
+            "product_length", "product_width", "product_height", "product_dimensions",
+        }:
+            continue
         attribute = _find_attribute_by_names(metadata, aliases)
         if attribute and int(attribute["attribute_id"]) not in supplied:
             supplied[int(attribute["attribute_id"])] = role_values[role]
+
+    # Required dictionary fields are the only place where a missing value may
+    # stop the batch.  Before reporting one as missing, search the actual
+    # captured facts and the recorded analysis for an unambiguous live value.
+    # This handles wording such as ``不锈钢``/``нержавейка`` without guessing
+    # unsupported claims.  Optional fields remain ``unknown`` and are skipped.
+    analysis = load_json(product_dir / "output/product-analysis.json") if (
+        product_dir / "output/product-analysis.json"
+    ).is_file() else {}
+    source_evidence_text = " ".join([
+        str(source.get("title_cn") or ""),
+        json.dumps(source.get("product_attributes") or [], ensure_ascii=False),
+        json.dumps(source.get("skus") or [], ensure_ascii=False),
+        str(analysis.get("product_type") or ""),
+        str(analysis.get("category") or ""),
+        json.dumps(analysis.get("facts") or {}, ensure_ascii=False),
+    ])
+    for item in metadata.get("attributes") or []:
+        attribute_id = int(item["attribute_id"])
+        if not item.get("required") or attribute_id in supplied or not item.get("allowed_values"):
+            continue
+        selected = _dictionary_match_from_source_text(item, source_evidence_text)
+        if not selected:
+            continue
+        supplied[attribute_id] = (
+            selected[0],
+            "1688",
+            0.90,
+            ["source.title_cn", "source.product_attributes", "source.skus", "product-analysis.facts"],
+            selected[1],
+        )
     if _product_family(product_dir) == "luggage_scale":
         scale_type = _find_attribute_by_names(metadata, ("Вид весов", "Тип весов"))
         electronic = next(
@@ -930,7 +1327,7 @@ def build_attributes(
             "missing": len(missing), "missing_attribute_ids": missing,
         },
         "warnings": [
-            "Unconfirmed material, capacity, precision, certification, battery, functions, load capacity, and accessories remain unknown.",
+            "Only source-backed or high-confidence low-risk optional values are filled; power, warranty, certification, marking, protection systems and other unsupported claims remain unknown.",
             "Product and package measurements may be labelled estimates; package values are always greater than product values.",
             "AI_estimated identifies a derived marketplace value and never changes the 1688 source facts.",
         ],
@@ -979,6 +1376,41 @@ def build_final_check(
         "pricing",
         bool(pricing) and selected_skus == priced_skus,
         "Every selected SKU requires a positive price in pricing-result.json.",
+    )
+    plan_path = output / "image-plan.json"
+    plan = load_json(plan_path) if plan_path.is_file() else {}
+    planned_main = list(plan.get("main_images") or [])
+    planned_detail = list(plan.get("detail_images") or [])
+    draft_by_slot = {str(item.get("slot")): item for item in draft.get("images") or []}
+    selected_sku_ids = {str(item.get("source_sku_id")) for item in draft.get("skus") or []}
+    missing_main = []
+    for sku_id in sorted(selected_sku_ids):
+        candidates = [
+            item for item in planned_main
+            if str(item.get("source_sku_id") or "") == sku_id
+        ]
+        if not candidates:
+            missing_main.append(f"SKU {sku_id}: no planned main image")
+            continue
+        for item in candidates[:1]:
+            slot = str(item.get("slot") or "")
+            draft_item = draft_by_slot.get(slot)
+            if not draft_item or draft_item.get("qc_status") != "pass" or not (ROOT / str(draft_item.get("path") or "")).is_file():
+                missing_main.append(f"SKU {sku_id}: {slot or 'main image'} missing or not QC-passed")
+    missing_detail = []
+    if len(planned_detail) != 8:
+        missing_detail.append(f"image plan contains {len(planned_detail)} detail slots; exactly 8 are required")
+    for item in planned_detail:
+        slot = str(item.get("slot") or "")
+        draft_item = draft_by_slot.get(slot)
+        if not draft_item or draft_item.get("qc_status") != "pass" or not (ROOT / str(draft_item.get("path") or "")).is_file():
+            missing_detail.append(slot or "unnamed detail slot")
+    completeness_ok = not missing_main and not missing_detail
+    add(
+        "image_slot_completeness",
+        completeness_ok,
+        "每个已选SKU必须有主图，且商品必须有完整8张详情图；缺图、损坏或未通过技术检查时禁止上传。"
+        + (f" 缺失：主图 {', '.join(missing_main)}；详情图 {', '.join(missing_detail)}" if not completeness_ok else ""),
     )
     images_ok = bool(draft.get("images")) and all(
         item.get("qc_status") == "pass" and (ROOT / item["path"]).is_file()
@@ -1124,7 +1556,12 @@ def _official_aspect_ids(metadata: Dict[str, Any]) -> set[int]:
     }
 
 
-def _auto_upload_config(product_dir: Path, metadata: Dict[str, Any]) -> Dict[str, Any]:
+def _auto_upload_config(
+    product_dir: Path,
+    metadata: Dict[str, Any],
+    *,
+    allow_unpriced: bool = False,
+) -> Dict[str, Any]:
     output = product_dir / "output"
     source = load_json(product_dir / "input/source.json")
     pricing = load_json(output / "pricing-result.json")
@@ -1135,6 +1572,16 @@ def _auto_upload_config(product_dir: Path, metadata: Dict[str, Any]) -> Dict[str
     shop = next(item for item in shops["shops"] if item["name"] == shop_name)
     title = load_json(output / "title-ru.json")
     price_by_sku = {str(item["sku_id"]): item for item in pricing["sku_pricing"]}
+
+    def configured_price(sku_id: str) -> str:
+        raw = (price_by_sku.get(sku_id) or {}).get("selling_price_cny")
+        try:
+            value = float(raw)
+        except (TypeError, ValueError):
+            value = 0.0
+        if value <= 0 and not allow_unpriced:
+            raise ValueError(f"SKU {sku_id} has no positive selling price")
+        return f"{value:.2f}"
     product_dimensions = cost.get("product_dimensions", cost["dimensions"])
     product_weight = cost.get("product_weight", cost["weight"])
     package_dimensions = cost.get("package_dimensions", cost["dimensions"])
@@ -1156,13 +1603,30 @@ def _auto_upload_config(product_dir: Path, metadata: Dict[str, Any]) -> Dict[str
         color_meta = {}
     allowed_colors = {str(item["value"]).casefold(): item for item in color_meta.get("allowed_values") or []}
     sku_colors = []
+    unresolved_colors = []
     for sku in source["skus"]:
-        color = _color_from_sku_name(str(sku["sku_name"]))
+        source_data = sku.get("source_data") or {}
+        source_color_name = str(source_data.get("sku_image_prop_name") or "").casefold()
+        color_text = str(source_data.get("sku_image_prop_value") or sku["sku_name"])
+        color = _color_from_sku_name(color_text)
+        # ``规格1`` is a seller UI label; the structured source property tells
+        # us that this option is actually colour and must be kept per SKU.
+        if source_color_name not in {"颜色", "色号", "colour", "color"}:
+            option_color = next(
+                (str(option.get("value_cn") or "") for option in sku.get("option_values") or []
+                 if any(token in str(option.get("name_cn") or "").casefold() for token in ("颜色", "色号", "colour", "color"))),
+                "",
+            )
+            if option_color:
+                color = _color_from_sku_name(option_color)
         if color == "unknown" or not color_meta:
+            if color != "unknown":
+                unresolved_colors.append({"source_sku_id": str(sku["sku_id"]), "value": color})
             continue
         dictionary = allowed_colors.get(color.casefold())
         if not dictionary:
-            raise ValueError(f"Color {color} is absent from live Ozon dictionary for SKU {sku['sku_id']}")
+            unresolved_colors.append({"source_sku_id": str(sku["sku_id"]), "value": color})
+            continue
         sku_colors.append({
             "source_sku_id": str(sku["sku_id"]),
             "attribute_id": int(color_meta["attribute_id"]),
@@ -1177,7 +1641,7 @@ def _auto_upload_config(product_dir: Path, metadata: Dict[str, Any]) -> Dict[str
         "sku_prices": [
             {
                 "source_sku_id": str(sku["sku_id"]),
-                "price": f"{float(price_by_sku[str(sku['sku_id'])]['selling_price_cny']):.2f}",
+                "price": configured_price(str(sku["sku_id"])),
             }
             for sku in source["skus"]
         ],
@@ -1205,24 +1669,24 @@ def _auto_upload_config(product_dir: Path, metadata: Dict[str, Any]) -> Dict[str
             "width_mm": float(product_dimensions["width"]) * 10,
             "height_mm": float(product_dimensions["height"]) * 10,
             "source": str(product_dimensions["source_ref"]),
-            "source_status": "estimated_system" if product_dimensions.get("estimated") else "confirmed_source",
+            "source_status": "estimated_human_approved" if product_dimensions.get("profile") == "manual_confirmation" else "estimated_system" if product_dimensions.get("estimated") else "confirmed_source",
         },
         "product_weight": {
             "value_g": float(product_weight["value"]),
             "source": str(product_weight["source_ref"]),
-            "source_status": "estimated_system" if product_weight.get("estimated") else "confirmed_source",
+            "source_status": "estimated_human_approved" if product_weight.get("profile") == "manual_confirmation" else "estimated_system" if product_weight.get("estimated") else "confirmed_source",
         },
         "package_dimensions": {
             "length_mm": float(package_dimensions["length"]) * 10,
             "width_mm": float(package_dimensions["width"]) * 10,
             "height_mm": float(package_dimensions["height"]) * 10,
             "source": str(package_dimensions["source_ref"]),
-            "source_status": "estimated_system" if package_dimensions.get("estimated") else "confirmed_source",
+            "source_status": "estimated_human_approved" if package_dimensions.get("profile") == "manual_confirmation" else "estimated_system" if package_dimensions.get("estimated") else "confirmed_source",
         },
         "package_weight": {
             "value_g": float(package_weight["value"]),
             "source": str(package_weight["source_ref"]),
-            "source_status": "estimated_system" if package_weight.get("estimated") else "confirmed_source",
+            "source_status": "estimated_human_approved" if package_weight.get("profile") == "manual_confirmation" else "estimated_system" if package_weight.get("estimated") else "confirmed_source",
         },
         "vat": str(shop.get("default_vat") or "0"),
         "stock_mode": "not_set",
@@ -1232,7 +1696,9 @@ def _auto_upload_config(product_dir: Path, metadata: Dict[str, Any]) -> Dict[str
     }
 
 
-def build_package(product_dir: Path, write: bool = True) -> Dict[str, Any]:
+def build_package(
+    product_dir: Path, write: bool = True, *, pre_image: bool = False,
+) -> Dict[str, Any]:
     product_dir = product_dir.resolve()
     output = product_dir / "output"
     source = load_json(product_dir / "input/source.json")
@@ -1280,6 +1746,12 @@ def build_package(product_dir: Path, write: bool = True) -> Dict[str, Any]:
     draft_path = output / "ozon-draft.json"
     if draft_path.is_file():
         draft = load_json(draft_path)
+        canonical_title = load_json(output / "title-ru.json").get("title_ru")
+        canonical_description = load_json(output / "description-ru.json").get("description_ru")
+        if canonical_title:
+            draft["title"] = str(canonical_title).strip()
+        if canonical_description:
+            draft["description"] = str(canonical_description).strip()
         draft["description_category_id"] = int(category["category_id"])
         draft["type_id"] = int(category["type_id"])
         draft["category"] = {
@@ -1294,7 +1766,7 @@ def build_package(product_dir: Path, write: bool = True) -> Dict[str, Any]:
     config_path = output / "ozon-upload-config.json"
     if config_path.is_file():
         config = load_json(config_path)
-        refreshed = _auto_upload_config(product_dir, metadata)
+        refreshed = _auto_upload_config(product_dir, metadata, allow_unpriced=pre_image)
         # Category remapping can change attribute IDs, dictionaries and the
         # product type. Keep operator/business settings, but never reuse those
         # category-bound fields from an older match.
@@ -1303,38 +1775,50 @@ def build_package(product_dir: Path, write: bool = True) -> Dict[str, Any]:
             "product_weight", "product_dimensions", "package_weight", "package_dimensions",
         ):
             config[key] = refreshed[key]
-        if write:
+        if write and not pre_image:
             write_json_atomic(config_path, config)
     else:
-        config = _auto_upload_config(product_dir, metadata)
-        config_errors = validate_value(config, TEMPLATES / "ozon-upload-config.schema.json")
+        config = _auto_upload_config(product_dir, metadata, allow_unpriced=pre_image)
+        config_errors = (
+            [] if pre_image
+            else validate_value(config, TEMPLATES / "ozon-upload-config.schema.json")
+        )
         if config_errors:
             raise ValueError("Automatic upload config validation failed: " + "; ".join(config_errors))
-        if write:
+        if write and not pre_image:
             write_json_atomic(config_path, config)
     description = load_json(output / "description-ru.json")
     result_path = output / "ozon-result.json"
     result = load_json(result_path) if result_path.is_file() else {}
     tags = build_tags(product_dir)
-    rich = build_rich_content(product_dir, result)
-    rich_meta = _find_attribute_by_names(metadata, ("Rich-контент", "Rich-контент JSON", "Rich content"))
-    if not rich_meta:
-        rich["warnings"].append("The selected category has no live Rich Content attribute; it will not be sent.")
-    rich["attribute_id"] = int(rich_meta["attribute_id"]) if rich_meta else 0
+    rich = (
+        {"serialized_json": "unknown"}
+        if pre_image else build_rich_content(product_dir, result)
+    )
+    if not pre_image:
+        rich_meta = _find_attribute_by_names(metadata, ("Rich-контент", "Rich-контент JSON", "Rich content"))
+        if not rich_meta:
+            rich["warnings"].append("The selected category has no live Rich Content attribute; it will not be sent.")
+        rich["attribute_id"] = int(rich_meta["attribute_id"]) if rich_meta else 0
     colors = build_color_variants(product_dir, source)
     color_policy = build_color_variant_policy(product_dir.name, source, colors)
-    attrs = build_attributes(product_dir, metadata, config, description, tags, rich)
-    check = build_final_check(product_dir, tags, attrs, rich, colors, color_policy, config)
+    attrs = build_attributes(
+        product_dir, metadata, config, description, tags, rich,
+        include_rich_content=not pre_image,
+    )
     coverage = build_attribute_coverage_report(attrs)
     package = {
         "ozon-tags.json": tags,
         "ozon-attributes-final.json": attrs,
-        "rich-content.json": rich,
         "color-variants.json": colors,
         "color-variant-policy.json": color_policy,
-        "final-upload-check.json": check,
         "attribute-coverage-report.json": coverage,
     }
+    if not pre_image:
+        package["rich-content.json"] = rich
+        package["final-upload-check.json"] = build_final_check(
+            product_dir, tags, attrs, rich, colors, color_policy, config
+        )
     validation = validate_package(package)
     failures = {name: errors for name, errors in validation.items() if errors}
     if failures:

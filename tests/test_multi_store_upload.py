@@ -6,6 +6,7 @@ from unittest.mock import patch
 
 from scripts.multi_store_upload import default_runner, execute_selected_stores, refresh_pending_stores
 from scripts.store_publications import load_publications, select_stores
+from scripts.workbench_stores import list_stores
 
 
 def write(path: Path, value) -> None:
@@ -85,6 +86,12 @@ class MultiStoreUploadTest(unittest.TestCase):
             self.assertEqual(stores["store-a"]["sku_publications"][0]["task_id"], "task-a")
             self.assertEqual(stores["store-a"]["sku_publications"][0]["payload_hash"], "hash-a")
             self.assertEqual(stores["store-b"]["status"], "FAILED")
+            history = json.loads((product / "status.json").read_text())["history"]
+            self.assertEqual([item["to"] for item in history[-2:]], ["UPLOADING", "PENDING_REMOTE"])
+            pending_status = json.loads((product / "status.json").read_text())
+            self.assertEqual(pending_status["steps"][-1]["status"], "completed")
+            self.assertEqual(pending_status["progress"], 99)
+            self.assertEqual(pending_status["completed_at"], "unknown")
 
             def recovery_runner(_root, isolated, store_id):
                 self.assertEqual(store_id, "store-a")
@@ -98,6 +105,7 @@ class MultiStoreUploadTest(unittest.TestCase):
             self.assertEqual(refreshed["write_api_calls"], 0)
             self.assertEqual(refreshed["inventory_api_calls"], 0)
             self.assertEqual(load_publications(product)["stores"]["store-a"]["status"], "SUCCESS")
+            self.assertEqual(load_publications(product)["stores"]["store-a"]["sku_publications"][0]["action"], "CREATE")
 
             retry_calls = []
 
@@ -114,6 +122,13 @@ class MultiStoreUploadTest(unittest.TestCase):
             stores = load_publications(product)["stores"]
             self.assertEqual(stores["store-b"]["status"], "SUCCESS")
             self.assertEqual(stores["store-b"]["sku_publications"][0]["ozon_product_id"], "product-b")
+            aggregate = json.loads((product / "status.json").read_text())
+            self.assertEqual(aggregate["ozon"]["upload_status"], "uploaded")
+            self.assertEqual(aggregate["ozon"]["offer_id"], "offer-a")
+            self.assertEqual(aggregate["ozon"]["product_id"], "product-a")
+            self.assertEqual(aggregate["ozon"]["task_id"], "task-a")
+            self.assertEqual(aggregate["progress"], 100)
+            self.assertNotEqual(aggregate["completed_at"], "unknown")
             execute_selected_stores(root, product, only_store_ids=["store-a"], runner=retry_runner)
             self.assertEqual(retry_calls, ["store-b"])
 
@@ -137,6 +152,39 @@ class MultiStoreUploadTest(unittest.TestCase):
             master = json.loads((product / "output/ozon-upload-config.json").read_text())
             self.assertEqual(master["shop_name"], "default")
             self.assertEqual(master["sku_prices"][0]["price"], "50.00")
+
+    def test_definitive_deactivated_key_marks_store_connection_failed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            write(root / "ozon-adapter/shops.json", {
+                "schema_version": "1.1.0", "default_read_shop": "store-a",
+                "shops": [{
+                    "id": "store-a", "name": "store-a", "display_name": "Store A",
+                    "enabled": True, "validation_status": "connected",
+                    "client_id_env": "OZON_STORE_A_CLIENT_ID",
+                    "api_key_env": "OZON_STORE_A_API_KEY",
+                }],
+            })
+            (root / "ozon-adapter/.env.store-a").write_text(
+                "OZON_STORE_A_CLIENT_ID=1\nOZON_STORE_A_API_KEY=old\n", encoding="utf-8",
+            )
+            select_stores(product, ["store-a"], ["store-a"])
+
+            def runner(_root, _isolated, _store_id):
+                return {
+                    "returncode": 1,
+                    "status": {
+                        "status": "FAILED_HARD_BLOCKER", "api_write_count": 0,
+                        "error_message": "Api-key is deactivated, use another one or generate a new one",
+                    },
+                    "result": {},
+                }
+
+            execute_selected_stores(root, product, runner=runner)
+            store = list_stores(root)[0]
+            self.assertEqual(store["connection_status"], "failed")
+            self.assertIn("deactivated", store["last_validation_error"])
 
 
 if __name__ == "__main__":

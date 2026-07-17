@@ -93,8 +93,11 @@ class CapacityVariantMappingTest(unittest.TestCase):
         for offer_id, (value, dictionary_id) in expected.items():
             attribute = next(item for item in by_offer[offer_id]["attributes"] if item["id"] == 6788)
             self.assertEqual(attribute["values"], [{"dictionary_value_id": dictionary_id, "value": value}])
+            self.assertEqual(by_offer[offer_id]["images"][1:], ["https://images.example.test/shared.png"])
             self.assertNotIn("stock", by_offer[offer_id])
             self.assertNotIn("warehouse_id", by_offer[offer_id])
+        self.assertEqual(by_offer["P000011-5872460434730"]["primary_image"], "https://images.example.test/40jin.png")
+        self.assertEqual(by_offer["P000011-5872460434733"]["primary_image"], "https://images.example.test/20jin.png")
 
 
 if __name__ == "__main__":

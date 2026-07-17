@@ -5,7 +5,9 @@ from __future__ import annotations
 import copy
 import hashlib
 import json
+import math
 import os
+import re
 import subprocess
 import sys
 import tempfile
@@ -20,6 +22,24 @@ from jsonschema import Draft202012Validator
 from .client import OzonUploadApiError, OzonWriteClient
 from .image_channels import PersistentImageTunnel, channel_state, stop_image_channel
 from .images import ImageTunnelError, stage_images
+
+try:
+    from scripts.image_asset_boundaries import (
+        accepted_counterpart,
+        asset_contract_path,
+        validate_accepted_manifest,
+        validate_generated_output,
+    )
+    from scripts.production_input_guard import ProductionInputError, validate_formal_product_input
+except ModuleNotFoundError:  # package execution from the repository root
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
+    from image_asset_boundaries import (
+        accepted_counterpart,
+        asset_contract_path,
+        validate_accepted_manifest,
+        validate_generated_output,
+    )
+    from production_input_guard import ProductionInputError, validate_formal_product_input
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -48,6 +68,19 @@ class UploadGateError(RuntimeError):
     pass
 
 
+def ozon_weight_grams(value: Any) -> int:
+    """Return the conservative integer grams required by Ozon's int32 field."""
+    try:
+        weight = float(value)
+    except (TypeError, ValueError) as exc:
+        raise UploadGateError("Package weight must be a positive number of grams") from exc
+    if not math.isfinite(weight) or weight <= 0:
+        raise UploadGateError("Package weight must be a positive number of grams")
+    # Shipping weight must never be understated when an estimator produced a
+    # fractional gram, and Ozon rejects a JSON float for this int32 field.
+    return int(math.ceil(weight))
+
+
 def upload_mode() -> str:
     mode = os.environ.get("UPLOAD_MODE", "dry-run").strip().lower()
     if mode not in {"dry-run", "production"}:
@@ -69,6 +102,208 @@ def now() -> str:
 def load_json(path: Path) -> Any:
     with path.open("r", encoding="utf-8") as handle:
         return json.load(handle)
+
+
+_CJK_RE = re.compile(r"[\u3400-\u4dbf\u4e00-\u9fff\uf900-\ufaff]")
+_CONTROL_RE = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
+_SCALAR_NUMBER_RE = re.compile(r"^[+-]?(?:\d+(?:\.\d+)?|\.\d+)$")
+
+
+def _remote_content_blockers(
+    api_items: List[Dict[str, Any]],
+    category_metadata: Dict[str, Any],
+) -> List[str]:
+    """Reject content Ozon will moderate or parse incorrectly before writing.
+
+    Only remote-visible request fields are inspected.  Internal Chinese source
+    evidence remains available in local artifacts and audit logs.
+    """
+    attribute_types = {
+        int(item["attribute_id"]): str(item.get("type") or "").casefold()
+        for item in category_metadata.get("attributes") or []
+        if item.get("attribute_id") is not None
+    }
+    blockers: List[str] = []
+
+    def inspect_text(value: Any, location: str) -> None:
+        text = str(value or "")
+        if _CJK_RE.search(text):
+            blockers.append(f"{location} 含中文，禁止提交到 Ozon")
+        if _CONTROL_RE.search(text):
+            blockers.append(f"{location} 含不可见控制字符，禁止提交到 Ozon")
+        if re.search(r"(?:^|\s)(?:input|output)/\S+\.(?:jpe?g|png|webp)\b", text, re.IGNORECASE):
+            blockers.append(f"{location} 含本地图片路径，禁止提交到 Ozon")
+
+    for item in api_items:
+        offer_id = str(item.get("offer_id") or "unknown")
+        inspect_text(item.get("name"), f"商品 {offer_id} 的标题")
+        for attribute in item.get("attributes") or []:
+            attribute_id = int(attribute.get("id") or 0)
+            value_type = attribute_types.get(attribute_id, "")
+            for value in attribute.get("values") or []:
+                raw_value = value.get("value")
+                location = f"商品 {offer_id} 的属性 {attribute_id}"
+                inspect_text(raw_value, location)
+                if (
+                    value_type in {"decimal", "integer", "int32", "int64"}
+                    and value.get("dictionary_value_id") is None
+                    and not _SCALAR_NUMBER_RE.fullmatch(str(raw_value or "").strip())
+                ):
+                    blockers.append(f"{location} 必须只填写数字，不能带单位或说明文字")
+    return list(dict.fromkeys(blockers))
+
+
+def _resolve_product_artifact(product_dir: Path, value: Any) -> Path:
+    """Resolve an image-plan path without allowing it to escape the project."""
+    raw = Path(str(value or ""))
+    project_root = product_dir.parent.parent
+    if raw.is_absolute():
+        candidate = raw.resolve()
+    elif raw.parts and raw.parts[0] == "products":
+        candidate = (project_root / raw).resolve()
+    else:
+        candidate = (product_dir / raw).resolve()
+    allowed = product_dir.resolve()
+    if candidate != allowed and allowed not in candidate.parents:
+        raise UploadGateError(f"Image-plan path escapes product directory: {value}")
+    return candidate
+
+
+def _image_file_is_readable(path: Path) -> bool:
+    if not path.is_file() or path.stat().st_size <= 0:
+        return False
+    try:
+        from PIL import Image
+    except ImportError:
+        # The uploader can still run in the minimal runtime; non-empty files
+        # are the strongest check available when Pillow is not installed.
+        return True
+    try:
+        with Image.open(path) as image:
+            image.verify()
+        return True
+    except Exception:
+        return False
+
+
+def current_image_completeness(product_dir: Path) -> Dict[str, Any]:
+    """Re-check current image-plan slots and files immediately before upload.
+
+    This deliberately ignores the previous final-upload-check result.  A stale
+    PASS must never allow a CREATE/UPDATE after images were removed or replaced.
+    """
+    output = product_dir / "output"
+    plan = load_json(output / "image-plan.json") if (output / "image-plan.json").is_file() else {}
+    draft = load_json(output / "ozon-draft.json") if (output / "ozon-draft.json").is_file() else {}
+    selected_skus = [str(item.get("source_sku_id")) for item in draft.get("skus") or []]
+    planned_main = list(plan.get("main_images") or [])
+    planned_detail = list(plan.get("detail_images") or [])
+    errors: List[str] = []
+    main_results: List[Dict[str, Any]] = []
+    detail_results: List[Dict[str, Any]] = []
+    asset_contract = load_json(asset_contract_path(product_dir)) if asset_contract_path(product_dir).is_file() else {}
+    manual_confirmation_required = bool(asset_contract.get("manual_confirmation_required"))
+
+    def inspect(item: Dict[str, Any], label: str) -> Dict[str, Any]:
+        path_value = item.get("output_path") or item.get("path") or item.get("local_path")
+        try:
+            path = _resolve_product_artifact(product_dir, path_value)
+            if asset_contract:
+                path = validate_generated_output(product_dir, path)
+                if manual_confirmation_required:
+                    path = accepted_counterpart(product_dir, path)
+            readable = _image_file_is_readable(path)
+        except UploadGateError as exc:
+            path = Path(str(path_value or "unknown"))
+            readable = False
+            errors.append(str(exc))
+        status = str(item.get("status") or "").lower()
+        status_ok = status in {"", "generated", "ready", "pass", "passed", "complete"}
+        passed = readable and status_ok
+        if not passed:
+            errors.append(f"{label}: image file is missing, damaged, or not generation-complete ({path_value or 'unknown'})")
+        return {
+            "slot": str(item.get("slot") or "unknown"), "path": str(path), "passed": passed,
+            "asset_state": "accepted" if asset_contract and manual_confirmation_required else "candidate",
+        }
+
+    for sku_id in selected_skus:
+        candidates = [item for item in planned_main if str(item.get("source_sku_id") or "") == sku_id]
+        if len(candidates) != 1:
+            errors.append(f"SKU {sku_id}: expected exactly one planned main image, got {len(candidates)}")
+            main_results.append({"sku_id": sku_id, "passed": False})
+            continue
+        result = inspect(candidates[0], f"SKU {sku_id} main image")
+        result["sku_id"] = sku_id
+        main_results.append(result)
+
+    if len(planned_detail) != 8:
+        errors.append(f"detail image count is {len(planned_detail)}; exactly 8 are required")
+    for item in planned_detail:
+        detail_results.append(inspect(item, f"detail {item.get('slot') or 'unknown'}"))
+    detail_paths = [item["path"] for item in detail_results]
+    if len(detail_paths) != len(set(detail_paths)):
+        errors.append("detail images contain duplicate files")
+    if asset_contract and manual_confirmation_required:
+        accepted_root = product_dir / "output/accepted-images"
+        accepted_files = {
+            str(path.resolve()) for path in accepted_root.rglob("*")
+            if path.is_file() and path.suffix.lower() in {".png", ".jpg", ".jpeg", ".webp", ".avif"}
+        }
+        planned_accepted = {
+            str(Path(item["path"]).resolve())
+            for item in [*main_results, *detail_results]
+            if item.get("path") and item.get("path") != "unknown"
+        }
+        expected_count = len(selected_skus) + 8
+        if len(accepted_files) != expected_count or accepted_files != planned_accepted:
+            errors.append(
+                f"manual mode requires exactly the reviewed N+8 accepted image set; "
+                f"expected {expected_count}, found {len(accepted_files)}"
+            )
+        errors.extend(validate_accepted_manifest(
+            product_dir,
+            [*planned_main, *planned_detail],
+            expected_count=expected_count,
+        ))
+
+    return {
+        "passed": not errors and len(main_results) == len(selected_skus),
+        "selected_sku_count": len(selected_skus),
+        "main_images": main_results,
+        "detail_images": detail_results,
+        "errors": list(dict.fromkeys(errors)),
+        "checked_at": now(),
+    }
+
+
+def refresh_current_image_check(product_dir: Path) -> Dict[str, Any]:
+    """Rewrite final-upload-check.json with the current image result."""
+    output = product_dir / "output"
+    check_path = output / "final-upload-check.json"
+    check = load_json(check_path) if check_path.is_file() else {
+        "schema_version": "1.0.0", "product_id": product_dir.name,
+        "status": "FAIL", "upload_allowed": False, "checks": [], "errors": [], "warnings": [],
+    }
+    result = current_image_completeness(product_dir)
+    checks = [item for item in check.get("checks") or [] if item.get("name") not in {"image_slot_completeness", "images_qc"}]
+    detail = "每个已选SKU必须有合格主图，且商品必须正好有8张详情图。"
+    if result["errors"]:
+        detail += " " + "；".join(result["errors"])
+    checks.extend([
+        {"name": "image_slot_completeness", "passed": result["passed"], "detail": detail},
+        {"name": "images_qc", "passed": result["passed"], "detail": "当前 image-plan 中的全部图片文件必须存在、可读取并完成生成。"},
+    ])
+    check["checks"] = checks
+    errors = [str(item) for item in check.get("errors") or [] if "详情图" not in str(item) and "SKU" not in str(item)]
+    if result["errors"]:
+        errors.extend(result["errors"])
+    check["errors"] = list(dict.fromkeys(errors))
+    check["status"] = "PASS" if not check["errors"] and all(item.get("passed") for item in checks) else "FAIL"
+    check["upload_allowed"] = check["status"] == "PASS"
+    check["checked_at"] = result["checked_at"]
+    write_json_atomic(check_path, check)
+    return check
 
 
 def _product_context(path: Path) -> Optional[tuple[Path, str]]:
@@ -572,7 +807,7 @@ def _resolve_rich_content_for_upload(
     slot_urls = {
         item["slot"]: item["public_url"]
         for item in manifest["images"]
-        if item["role"] not in {"color", "variant_main"}
+        if item["role"] != "color"
         and str(item["public_url"]).startswith("https://")
     }
     resolved = copy.deepcopy(rich["content"])
@@ -864,8 +1099,29 @@ def build_upload_payload(product_dir: Path, mode: Optional[str] = None) -> Dict[
         })
 
     public_urls = [item["public_url"] for item in rich["source_images"]]
+    shared_template_urls = [
+        f"pending_upload:{item['path']}"
+        for item in draft["images"]
+        if item.get("role") != "color"
+        and not (
+            item.get("role") == "main"
+            and item.get("variant_scope") == "sku"
+            and item.get("source_sku_id") not in {None, "", "all"}
+        )
+    ]
+    variant_main_template_urls = {
+        str(item["source_sku_id"]): f"pending_upload:{item['path']}"
+        for item in draft["images"]
+        if item.get("role") == "main"
+        and item.get("variant_scope") == "sku"
+        and item.get("source_sku_id") not in {None, "", "all"}
+    }
     api_items = build_import_items(
-        draft, config, public_urls, variant_grouping=grouping
+        draft,
+        config,
+        shared_template_urls or public_urls,
+        variant_grouping=grouping,
+        variant_main_image_urls=variant_main_template_urls,
     )
     optional_api_attributes = [
         converted for converted in (
@@ -889,6 +1145,12 @@ def build_upload_payload(product_dir: Path, mode: Optional[str] = None) -> Dict[
         )
 
     blockers = list(final_check["errors"])
+    category_attributes_path = output / "ozon-category-attributes.json"
+    category_metadata = (
+        load_json(category_attributes_path)
+        if category_attributes_path.is_file() else {"attributes": []}
+    )
+    blockers.extend(_remote_content_blockers(api_items, category_metadata))
     saved_category_conflicts = _saved_category_conflicts(output, draft)
     if exists_check["action"] == "update" and saved_category_conflicts:
         write_json_atomic(output / "ozon-category-migration-block.json", {
@@ -903,9 +1165,14 @@ def build_upload_payload(product_dir: Path, mode: Optional[str] = None) -> Dict[
             "Existing Ozon offers use a different category/type; automatic cross-category UPDATE is blocked."
         )
     if grouping["variant_mapping_status"] == "SEPARATE_CARDS_REQUIRED":
-        blockers.append(
-            "Ozon category has no official aspect mapping for the selected SKU differences; upload strategy is separate cards."
+        valid_separate_cards = (
+            grouping.get("upload_strategy") == "separate_cards"
+            and grouping.get("platform_can_merge") is False
         )
+        if not valid_separate_cards:
+            blockers.append(
+                "SKU differences cannot use an official Ozon aspect and the separate-card strategy is incomplete."
+            )
     elif grouping["variant_mapping_status"] == "RULE_REQUIRED" or not grouping["upload_allowed"]:
         blockers.append(
             "The same-source SKU group requires a missing local Ozon variant mapping rule."
@@ -983,6 +1250,11 @@ def build_import_items(
         item["sku_id"]: item.get("variant_attribute_values", [])
         for item in (variant_grouping or {}).get("variants", [])
     }
+    separate_cards = (
+        (variant_grouping or {}).get("variant_mapping_status") == "SEPARATE_CARDS_REQUIRED"
+        and (variant_grouping or {}).get("upload_strategy") == "separate_cards"
+        and (variant_grouping or {}).get("platform_can_merge") is False
+    )
     items = []
     for sku in draft["skus"]:
         sku_id = str(sku["source_sku_id"])
@@ -992,9 +1264,15 @@ def build_import_items(
         ))
         if not offer_image_urls:
             raise UploadGateError(f"SKU {sku_id} has no usable main or shared product images")
+        model_config = config["model_name"]
+        if separate_cards:
+            model_config = {
+                **model_config,
+                "value": f"{model_config['value']} {sku_id}",
+            }
         attributes = [
             _dictionary_attribute(config["brand"]),
-            _text_attribute(config["model_name"]),
+            _text_attribute(model_config),
             _dictionary_attribute(config["type"]),
         ]
         if sku_id in colors:
@@ -1020,6 +1298,14 @@ def build_import_items(
         common_name = str((variant_grouping or {}).get("common_product_name") or "").strip()
         if common_name.casefold() in {"", "unknown", "none", "null"}:
             common_name = str(draft["title"]).strip()
+        if separate_cards:
+            sku_label = str(
+                sku.get("display_name_ru") or sku.get("source_sku_name") or sku_id
+            ).strip()
+            product_type = str(config.get("type", {}).get("value") or "").strip()
+            if product_type.casefold() in {"", "unknown", "none", "null"}:
+                product_type = str(draft["title"]).strip()
+            common_name = f"{product_type}, {sku_label}"[:500]
         item = {
             "attributes": attributes,
             "barcode": "",
@@ -1034,7 +1320,7 @@ def build_import_items(
             "width": dimensions["width_mm"],
             "height": dimensions["height_mm"],
             "dimension_unit": "mm",
-            "weight": config["package_weight"]["value_g"],
+            "weight": ozon_weight_grams(config["package_weight"]["value_g"]),
             "weight_unit": "g",
             "images": offer_image_urls,
             "primary_image": offer_image_urls[0],
@@ -1483,6 +1769,19 @@ def execute_upload(
     require_production_mode()
     product_dir = product_dir.resolve()
     output = product_dir / "output"
+    # Never trust a historical final-upload-check PASS.  Rebuild the image
+    # gate from the current image-plan and filesystem before any remote call,
+    # especially before CREATE/UPDATE can be reached.
+    current_check = refresh_current_image_check(product_dir)
+    if current_check.get("status") != "PASS" or not current_check.get("upload_allowed"):
+        raise UploadGateError("当前图片完整性检查失败：" + "；".join(current_check.get("errors") or ["图片未准备完成"]))
+    # Input provenance is an independent hard gate.  It deliberately runs
+    # after rebuilding the local image report so a stale PASS can never remain
+    # visible, but still before the first Ozon read or write call.
+    try:
+        validate_formal_product_input(product_dir)
+    except ProductionInputError as exc:
+        raise UploadGateError(f"正式生产输入门禁失败：{exc}") from exc
     idempotency_path = output / "ozon-idempotency.json"
     idempotency = load_json(idempotency_path) if idempotency_path.is_file() else {}
     current_status = str(load_json(product_dir / "status.json").get("status") or "")
@@ -1657,6 +1956,7 @@ def execute_upload(
                 "request_timestamp": now(),
             })
             result.update({
+                "action": action,
                 "task_id": task_id,
                 "status": "submitted",
                 "moderation_status": "pending",
@@ -1667,21 +1967,21 @@ def execute_upload(
             status["ozon"]["last_response"] = response
             previous = status.get("status")
             status.update({
-                "status": "PENDING_REMOTE",
+                "status": "HANDED_OFF_TO_OZON",
                 "current_step": "ozon_upload",
                 "progress": 100,
-                "next_action": "remote_status_sync",
+                "next_action": "complete",
             })
             status.setdefault("history", []).append({
                 "from": previous,
-                "to": "PENDING_REMOTE",
+                "to": "HANDED_OFF_TO_OZON",
                 "at": now(),
-                "reason": "Ozon accepted the import task; subsequent checks are read-only asynchronous status sync.",
+                "reason": "Ozon accepted the import task; local processing is handed off to the Ozon product card.",
             })
             draft["upload_allowed"] = False
             draft["preflight"].update({
-                "status": "failed",
-                "errors": ["Ozon import task is already submitted; only asynchronous status sync is allowed."],
+                "status": "submitted",
+                "errors": [],
                 "checked_at": now(),
             })
             write_json_atomic(output / "ozon-draft.json", draft)
@@ -1691,19 +1991,16 @@ def execute_upload(
                 image["status"] = "submitted"
             manifest["hosting_mode"] = "submitted"
             write_json_atomic(output / "ozon-images.json", manifest)
-            _sync_remote_pending_queue(product_dir, result, status)
-            _enqueue_image_channel_check(
-                product_dir,
-                result,
-                len(image_urls) + (1 if variant_main_image_urls else 0),
-            )
-            _ensure_image_status_monitor(product_dir.parent.parent)
+            # Image channel lifetime is fixed at 24 hours and independent of
+            # remote status polling. Do not enqueue a remote check here.
+            channel = channel_state(product_dir)
             write_json_atomic(output / "ozon-image-transfer.json", {
                 "status": "waiting_ozon_cdn",
                 "checked_at": now(),
                 "offer_ids": [item["offer_id"] for item in items],
                 "temporary_channel_closed": False,
-                "channel": channel_state(product_dir),
+                "channel": channel,
+                "channel_expires_at": channel.get("expires_at"),
             })
     except (OzonUploadApiError, ImageTunnelError, UploadGateError, ValueError) as exc:
         if status.get("status") == "UPLOADING":
@@ -2041,23 +2338,18 @@ def repair_uploaded_images(
             "offer_ids": [item["offer_id"] for item in items], "request_timestamp": now(),
         })
         status["api_write_count"] = int(status.get("api_write_count") or 0) + 1
-        status.update({"status": "PENDING_REMOTE", "current_step": "ozon_upload", "next_action": "remote_status_sync"})
+        status.update({"status": "HANDED_OFF_TO_OZON", "current_step": "ozon_upload", "next_action": "complete"})
         status["ozon"]["task_id"] = str(task_id)
         status["ozon"]["last_response"] = response
         for image in manifest["images"]:
             image["status"] = "submitted"
         manifest["hosting_mode"] = "submitted"
-        _sync_remote_pending_queue(product_dir, result, status)
-        _enqueue_image_channel_check(
-            product_dir,
-            result,
-            len(image_urls) + (1 if variant_main_image_urls else 0),
-        )
-        _ensure_image_status_monitor(product_dir.parent.parent)
+        channel = channel_state(product_dir)
         write_json_atomic(output / "ozon-image-transfer.json", {
             "status": "waiting_ozon_cdn", "checked_at": now(),
             "offer_ids": [item["offer_id"] for item in items],
-            "temporary_channel_closed": False, "channel": channel_state(product_dir),
+            "temporary_channel_closed": False, "channel": channel,
+            "channel_expires_at": channel.get("expires_at"),
         })
     write_json_atomic(output / "ozon-images.json", manifest)
     write_json_atomic(output / "ozon-result.json", result)

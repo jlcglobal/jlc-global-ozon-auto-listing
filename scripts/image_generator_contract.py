@@ -13,8 +13,14 @@ from typing import Any, Dict
 
 try:
     from scripts.style_selector import load_json
+    from scripts.ozon_ecommerce_designer_contract import selected_skus
+    from scripts.image_asset_boundaries import validate_generated_output, validate_product_reference
+    from scripts.production_input_guard import validate_formal_product_input
 except ModuleNotFoundError:  # Allows direct execution as scripts/image_generator_contract.py.
     from style_selector import load_json
+    from ozon_ecommerce_designer_contract import selected_skus
+    from image_asset_boundaries import validate_generated_output, validate_product_reference
+    from production_input_guard import validate_formal_product_input
 
 
 IMAGE_TYPE_REQUIREMENTS = {
@@ -70,8 +76,10 @@ def find_slot(plan: Dict[str, Any], slot: str) -> Dict[str, Any]:
 
 
 def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
+    validate_formal_product_input(product_dir)
     profile = load_json(product_dir / "output/style-profile.json")
     plan = load_json(product_dir / "output/image-plan.json")
+    source = load_json(product_dir / "input/source.json")
     positioning_path = product_dir / "output/product-positioning.json"
     positioning = load_json(positioning_path) if positioning_path.is_file() else {}
     item = find_slot(plan, slot)
@@ -81,12 +89,29 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
         raise ValueError("Image plan does not reference this product's style-profile.json")
     if plan["style_family"] != profile["style_family"]:
         raise ValueError("Image plan style family does not match style-profile.json")
-    if item["image_type"] not in profile["image_set_structure"]:
-        raise ValueError("Image type is not allowed by the selected style structure")
+    if item["image_type"] not in plan.get("image_set_structure", []):
+        raise ValueError("Image type is not allowed by the selected image plan")
+    if len(plan.get("detail_images") or []) != 8:
+        raise ValueError("Image plan must contain exactly 8 shared detail images")
+    sku_count = len(selected_skus(source))
+    main_images = plan.get("main_images") or []
+    if len(main_images) != sku_count:
+        raise ValueError(
+            f"Image plan must contain one main image per selected SKU: expected {sku_count}, got {len(main_images)}"
+        )
+    selected_ids = [str(item.get("sku_id") or "") for item in selected_skus(source)]
+    planned_ids = [str(item.get("source_sku_id") or "") for item in main_images]
+    if planned_ids != selected_ids:
+        raise ValueError("Main images must match the selected SKU order exactly")
+    if len(main_images) + len(plan.get("detail_images") or []) != sku_count + 8:
+        raise ValueError("Image plan total must equal selected SKU count plus 8 shared details")
     if item["status"] == "needs_review" or item["operation"] == "needs_human_input":
         raise ValueError(f"Image slot {slot} is blocked: {item['failure_reason']}")
     if not item["reference_product_images"]:
         raise ValueError("A final product image requires real product references")
+    for value in item["reference_product_images"]:
+        validate_product_reference(product_dir, value)
+    validate_generated_output(product_dir, item.get("output_path"))
     russian_text = item.get("russian_text", [])
     if not russian_text or any(str(value).strip().lower() == "unknown" for value in russian_text):
         raise ValueError(f"Image slot {slot} is blocked: Russian image text is unknown")
@@ -116,7 +141,9 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
             "text_style": profile["text_style"],
         },
         "creative_direction": profile.get("creative_direction") or plan.get("creative_direction") or {},
+        "ecommerce_creative_brief": load_json(product_dir / "output/ecommerce-creative-brief.json") if (product_dir / "output/ecommerce-creative-brief.json").is_file() else {},
         "learned_image_preferences": plan.get("learned_image_preferences") or [],
+        "final_listing_context": plan.get("listing_context") or {},
         "product_positioning": {
             "market_positioning": positioning.get("market_positioning", "unknown"),
             "target_customer": positioning.get("target_customer", "unknown"),
@@ -175,6 +202,7 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
                 "obvious deformation",
                 "Chinese or garbage text",
                 "unreadable Russian text",
+                "large blank placeholder box or empty bordered panel",
             ],
         },
         "reference_product_images": item["reference_product_images"],
@@ -188,9 +216,11 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
             if operation == "compose_from_real_images"
             else "Use the built-in image editor with the supplied real product references. Preserve product identity, color, structure, proportions, markings and accessories while creating the requested scene. "
         ) + (
-            "Reject low-resolution thumbnails instead of enlarging them. Add only verified Russian text, reject Chinese text and seller watermarks, "
-            "and never imply that all selectable SKU variants are included in one order."
+            "Reject low-resolution thumbnails instead of enlarging them. Generate the visual without lettering, then add only the exact verified Russian text. "
+            "Use natural negative space instead of a blank rounded rectangle, empty text box, placeholder card, bordered panel or decorative empty frame. "
+            "Reject Chinese text and seller watermarks, and never imply that all selectable SKU variants are included in one order."
         ),
+        "slot_prompt": item.get("prompt") or item.get("prompt_brief"),
     }
 
 

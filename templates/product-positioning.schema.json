@@ -13,6 +13,8 @@
     "purchase_motivation",
     "customer_pain_points",
     "core_sales_angle",
+    "buyer_selling_points",
+    "usage_scenarios",
     "emotional_trigger",
     "competitive_advantage",
     "recommended_visual_direction",
@@ -30,6 +32,8 @@
     "purchase_motivation": { "$ref": "#/$defs/unknownableString" },
     "customer_pain_points": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
     "core_sales_angle": { "$ref": "#/$defs/unknownableString" },
+    "buyer_selling_points": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
+    "usage_scenarios": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
     "emotional_trigger": { "$ref": "#/$defs/unknownableString" },
     "competitive_advantage": { "$ref": "#/$defs/unknownableString" },
     "recommended_visual_direction": { "$ref": "#/$defs/unknownableString" },
@@ -57,6 +61,7 @@
             "purchase_motivation",
             "customer_pain_points",
             "core_sales_angle",
+            "usage_scenarios",
             "emotional_trigger",
             "competitive_advantage",
             "recommended_visual_direction",
@@ -65,6 +70,16 @@
         },
         "claim_type": { "type": "string", "enum": ["fact", "supported_inference", "unknown"] },
         "statement": { "type": "string", "minLength": 1 },
+        "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "claim_type", "source_refs"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "claim_type": { "type": "string", "enum": ["fact", "supported_inference"] },
         "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
       }
     },

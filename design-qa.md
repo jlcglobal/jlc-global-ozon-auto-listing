@@ -50,3 +50,42 @@
 - [P3] 现有工作台顶栏占用约64px，高度比设计稿略紧；这是保留现有全局模式开关和共享工作台导航的有意差异。
 
 final result: passed
+
+---
+
+# 2026-07-14 全站未来工作台 Design QA
+
+- approved direction: `/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/desktop-default.png`
+- real implementation: `/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-after/08-product-review.png`
+- side-by-side comparison: `/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-vs-approved.png`
+- before-state contact sheet: `/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-before/contact-sheet.png`
+- browser validation report: `/Users/apple/Documents/crossborder-ai-factory/prototypes/future-production-workbench/qa-artifacts/real-after/validation-results.json`
+- desktop viewport: `1440 × 1080`
+- mobile viewport: `390 × 844`
+
+## Findings
+
+最终复查没有剩余 P0、P1 或 P2 问题。
+
+- 视觉一致性：真实工作台沿用选定方案的浅灰画布、紫色图标轨道、白色圆角面板、三栏生产区和深色底部命令台；不使用渐变或代码绘制图标。
+- 业务适配：预览检查保留真实商品图、7 个资料面板、SKU/售价、类目属性、店铺发布状态、风险时间线、图片替换与重做入口，没有增加业务功能。
+- 全站覆盖：采集箱、选品与关键词、需要处理、已上架商品、财务中心、店铺设置、系统设置均使用同一套设计变量与导航骨架。
+- 响应式：桌面三栏保持首屏主操作可见；390px 下图片工作区和资料面板改为纵向可滚动，编辑功能没有因缩窄而隐藏。
+- 数据真实性：页面使用当前 P000001 的真实本地图片和真实接口数据；修正了结构化重量被显示为 `[object Object]` 的界面问题。
+
+## Primary interactions tested
+
+- 7 个核心导航页逐一打开并进入激活状态。
+- 从已上架商品卡片进入真实预览检查页。
+- 资料、图片、SKU、价格、类目、店铺、风险 7 个面板逐一切换。
+- 图片前后切换、缩略图选择与提示词编辑层打开/关闭；未执行重生成、替换、删除或上传。
+- 浏览器控制台错误：0；页面运行错误：0。
+- Ozon 写接口：0；库存接口：0；批次启动：0。
+
+## Regression verification
+
+- JavaScript 语法检查：通过。
+- 相关 Python 回归测试：98 项通过。
+- 真实浏览器断言与桌面/移动截图验收：通过。
+
+final result: passed

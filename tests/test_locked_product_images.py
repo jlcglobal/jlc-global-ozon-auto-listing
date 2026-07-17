@@ -8,7 +8,7 @@ from scripts.image_qc import inspect_images, load_json
 from scripts.style_selector import ROOT
 
 
-@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
+@unittest.skipUnless((ROOT / "products/P000014/input/source.json").is_file(), "optional runtime product fixture is not installed")
 class LockedProductImageTest(unittest.TestCase):
     def setUp(self):
         self.product_dir = ROOT / "products/P000014"

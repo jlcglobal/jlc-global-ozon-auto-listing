@@ -1,0 +1,399 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900002",
+  "source_refs": [
+    "test-data/manual-input/P900002/source.json",
+    "test-data/manual-output/P900002/product-analysis.json",
+    "test-data/manual-output/P900002/product-positioning.json",
+    "test-data/manual-output/P900002/style-profile.json",
+    "test-data/manual-output/P900002/copy-ru.json",
+    "test-data/manual-output/P900002/ozon-attributes-final.json"
+  ],
+  "product_understanding": {
+    "title_cn": "透明冰箱食品收纳盒，带盖和前置把手，3L/5L/6L",
+    "title_ru": "Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л",
+    "category_path": [
+      "家居园艺",
+      "食品储藏",
+      "冰箱收纳盒"
+    ],
+    "selected_skus": [
+      {
+        "sku_id": "fridge-organizer-3l",
+        "name": "3L小号款",
+        "options": [
+          {
+            "name_cn": "容量",
+            "value_cn": "3L",
+            "source": "user_confirmed"
+          },
+          {
+            "name_cn": "颜色",
+            "value_cn": "透明",
+            "source": "user_confirmed"
+          }
+        ]
+      },
+      {
+        "sku_id": "fridge-organizer-5l",
+        "name": "5L中号款",
+        "options": [
+          {
+            "name_cn": "容量",
+            "value_cn": "5L",
+            "source": "user_confirmed"
+          },
+          {
+            "name_cn": "颜色",
+            "value_cn": "透明",
+            "source": "user_confirmed"
+          }
+        ]
+      },
+      {
+        "sku_id": "fridge-organizer-6l",
+        "name": "6L大号款",
+        "options": [
+          {
+            "name_cn": "容量",
+            "value_cn": "6L",
+            "source": "user_confirmed"
+          },
+          {
+            "name_cn": "颜色",
+            "value_cn": "透明",
+            "source": "user_confirmed"
+          }
+        ]
+      }
+    ],
+    "verified_attributes": [
+      {
+        "name": "Бренд",
+        "value": "Нет бренда",
+        "source": "project_rule",
+        "evidence": []
+      },
+      {
+        "name": "Тип",
+        "value": "Органайзер для холодильника",
+        "source": "locked_category",
+        "evidence": []
+      },
+      {
+        "name": "Материал",
+        "value": "полипропилен (PP5)",
+        "source": "user_confirmed",
+        "evidence": []
+      },
+      {
+        "name": "Цвет",
+        "value": "прозрачный",
+        "source": "user_confirmed",
+        "evidence": []
+      },
+      {
+        "name": "Объем",
+        "value": [
+          "3 л",
+          "5 л",
+          "6 л"
+        ],
+        "source": "user_confirmed_skus",
+        "evidence": []
+      },
+      {
+        "name": "Форма",
+        "value": "прямоугольная",
+        "source": "visible_inference",
+        "evidence": []
+      },
+      {
+        "name": "Количество в комплекте",
+        "value": 1,
+        "source": "user_confirmed",
+        "evidence": []
+      },
+      {
+        "name": "Особенности",
+        "value": [
+          "с крышкой",
+          "с ручкой"
+        ],
+        "source": "user_confirmed",
+        "evidence": []
+      },
+      {
+        "name": "Назначение",
+        "value": "хранение продуктов в холодильнике",
+        "source": "user_confirmed",
+        "evidence": []
+      },
+      {
+        "name": "Страна-изготовитель",
+        "value": "Китай",
+        "source": "project_rule",
+        "evidence": []
+      },
+      {
+        "name": "Комплектация",
+        "value": "органайзер выбранного объёма — 1 шт.",
+        "source": "user_confirmed",
+        "evidence": []
+      },
+      {
+        "name": "Вид выпуска товара",
+        "value": "фабричное производство",
+        "source": "source_platform",
+        "evidence": []
+      }
+    ]
+  },
+  "product_positioning": {
+    "target_customer": "希望让冰箱更整齐、快速看到食材并按容量选择收纳盒的俄罗斯家庭用户。",
+    "usage_scenarios": [
+      "3L用于小份谷物、零食或配料",
+      "5L用于蔬果和中等份量食品",
+      "6L用于体积较大的蔬果或更多食材"
+    ],
+    "purchase_reasons": [
+      {
+        "text": "透明盒体让内容物一目了然。",
+        "claim_type": "fact",
+        "source_refs": [
+          "input/source.json#/product_attributes"
+        ]
+      },
+      {
+        "text": "盖子闭合后减少不同食品气味互相影响。",
+        "claim_type": "fact",
+        "source_refs": [
+          "input/source.json#/product_attributes"
+        ]
+      },
+      {
+        "text": "前置把手便于从冰箱层架抽取。",
+        "claim_type": "fact",
+        "source_refs": [
+          "input/source.json#/product_attributes"
+        ]
+      },
+      {
+        "text": "3L、5L、6L三种容量适配不同食材和空间。",
+        "claim_type": "fact",
+        "source_refs": [
+          "input/source.json#/skus"
+        ]
+      },
+      {
+        "text": "Содержимое видно сразу — проще поддерживать порядок.",
+        "claim_type": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json",
+          "test-data/manual-output/P900002/product-analysis.json"
+        ]
+      },
+      {
+        "text": "3, 5 или 6 л для разных продуктов и полок.",
+        "claim_type": "fact",
+        "source_refs": [
+          "test-data/manual-input/P900002/source.json",
+          "test-data/manual-output/P900002/product-analysis.json"
+        ]
+      }
+    ],
+    "priority_order": [
+      "透明盒体让内容物一目了然。",
+      "盖子闭合后减少不同食品气味互相影响。",
+      "前置把手便于从冰箱层架抽取。",
+      "3L、5L、6L三种容量适配不同食材和空间。",
+      "Содержимое видно сразу — проще поддерживать порядок.",
+      "3, 5 или 6 л для разных продуктов и полок."
+    ]
+  },
+  "visual_style": {
+    "style_family": "fresh_fridge_organization",
+    "style_direction": "把透明盒体、盖子和前置把手作为视觉记忆，表现冰箱分区后的清爽秩序。",
+    "mood": "清新、明亮、可信、有生活温度",
+    "palette": "透明商品配冷白和浅蓝，蔬果提供自然绿色与红色点缀。",
+    "lighting": "柔和冷白侧光，突出透明材质边缘并保留真实反射",
+    "composition": "每张图只回答一个购买问题，主图突出商品，详情图交替使用场景、结构和对比",
+    "typography": "俄文短标题加一行利益点，不使用固定黑框或空白卡片",
+    "anti_template_rule": "禁止纯白底、孤立抠图、通用海报、重复构图和只换背景"
+  },
+  "image_roles": [
+    {
+      "index": 1,
+      "role_id": "core_benefit",
+      "image_type": "benefit",
+      "commercial_purpose": "核心卖点",
+      "buyer_question": "为什么它能让冰箱更整齐？",
+      "russian_text": [
+        "ПОРЯДОК В ХОЛОДИЛЬНИКЕ",
+        "СОДЕРЖИМОЕ ВИДНО СРАЗУ"
+      ],
+      "operation": "edit_real_image",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "sku_scope": "shared",
+      "must_prove": "透明可视并用于冰箱分类收纳"
+    },
+    {
+      "index": 2,
+      "role_id": "seal_and_odor",
+      "image_type": "detail",
+      "commercial_purpose": "密封与防串味",
+      "buyer_question": "盖子带来的实际利益是什么？",
+      "russian_text": [
+        "КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО",
+        "МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ"
+      ],
+      "operation": "compose_from_real_images",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "sku_scope": "shared",
+      "must_prove": "用户确认密封、不易串味"
+    },
+    {
+      "index": 3,
+      "role_id": "transparent_structure",
+      "image_type": "feature",
+      "commercial_purpose": "透明盒体、盖子和前置把手结构",
+      "buyer_question": "结构是否符合我的使用习惯？",
+      "russian_text": [
+        "ПРОЗРАЧНЫЙ КОРПУС",
+        "КРЫШКА И ПЕРЕДНЯЯ РУЧКА"
+      ],
+      "operation": "compose_from_real_images",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "sku_scope": "shared",
+      "must_prove": "透明盒体、透明盖子和前置把手"
+    },
+    {
+      "index": 4,
+      "role_id": "scene_3l",
+      "image_type": "scene",
+      "commercial_purpose": "3L使用场景",
+      "buyer_question": "3L适合放什么？",
+      "russian_text": [
+        "3 Л · ДЛЯ НЕБОЛЬШИХ ПОРЦИЙ",
+        "КОМПАКТНО НА ПОЛКЕ"
+      ],
+      "operation": "edit_real_image",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-3l.png"
+      ],
+      "sku_scope": "shared",
+      "must_prove": "3L小号款和已确认尺寸"
+    },
+    {
+      "index": 5,
+      "role_id": "scene_5l",
+      "image_type": "usage",
+      "commercial_purpose": "5L使用场景",
+      "buyer_question": "5L在冰箱里如何使用？",
+      "russian_text": [
+        "5 Л · ДЛЯ ОВОЩЕЙ И УПАКОВОК",
+        "УДОБНО ДОСТАВАТЬ ЗА РУЧКУ"
+      ],
+      "operation": "edit_real_image",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-5l.png"
+      ],
+      "sku_scope": "shared",
+      "must_prove": "5L中号款和已确认尺寸"
+    },
+    {
+      "index": 6,
+      "role_id": "scene_6l",
+      "image_type": "problem_solution",
+      "commercial_purpose": "6L使用场景",
+      "buyer_question": "6L如何解决大份食材收纳？",
+      "russian_text": [
+        "6 Л · ДЛЯ ОБЪЁМНЫХ ПРОДУКТОВ",
+        "БОЛЬШЕ ПОРЯДКА ВНУТРИ"
+      ],
+      "operation": "edit_real_image",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+      ],
+      "sku_scope": "shared",
+      "must_prove": "6L大号款和已确认尺寸"
+    },
+    {
+      "index": 7,
+      "role_id": "sku_comparison",
+      "image_type": "comparison",
+      "commercial_purpose": "三款尺寸与容量对比",
+      "buyer_question": "哪个尺寸适合我的冰箱？",
+      "russian_text": [
+        "3 л: 14,5 × 14,5 × 12 см",
+        "5 л: 29 × 15,5 × 12 см",
+        "6 л: 29 × 15,5 × 15,5 см"
+      ],
+      "operation": "compose_from_real_images",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-3l.png",
+        "test-data/manual-input/P900002/sku-images/sku-5l.png",
+        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+      ],
+      "sku_scope": "shared",
+      "must_prove": "三SKU容量、尺寸和比例必须准确"
+    },
+    {
+      "index": 8,
+      "role_id": "purchase_notice",
+      "image_type": "disclaimer",
+      "commercial_purpose": "单个装与购买前说明",
+      "buyer_question": "下单前要确认什么？",
+      "russian_text": [
+        "1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ",
+        "ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ"
+      ],
+      "operation": "compose_from_real_images",
+      "source_references": [
+        "test-data/manual-input/P900002/sku-images/sku-3l.png",
+        "test-data/manual-input/P900002/sku-images/sku-5l.png",
+        "test-data/manual-input/P900002/sku-images/sku-6l.png"
+      ],
+      "sku_scope": "shared",
+      "must_prove": "每单1个并提醒核对尺寸"
+    }
+  ],
+  "preserve": [
+    "商品外形",
+    "真实颜色",
+    "材质观感",
+    "结构比例",
+    "SKU差异",
+    "商品数量",
+    "配件数量"
+  ],
+  "forbidden": [
+    "白底目录图作为默认风格",
+    "重新想象商品",
+    "虚构功能/认证/参数",
+    "空白框和占位卡片",
+    "中文或乱码",
+    "卖家水印"
+  ],
+  "generation_order": [
+    "俄文资料",
+    "创意策划",
+    "全部逐图提示词",
+    "每个SKU主图",
+    "8张共享详情图",
+    "技术硬质检",
+    "商品预览"
+  ],
+  "processing": {
+    "step": "ecommerce_creative_brief",
+    "status": "completed",
+    "generated_at": "2026-07-16T17:47:52+08:00",
+    "error": null
+  }
+}

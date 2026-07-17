@@ -1,0 +1,27 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>com.crossborder.ai-factory.workbench</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/zsh</string>
+    <string>/Users/apple/Documents/crossborder-ai-factory/scripts/run_workbench_service.sh</string>
+    <string>/Users/apple/Documents/crossborder-ai-factory/.venv/bin/python3</string>
+    <string>/Users/apple/Documents/crossborder-ai-factory</string>
+  </array>
+  <key>WorkingDirectory</key>
+  <string>/Users/apple/Documents/crossborder-ai-factory</string>
+  <key>RunAtLoad</key>
+  <true/>
+  <key>KeepAlive</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Interactive</string>
+  <key>StandardOutPath</key>
+  <string>/Users/apple/Documents/crossborder-ai-factory/logs/workbench-launchd.log</string>
+  <key>StandardErrorPath</key>
+  <string>/Users/apple/Documents/crossborder-ai-factory/logs/workbench-launchd-error.log</string>
+</dict>
+</plist>

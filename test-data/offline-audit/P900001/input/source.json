@@ -1,0 +1,534 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900001",
+  "source_platform": "1688",
+  "source_url": "offline://manual-food-container-sample",
+  "captured_at": "2026-07-16T07:12:55+08:00",
+  "title_cn": "不锈钢分格保温餐盒，便携送餐与食品运输",
+  "supplier_name": "unknown",
+  "product_attributes": [
+    {
+      "name_cn": "【平台活动下价格】",
+      "value_cn": "【非平台活动下价格】 【发布价】 【全网销量】",
+      "source": "candidate_selector",
+      "source_text": "【平台活动下价格】 活动前价格：（1）非分销场景下，指平台活动（不含分销场景的活动）预热期（若无预热期，则为爆发期）前的商品销售价格；（2）分销场景下，专指分销活动预热期（若无预热期，则为爆发期）前的商品销售价格。 前述价格未计算平台发放的各种采购津贴、跨店券、红包等优惠，未计算商家设置的满减优惠、优惠券、店铺返利金、店铺会员折扣以及L会员价、商家设置的指定人群单品优惠活动等各种优惠；该价格会计算其他非平台活动下的各种优惠（包括商家自行设置的非指定人群的单品优惠等，最终以商家的自行设置为准）。前述商品销售价格指商品页面当日展示的标价；若当日商家多次调整销售价格的，取当日最后展示的销售价格。 【"
+    },
+    {
+      "name_cn": "活动前价格",
+      "value_cn": "（1）非分销场景下，指平台活动（不含分销场景的活动）预热期（若无预热期，则为爆发期）前的商品销售价格；（2）分销场景下，专指分销活动预热期（若无预热期，则为爆发期）前的商品销售价格。",
+      "source": "candidate_selector",
+      "source_text": "活动前价格：（1）非分销场景下，指平台活动（不含分销场景的活动）预热期（若无预热期，则为爆发期）前的商品销售价格；（2）分销场景下，专指分销活动预热期（若无预热期，则为爆发期）前的商品销售价格。"
+    },
+    {
+      "name_cn": "划线价格",
+      "value_cn": "指商家自营销活动场景下的商品价格，该价格不包含平台的各种优惠活动。可能是商品的销售指导价或该商品的曾经展示过的销售价等，并非原价，仅供参考。",
+      "source": "candidate_selector",
+      "source_text": "划线价格：指商家自营销活动场景下的商品价格，该价格不包含平台的各种优惠活动。可能是商品的销售指导价或该商品的曾经展示过的销售价等，并非原价，仅供参考。"
+    },
+    {
+      "name_cn": "未划线价格",
+      "value_cn": "商品在1688平台上由商家自行设置的销售标价，具体的成交价格根据商家设置的各种优惠活动发生变化，最终以订单结算页价格为准。",
+      "source": "candidate_selector",
+      "source_text": "未划线价格：商品在1688平台上由商家自行设置的销售标价，具体的成交价格根据商家设置的各种优惠活动发生变化，最终以订单结算页价格为准。"
+    },
+    {
+      "name_cn": "同款",
+      "value_cn": "指商品名称、外观、规格、成分、颜色、材质、功效、功能等多维度要素具有高度的相似性，但不视为二者具有完全相同的品牌、品质、功效或功能。",
+      "source": "candidate_selector",
+      "source_text": "同款：指商品名称、外观、规格、成分、颜色、材质、功效、功能等多维度要素具有高度的相似性，但不视为二者具有完全相同的品牌、品质、功效或功能。"
+    },
+    {
+      "name_cn": "*注",
+      "value_cn": "1、前述说明仅适用于价格比较下的场景。 2、活动前的时间通常为预热期/爆发期的前一天，但因数据的延迟性，取价时间可能会发生改变，最终以前述展示的具体时间和所对应的商品价格为准。",
+      "source": "candidate_selector",
+      "source_text": "*注： 1、前述说明仅适用于价格比较下的场景。 2、活动前的时间通常为预热期/爆发期的前一天，但因数据的延迟性，取价时间可能会发生改变，最终以前述展示的具体时间和所对应的商品价格为准。"
+    }
+  ],
+  "price_information": {
+    "currency": "CNY",
+    "price_ranges": [
+      {
+        "min_quantity": null,
+        "price_cny": 315,
+        "raw_text": "315.00"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 335,
+        "raw_text": "335.00"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 295,
+        "raw_text": "295.00"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 314.8,
+        "raw_text": "热销款券后¥314.80首件预估到手价¥295.00¥335.001个起批 已售500+个"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 314.8,
+        "raw_text": "热销款券后¥314.80首件预估到手价¥295.00¥335.001个起批"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 314.8,
+        "raw_text": "热销款券后¥314.80首件预估到手价"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 314.8,
+        "raw_text": "热销款券后¥314.80"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 314.8,
+        "raw_text": "¥314.80"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 295,
+        "raw_text": "¥295.00¥335.001个起批"
+      },
+      {
+        "min_quantity": null,
+        "price_cny": 295,
+        "raw_text": "¥295.00¥335.00"
+      }
+    ],
+    "raw_text": "315.00 | 335.00 | 295.00 | 热销款券后¥314.80首件预估到手价¥295.00¥335.001个起批 已售500+个 | 热销款券后¥314.80首件预估到手价¥295.00¥335.001个起批 | 热销款券后¥314.80首件预估到手价 | 热销款券后¥314.80 | ¥314.80 | ¥295.00¥335.001个起批 | ¥295.00¥335.00"
+  },
+  "minimum_order_quantity": {
+    "value": 1,
+    "unit": "个",
+    "raw_text": "1个起批"
+  },
+  "main_images": [
+    {
+      "id": "main-001",
+      "original_url": "https://cbu01.alicdn.com/img/ibank/O1CN01lLNoBL1Xb1nIBatDn_!!2204171002941-0-cib.jpg_.webp",
+      "local_path": "products/P900001/input/main-images/main-001.webp",
+      "source": "main_gallery",
+      "source_order": 0,
+      "download_status": "downloaded",
+      "sha256": "3d1ba94d91d84f631a7dda557ab4127c093df10d70e537ec6a2af1f301b9a70e",
+      "content_duplicate_of": "unknown",
+      "error": "unknown"
+    },
+    {
+      "id": "main-002",
+      "original_url": "https://cbu01.alicdn.com/img/ibank/O1CN01bKsdAl1Xb1nBMsW2j_!!2204171002941-0-cib.jpg_.webp",
+      "local_path": "products/P900001/input/main-images/main-002.webp",
+      "source": "main_gallery",
+      "source_order": 1,
+      "download_status": "downloaded",
+      "sha256": "5998ffde01d9e3b45eea5a0c6738522e10ea3c311e994a9d949f6732679963e0",
+      "content_duplicate_of": "unknown",
+      "error": "unknown"
+    },
+    {
+      "id": "main-003",
+      "original_url": "https://cbu01.alicdn.com/img/ibank/O1CN015bb3aq1Xb1nEng3f0_!!2204171002941-0-cib.jpg_.webp",
+      "local_path": "products/P900001/input/main-images/main-003.webp",
+      "source": "main_gallery",
+      "source_order": 2,
+      "download_status": "downloaded",
+      "sha256": "f36fde1ca3c977817ac3965bf410a47f63f40dd255c0e4d07395f7e371405a5c",
+      "content_duplicate_of": "unknown",
+      "error": "unknown"
+    },
+    {
+      "id": "main-004",
+      "original_url": "https://cbu01.alicdn.com/img/ibank/O1CN01VnIFIL1Xb1nE4r9rW_!!2204171002941-0-cib.jpg_.webp",
+      "local_path": "products/P900001/input/main-images/main-004.webp",
+      "source": "main_gallery",
+      "source_order": 3,
+      "download_status": "downloaded",
+      "sha256": "3203a880e0f8cbea765b458fc83669a17eb87eb465136bc876bb39c9d68d1687",
+      "content_duplicate_of": "unknown",
+      "error": "unknown"
+    },
+    {
+      "id": "main-005",
+      "original_url": "https://cbu01.alicdn.com/img/ibank/O1CN0186DPU51Xb1nGA9cz7_!!2204171002941-0-cib.jpg_.webp",
+      "local_path": "products/P900001/input/main-images/main-005.webp",
+      "source": "main_gallery",
+      "source_order": 4,
+      "download_status": "downloaded",
+      "sha256": "36638a74fd63dc028019e7900e722da5f3f2f5fdf20b4622e3571be33042a97e",
+      "content_duplicate_of": "unknown",
+      "error": "unknown"
+    }
+  ],
+  "detail_images": [],
+  "sku_property_groups": [
+    {
+      "prop_id": "dom-prop-1",
+      "prop_name": "颜色",
+      "values": [
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "双格¥315库存250个单格¥295库存241个三格¥335库存279个",
+          "value_name": "双格¥315库存250个单格¥295库存241个三格¥335库存279个",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01M4dCBn1Xb1nDlTMtQ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "双格¥315库存250个单格¥295库存241个三格¥335库存279个",
+            "class": "feature-item",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "双格¥315库存250个",
+          "value_name": "双格¥315库存250个",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01M4dCBn1Xb1nDlTMtQ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "双格¥315库存250个",
+            "class": "expand-view-item v-flex",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "双格",
+          "value_name": "双格",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01M4dCBn1Xb1nDlTMtQ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "双格",
+            "class": "item-label",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "¥315",
+          "value_name": "¥315",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01M4dCBn1Xb1nDlTMtQ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "¥315",
+            "class": "item-price-stock",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "库存250个",
+          "value_name": "库存250个",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01M4dCBn1Xb1nDlTMtQ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "库存250个",
+            "class": "item-price-stock",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "单格¥295库存241个",
+          "value_name": "单格¥295库存241个",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01fb0omA1Xb1nJQ6bJu_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "单格¥295库存241个",
+            "class": "expand-view-item v-flex",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "单格",
+          "value_name": "单格",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01fb0omA1Xb1nJQ6bJu_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "单格",
+            "class": "item-label",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "¥295",
+          "value_name": "¥295",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01fb0omA1Xb1nJQ6bJu_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "¥295",
+            "class": "item-price-stock",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "库存241个",
+          "value_name": "库存241个",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01fb0omA1Xb1nJQ6bJu_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "库存241个",
+            "class": "item-price-stock",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "三格¥335库存279个",
+          "value_name": "三格¥335库存279个",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01ewVZUk1Xb1nFbCIwJ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "三格¥335库存279个",
+            "class": "expand-view-item v-flex",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "三格",
+          "value_name": "三格",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01ewVZUk1Xb1nFbCIwJ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "三格",
+            "class": "item-label",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "¥335",
+          "value_name": "¥335",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01ewVZUk1Xb1nFbCIwJ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "¥335",
+            "class": "item-price-stock",
+            "dataset": {}
+          }
+        },
+        {
+          "prop_id": "dom-prop-1",
+          "prop_name": "颜色",
+          "value_id": "库存279个",
+          "value_name": "库存279个",
+          "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01ewVZUk1Xb1nFbCIwJ_!!2204171002941-0-cib.jpg_sum.jpg",
+          "image_source": "sku_property_value",
+          "source_data": {
+            "text": "库存279个",
+            "class": "item-price-stock",
+            "dataset": {}
+          }
+        }
+      ]
+    }
+  ],
+  "skus": [
+    {
+      "sku_id": "5477283792300",
+      "sku_name": "单格",
+      "option_values": [
+        {
+          "name_cn": "规格1",
+          "value_cn": "单格",
+          "source": "script_init_data",
+          "source_text": "单格"
+        }
+      ],
+      "price": 295,
+      "purchase_price": 295,
+      "price_source": "sku_specific_price",
+      "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01fb0omA1Xb1nJQ6bJu_!!2204171002941-0-cib.jpg_sum.jpg",
+      "local_image_path": "products/P900001/input/sku-images/sku-001.jpg",
+      "variant_image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01fb0omA1Xb1nJQ6bJu_!!2204171002941-0-cib.jpg_sum.jpg",
+      "variant_local_image_path": "products/P900001/input/sku-images/sku-001.jpg",
+      "variant_image_source": "sku_property_value",
+      "variant_image_prop_id": "unknown",
+      "variant_image_value_id": "单格",
+      "variant_image_value_name": "单格",
+      "sku_image_missing": false,
+      "availability": "selected",
+      "selection_order": 1,
+      "source_data": {
+        "specId": "98657bd3d36f78eb165b778c4a7977a9",
+        "specAttrs": "单格",
+        "price": "295.00",
+        "saleCount": 0,
+        "discountPrice": "295.00",
+        "canBookCount": 241,
+        "skuId": 5477283792300,
+        "isPromotionSku": false,
+        "source": "script_init_data",
+        "has_real_sku_id": true,
+        "sku_image_source": "sku_property_value",
+        "sku_image_prop_name": "颜色",
+        "sku_image_prop_value": "单格",
+        "sku_image_prop_value_id": "单格"
+      }
+    },
+    {
+      "sku_id": "5477283792301",
+      "sku_name": "双格",
+      "option_values": [
+        {
+          "name_cn": "规格1",
+          "value_cn": "双格",
+          "source": "script_init_data",
+          "source_text": "双格"
+        }
+      ],
+      "price": 315,
+      "purchase_price": 315,
+      "price_source": "sku_specific_price",
+      "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01M4dCBn1Xb1nDlTMtQ_!!2204171002941-0-cib.jpg_sum.jpg",
+      "local_image_path": "products/P900001/input/sku-images/sku-002.jpg",
+      "variant_image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01M4dCBn1Xb1nDlTMtQ_!!2204171002941-0-cib.jpg_sum.jpg",
+      "variant_local_image_path": "products/P900001/input/sku-images/sku-002.jpg",
+      "variant_image_source": "sku_property_value",
+      "variant_image_prop_id": "unknown",
+      "variant_image_value_id": "双格",
+      "variant_image_value_name": "双格",
+      "sku_image_missing": false,
+      "availability": "selected",
+      "selection_order": 2,
+      "source_data": {
+        "specId": "b015570405754671942c14ef74a69aec",
+        "specAttrs": "双格",
+        "price": "315.00",
+        "saleCount": 0,
+        "discountPrice": "315.00",
+        "canBookCount": 250,
+        "skuId": 5477283792301,
+        "isPromotionSku": false,
+        "source": "script_init_data",
+        "has_real_sku_id": true,
+        "sku_image_source": "sku_property_value",
+        "sku_image_prop_name": "颜色",
+        "sku_image_prop_value": "双格",
+        "sku_image_prop_value_id": "双格"
+      }
+    },
+    {
+      "sku_id": "5477283792302",
+      "sku_name": "三格",
+      "option_values": [
+        {
+          "name_cn": "规格1",
+          "value_cn": "三格",
+          "source": "script_init_data",
+          "source_text": "三格"
+        }
+      ],
+      "price": 335,
+      "purchase_price": 335,
+      "price_source": "sku_specific_price",
+      "image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01ewVZUk1Xb1nFbCIwJ_!!2204171002941-0-cib.jpg_sum.jpg",
+      "local_image_path": "products/P900001/input/sku-images/sku-003.jpg",
+      "variant_image_url": "https://cbu01.alicdn.com/img/ibank/O1CN01ewVZUk1Xb1nFbCIwJ_!!2204171002941-0-cib.jpg_sum.jpg",
+      "variant_local_image_path": "products/P900001/input/sku-images/sku-003.jpg",
+      "variant_image_source": "sku_property_value",
+      "variant_image_prop_id": "unknown",
+      "variant_image_value_id": "三格",
+      "variant_image_value_name": "三格",
+      "sku_image_missing": false,
+      "availability": "selected",
+      "selection_order": 3,
+      "source_data": {
+        "specId": "27369902b26dcd2ecc8836e2d82e9dfc",
+        "specAttrs": "三格",
+        "price": "335.00",
+        "saleCount": 0,
+        "discountPrice": "335.00",
+        "canBookCount": 279,
+        "skuId": 5477283792302,
+        "isPromotionSku": false,
+        "source": "script_init_data",
+        "has_real_sku_id": true,
+        "sku_image_source": "sku_property_value",
+        "sku_image_prop_name": "颜色",
+        "sku_image_prop_value": "三格",
+        "sku_image_prop_value_id": "三格"
+      }
+    }
+  ],
+  "raw_capture_file": "products/P000002/input/raw-snapshot.json",
+  "capture_warnings": [
+    "supplier_name: No supplier candidate found",
+    "detail_images: No detail image candidates found in detail area"
+  ],
+  "field_diagnostics": [
+    {
+      "field": "title_cn",
+      "strategy": "script_init_data",
+      "hit": true,
+      "failure_reason": "unknown",
+      "candidate_count": 2
+    },
+    {
+      "field": "supplier_name",
+      "strategy": "candidate_selector",
+      "hit": false,
+      "failure_reason": "No supplier candidate found",
+      "candidate_count": 0
+    },
+    {
+      "field": "product_attributes",
+      "strategy": "candidate_selector",
+      "hit": true,
+      "failure_reason": "unknown",
+      "candidate_count": 6
+    },
+    {
+      "field": "price_information",
+      "strategy": "script_init_data",
+      "hit": true,
+      "failure_reason": "unknown",
+      "candidate_count": 77
+    },
+    {
+      "field": "minimum_order_quantity",
+      "strategy": "text_inference",
+      "hit": true,
+      "failure_reason": "unknown",
+      "candidate_count": 1
+    },
+    {
+      "field": "main_images",
+      "strategy": "candidate_selector",
+      "hit": true,
+      "failure_reason": "unknown",
+      "candidate_count": 5
+    },
+    {
+      "field": "detail_images",
+      "strategy": "dom_semantic",
+      "hit": false,
+      "failure_reason": "No detail image candidates found in detail area",
+      "candidate_count": 0
+    },
+    {
+      "field": "skus",
+      "strategy": "script_init_data",
+      "hit": true,
+      "failure_reason": "unknown",
+      "candidate_count": 3
+    }
+  ]
+}

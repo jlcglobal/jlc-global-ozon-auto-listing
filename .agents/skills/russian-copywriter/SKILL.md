@@ -1,3 +1,8 @@
+---
+name: russian-copywriter
+description: Generate source-grounded Russian Ozon titles, selling points, and descriptions.
+---
+
 # russian-copywriter
 
 ## 触发条件

@@ -17,7 +17,7 @@ class EdgeExtensionPackagingTest(unittest.TestCase):
                 first_hash = hashlib.sha256(output.read_bytes()).hexdigest()
                 output = package_edge_extension.package_extension()
                 second_hash = hashlib.sha256(output.read_bytes()).hexdigest()
-            self.assertEqual(output.name, "1688商品采集插件-0.4.7.zip")
+            self.assertEqual(output.name, "1688商品采集插件-0.4.11.zip")
             self.assertEqual(first_hash, second_hash)
             with zipfile.ZipFile(output) as archive:
                 names = set(archive.namelist())

@@ -1,3 +1,8 @@
+---
+name: ozon-packager
+description: Prepare validated Ozon product package artifacts without inventory fields.
+---
+
 # ozon-packager
 
 ## 触发条件

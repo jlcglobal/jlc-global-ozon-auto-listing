@@ -13,6 +13,7 @@ from jsonschema import Draft202012Validator
 
 from scripts.pipeline_runtime import complete_step, create_batch, load_json
 from scripts.pipeline_runtime import queue_product
+from scripts.production_input_guard import write_source_manifest
 from scripts.run_batch import run_one_step, run_registered_process
 
 
@@ -35,13 +36,34 @@ def write_json(path: Path, value: dict) -> None:
 
 def make_product(root: Path, number: int, sku_count: int, status: str = "COLLECTED") -> Path:
     product_id = f"P{number:06d}"
+    collection_id = f"COL-TEST-{number:08d}"
     product_dir = root / "products" / product_id
     write_json(product_dir / "input/source.json", {
         "product_id": product_id,
+        "collection_id": collection_id,
+        "source_kind": "workbench_collection",
+        "source_path": f"products/{product_id}/input/source.json",
         "title_cn": f"真实结构商品{number}",
         "source_url": f"https://detail.1688.com/offer/{number}.html",
         "captured_at": "2026-07-11T10:00:00+08:00",
+        "collected_at": "2026-07-11T10:00:00+08:00",
+        "raw_capture_file": f"products/{product_id}/input/raw-snapshot.json",
+        "main_images": [],
+        "detail_images": [],
         "skus": [{"sku_id": f"{number}-{index}"} for index in range(sku_count)],
+    })
+    write_json(product_dir / "input/raw-snapshot.json", {
+        "product_id": product_id,
+        "collection_id": collection_id,
+        "source_kind": "workbench_collection",
+    })
+    write_json(product_dir / "input/category-selection.json", {
+        "product_id": product_id,
+        "collection_id": collection_id,
+        "category_id": 17027905,
+        "type_id": 92014,
+        "category_path": ["测试类目"],
+        "selection_status": "confirmed",
     })
     write_json(product_dir / "status.json", {
         "status": status,
@@ -59,6 +81,7 @@ def make_product(root: Path, number: int, sku_count: int, status: str = "COLLECT
     image = product_dir / "input/main-images/main-001.jpg"
     image.parent.mkdir(parents=True, exist_ok=True)
     image.write_bytes(b"image")
+    write_source_manifest(product_dir)
     return product_dir
 
 
@@ -185,6 +208,7 @@ class CollectionInboxTest(unittest.TestCase):
             for step in (
                 "validate_source", "product_analysis", "category_match", "variant_rules",
                 "measurements", "offer_exists_check", "upload_feasibility", "product_positioning",
+                "ecommerce_design",
             ):
                 complete_step(product_dir, step)
 
@@ -210,7 +234,7 @@ class CollectionInboxTest(unittest.TestCase):
             self.assertEqual(result["outcome"], "completed_from_artifact")
             status = load_json(product_dir / "status.json")
             self.assertIn("russian_copy", status["completed_steps"])
-            self.assertEqual(status["next_action"], "style_selector")
+            self.assertEqual(status["next_action"], "marketplace_content")
             self.assertIn("只完成russian_copy", captured["prompt"])
             self.assertNotIn("image_generation必须", captured["prompt"])
 
@@ -268,6 +292,7 @@ class CollectionInboxTest(unittest.TestCase):
             new_source = load_json(new / "input/source.json")
             new_source["source_url"] = old_source["source_url"]
             write_json(new / "input/source.json", new_source)
+            write_source_manifest(new)
             batch = create_batch(root)
             self.assertEqual(batch["product_count"], 1)
             self.assertEqual(batch["products"][0]["product_id"], "P000002")
@@ -369,7 +394,8 @@ class CollectionInboxTest(unittest.TestCase):
         self.assertFalse((static_dir / "inbox.js").exists())
         html = (static_dir / "workbench.html").read_text(encoding="utf-8")
         script = (static_dir / "workbench.js").read_text(encoding="utf-8")
-        self.assertIn("我的采集箱", html)
+        self.assertIn("工作室商品", html)
+        self.assertIn("所有电脑共享商品与任务", html)
         self.assertIn("运行可处理商品", script)
         self.assertIn("彻底删除", script)
 

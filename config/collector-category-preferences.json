@@ -3,10 +3,50 @@
   "favorites": [],
   "recent": [
     {
+      "category_id": 17028732,
+      "type_id": 92448,
+      "selected_at": "2026-07-16T03:49:47+08:00"
+    },
+    {
+      "category_id": 17027933,
+      "type_id": 97498,
+      "selected_at": "2026-07-15T22:36:38+08:00"
+    },
+    {
+      "category_id": 17027937,
+      "type_id": 970896147,
+      "selected_at": "2026-07-15T21:53:48+08:00"
+    },
+    {
+      "category_id": 17027937,
+      "type_id": 970992524,
+      "selected_at": "2026-07-15T21:49:20+08:00"
+    },
+    {
+      "category_id": 17028714,
+      "type_id": 93697,
+      "selected_at": "2026-07-14T22:31:15+08:00"
+    },
+    {
+      "category_id": 17027905,
+      "type_id": 92014,
+      "selected_at": "2026-07-14T22:29:04+08:00"
+    },
+    {
+      "category_id": 17027933,
+      "type_id": 92445,
+      "selected_at": "2026-07-14T16:38:47+08:00"
+    },
+    {
+      "category_id": 17039627,
+      "type_id": 94982,
+      "selected_at": "2026-07-13T17:46:19+08:00"
+    },
+    {
       "category_id": 17027933,
       "type_id": 93724,
       "selected_at": "2026-07-13T02:06:17+08:00"
     }
   ],
-  "updated_at": "2026-07-13T02:06:17+08:00"
+  "updated_at": "2026-07-16T03:49:47+08:00"
 }

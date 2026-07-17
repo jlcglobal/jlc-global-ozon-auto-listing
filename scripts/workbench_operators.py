@@ -20,6 +20,7 @@ from typing import Any, Dict, List, Optional, Tuple
 
 
 DEFAULT_OPERATOR_ID = "studio-owner"
+PBKDF2_ITERATIONS = 200_000
 
 
 def now_iso() -> str:
@@ -27,7 +28,30 @@ def now_iso() -> str:
 
 
 def code_hash(value: str) -> str:
-    return hashlib.sha256(value.encode("utf-8")).hexdigest()
+    salt = secrets.token_hex(16)
+    digest = hashlib.pbkdf2_hmac(
+        "sha256", value.encode("utf-8"), bytes.fromhex(salt), PBKDF2_ITERATIONS,
+    ).hex()
+    return f"pbkdf2_sha256${PBKDF2_ITERATIONS}${salt}${digest}"
+
+
+def code_matches(value: str, stored_hash: str) -> bool:
+    stored = str(stored_hash or "")
+    if stored.startswith("pbkdf2_sha256$"):
+        try:
+            _, raw_iterations, salt, expected = stored.split("$", 3)
+            iterations = int(raw_iterations)
+            if iterations < 100_000 or len(salt) != 32 or len(expected) != 64:
+                return False
+            actual = hashlib.pbkdf2_hmac(
+                "sha256", value.encode("utf-8"), bytes.fromhex(salt), iterations,
+            ).hex()
+            return secrets.compare_digest(actual, expected)
+        except (TypeError, ValueError):
+            return False
+    # Read legacy SHA-256 records so existing local members are not locked out.
+    legacy = hashlib.sha256(value.encode("utf-8")).hexdigest()
+    return secrets.compare_digest(legacy, stored)
 
 
 def _write_json(path: Path, value: Dict[str, Any]) -> None:
@@ -64,7 +88,10 @@ def _legacy_owner(root: Path) -> Dict[str, Any]:
         "display_name": "工作室负责人",
         "role": "owner",
         "enabled": True,
-        "access_code_hash": code_hash(access_code) if access_code else "",
+        # The legacy LAN config still contains the local plaintext code, so a
+        # fast compatibility hash avoids adding PBKDF2 latency to every
+        # loopback workbench request. New operator records always use PBKDF2.
+        "access_code_hash": hashlib.sha256(access_code.encode("utf-8")).hexdigest() if access_code else "",
         "created_at": "legacy-lan-access",
     }
 
@@ -112,11 +139,11 @@ def list_operators(root: Path) -> List[Dict[str, Any]]:
 
 
 def authenticate(root: Path, supplied_code: str) -> Optional[Dict[str, Any]]:
-    supplied_hash = code_hash(str(supplied_code or "")) if supplied_code else ""
+    supplied = str(supplied_code or "")
     for item in load_registry(root)["operators"]:
         if not item.get("enabled") or not item.get("access_code_hash"):
             continue
-        if secrets.compare_digest(supplied_hash, str(item["access_code_hash"])):
+        if supplied and code_matches(supplied, str(item["access_code_hash"])):
             return public_operator(item)
     return None
 

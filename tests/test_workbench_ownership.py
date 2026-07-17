@@ -75,29 +75,46 @@ class WorkbenchOwnershipTest(unittest.IsolatedAsyncioTestCase):
             "role": role, "enabled": True,
         })
 
-    def test_product_list_contains_only_current_owner(self):
+    def test_product_list_is_shared_across_devices(self):
         token = self.as_operator("alice")
         try:
             result = workbench.workbench_products(page_size=100)
         finally:
             workbench.CURRENT_OPERATOR.reset(token)
-        self.assertEqual([item["product_id"] for item in result["items"]], ["P000001"])
+        self.assertEqual({item["product_id"] for item in result["items"]}, {"P000001", "P000002"})
 
-    def test_cross_owner_product_is_hidden_as_not_found(self):
+    def test_product_from_another_legacy_owner_is_visible(self):
         token = self.as_operator("alice")
         try:
-            with self.assertRaises(HTTPException) as error:
-                workbench.workbench_product_dir("P000002")
+            product_dir = workbench.workbench_product_dir("P000002")
         finally:
             workbench.CURRENT_OPERATOR.reset(token)
-        self.assertEqual(error.exception.status_code, 404)
+        self.assertEqual(product_dir.name, "P000002")
 
-    def test_notifications_do_not_reveal_other_owner_failures(self):
+    def test_notifications_include_shared_failures(self):
         token = self.as_operator("alice")
         try:
             result = workbench.workbench_notifications()
         finally:
             workbench.CURRENT_OPERATOR.reset(token)
+        self.assertEqual(result["count"], 1)
+        self.assertEqual(result["items"][0]["product_id"], "P000002")
+
+    def test_notifications_use_effective_sqlite_status_not_stale_json_failure(self):
+        token = self.as_operator("alice")
+        original = workbench.effective_product_status
+
+        def effective(product_dir, status):
+            if product_dir.name == "P000002":
+                return {**status, "status": "PENDING_REMOTE", "progress": 99}
+            return original(product_dir, status)
+
+        try:
+            with patch.object(workbench, "effective_product_status", side_effect=effective):
+                result = workbench.workbench_notifications()
+        finally:
+            workbench.CURRENT_OPERATOR.reset(token)
+        self.assertEqual(result["count"], 0)
         self.assertEqual(result["items"], [])
 
     async def test_member_cannot_change_global_settings(self):

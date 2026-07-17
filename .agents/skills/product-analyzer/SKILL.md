@@ -1,3 +1,8 @@
+---
+name: product-analyzer
+description: Analyze captured 1688 product facts, unknowns, risks, and evidence.
+---
+
 # product-analyzer
 
 ## 触发条件

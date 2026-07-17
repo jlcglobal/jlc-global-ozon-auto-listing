@@ -15,6 +15,7 @@ SPEC.loader.exec_module(workbench)
 
 sys.path.insert(0, str(ROOT / "pricing-engine"))
 from pricing_engine.service import _apply_manual_confirmation, _apply_manual_measurements  # noqa: E402
+from scripts.production_input_guard import write_source_manifest  # noqa: E402
 
 
 def write_json(path: Path, value: dict) -> None:
@@ -43,9 +44,14 @@ def make_product(root: Path, product_id: str = "P000101") -> Path:
         path.write_bytes(b"image")
     write_json(product / "input/source.json", {
         "product_id": product_id,
+        "collection_id": f"COL-{product_id}-CONFIRM",
+        "source_kind": "workbench_collection",
+        "source_path": f"products/{product_id}/input/source.json",
         "title_cn": "圆形透明密封保鲜盒",
         "source_url": "https://detail.1688.com/offer/101.html",
+        "collected_at": "2026-07-13T08:00:00+08:00",
         "captured_at": "2026-07-13T08:00:00+08:00",
+        "raw_capture_file": f"products/{product_id}/input/raw-snapshot.json",
         "product_attributes": [{"name_cn": "材质", "value_cn": "PP塑料"}],
         "main_images": [{"local_path": str(main_path.relative_to(root))}],
         "detail_images": [{"local_path": str(detail_path.relative_to(root))}],
@@ -56,6 +62,7 @@ def make_product(root: Path, product_id: str = "P000101") -> Path:
         }],
     })
     write_json(product / "input/category-selection.json", {
+        "product_id": product_id,
         "category_id": 10, "type_id": 20,
         "category_path_zh": ["家居", "厨房用品", "食品储存容器"],
         "category_path": ["Дом", "Кухня", "Контейнеры"],
@@ -69,6 +76,8 @@ def make_product(root: Path, product_id: str = "P000101") -> Path:
         "product_id": product_id, "status": "COLLECTED", "current_step": "collect_source",
         "progress": 0, "steps": [], "warnings": [], "api_write_count": 0, "ozon": {},
     })
+    write_json(product / "input/raw-snapshot.json", {"product_id": product_id, "source": "workbench"})
+    write_source_manifest(product)
     return product
 
 
@@ -91,18 +100,78 @@ class BatchConfirmationTest(unittest.IsolatedAsyncioTestCase):
             patch.object(workbench, "materialize_active_experience"),
         )
 
-    async def test_manual_batch_waits_for_one_time_confirmation(self):
+    async def test_manual_workbench_batch_runs_immediately_then_waits_for_final_review(self):
         contexts = self.patches()
         with contexts[0], contexts[1], contexts[2], contexts[3], contexts[4], contexts[5], \
              patch.object(workbench, "workbench_settings", return_value={"auto_mode_enabled": False}), \
-             patch.object(workbench, "launch_or_enqueue_batch") as launch:
+             patch.object(workbench, "launch_or_enqueue_batch", return_value={"status": "started", "batch_id": "B-AUTO", "queue_position": 0}) as launch:
             result = await workbench.create_workbench_batch(FakeRequest({
                 "product_ids": ["P000101"], "store_ids": ["shop-a"],
             }))
-            batch = json.loads(workbench.batch_path(self.root, result["batch_id"]).read_text())
-        self.assertEqual(result["status"], "awaiting_confirmation")
-        self.assertEqual(batch["status"], "AWAITING_CONFIRMATION")
-        launch.assert_not_called()
+        self.assertEqual(result["status"], "started")
+        launch.assert_called_once()
+        saved = json.loads(next((self.root / "batches").glob("B-*/batch.json")).read_text())
+        self.assertFalse(saved["auto_upload"])
+        self.assertEqual(saved["status"], "QUEUED")
+        self.assertEqual(saved["review_mode"], "manual")
+
+    async def test_authorized_failure_resumes_without_second_confirmation(self):
+        write_json(self.product / "status.json", {
+            "product_id": "P000101", "status": "FAILED_HARD_BLOCKER",
+            "current_step": "image_plan", "failed_step": "image_plan", "progress": 59,
+            "task_authorized": True, "api_write_count": 0,
+            "ozon": {"upload_status": "not_started"},
+        })
+        retry_batch = {
+            "batch_id": "B-RETRY", "product_count": 1, "auto_upload": False,
+            "products": [{"product_id": "P000101"}],
+        }
+        with patch.object(workbench, "ROOT", self.root), \
+             patch.object(workbench, "PRODUCTS_DIR", self.root / "products"), \
+             patch.object(workbench, "validate_target_stores", return_value=["shop-a"]), \
+             patch.object(workbench, "connected_store_ids", return_value=["shop-a"]), \
+             patch.object(workbench, "reserved_product_batches", return_value={}), \
+             patch.object(workbench, "select_stores"), \
+             patch.object(workbench, "materialize_active_experience"), \
+             patch.object(workbench, "create_batch", return_value=retry_batch), \
+             patch.object(workbench, "save_batch_owner"), \
+             patch.object(workbench, "launch_or_enqueue_batch", return_value={"status": "started", "pid": 123, "queue_position": 0}) as launch, \
+             patch.object(workbench, "final_snapshot") as snapshot:
+            result = await workbench.run_single_workbench_product(
+                "P000101", FakeRequest({"store_ids": ["shop-a"], "auto_upload": False})
+            )
+        self.assertEqual(result["status"], "started")
+        self.assertTrue(result["resumed_from_checkpoint"])
+        launch.assert_called_once_with(retry_batch, "resume_failed_product")
+        snapshot.assert_not_called()
+
+    async def test_authorized_content_checkpoint_resumes_with_store_selection(self):
+        write_json(self.product / "status.json", {
+            "product_id": "P000101", "status": "CONTENT_GENERATED",
+            "current_step": "image_plan", "progress": 78,
+            "task_authorized": True, "api_write_count": 0,
+            "ozon": {"upload_status": "not_started"},
+        })
+        retry_batch = {
+            "batch_id": "B-CHECKPOINT", "product_count": 1, "auto_upload": False,
+            "products": [{"product_id": "P000101"}],
+        }
+        with patch.object(workbench, "ROOT", self.root), \
+             patch.object(workbench, "PRODUCTS_DIR", self.root / "products"), \
+             patch.object(workbench, "validate_target_stores", return_value=["shop-a"]), \
+             patch.object(workbench, "reserved_product_batches", return_value={}), \
+             patch.object(workbench, "select_stores") as select_stores, \
+             patch.object(workbench, "materialize_active_experience"), \
+             patch.object(workbench, "create_batch", return_value=retry_batch), \
+             patch.object(workbench, "save_batch_owner"), \
+             patch.object(workbench, "launch_or_enqueue_batch", return_value={"status": "started", "pid": 123, "queue_position": 0}) as launch:
+            result = await workbench.run_single_workbench_product(
+                "P000101", FakeRequest({"store_ids": ["shop-a"], "auto_upload": False})
+            )
+        self.assertEqual(result["status"], "started")
+        self.assertTrue(result["resumed_from_checkpoint"])
+        launch.assert_called_once_with(retry_batch, "resume_checkpoint")
+        select_stores.assert_called_once()
 
     def test_confirmation_prefers_sku_image_and_exposes_local_reference(self):
         batch = workbench.create_batch(self.root, ["P000101"], ["shop-a"], auto_upload=False)

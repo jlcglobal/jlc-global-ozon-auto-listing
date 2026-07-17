@@ -3,7 +3,7 @@
   "selection_policy": {
     "mode": "product_specific",
     "main_rule": "one_main_per_selected_sku",
-    "shared_detail_min": 6,
+    "shared_detail_min": 8,
     "shared_detail_max": 8,
     "base_decision_sequence": ["benefit", "problem_solution", "scene", "feature", "detail", "usage"],
     "conditional_slots": {
@@ -16,6 +16,7 @@
     "electronics_clean_tech": ["main"],
     "outdoor_rugged_lifestyle": ["main"],
     "kitchen_warm_home": ["main"],
+    "portable_kitchen_appliance_fresh": ["main"],
     "home_minimal_organized": ["main"],
     "pet_friendly_lifestyle": ["main"],
     "beauty_clean_premium": ["main"],

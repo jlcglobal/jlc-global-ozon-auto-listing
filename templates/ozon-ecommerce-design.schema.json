@@ -1,0 +1,126 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-ecommerce-design.schema.json",
+  "title": "Unified Ozon Ecommerce Design",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version", "product_id", "collection_id", "source_kind", "source_refs", "product_understanding",
+    "buyer_strategy", "listing", "attribute_plan", "sku_plan",
+    "visual_system", "main_images", "detail_images", "forbidden",
+    "processing"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "collection_id": {"type": "string", "pattern": "^COL-[A-Za-z0-9._-]{8,80}$"},
+    "source_kind": {"const": "workbench_collection"},
+    "source_refs": {"type": "array", "minItems": 4, "items": {"type": "string", "minLength": 1}},
+    "product_understanding": {"type": "object"},
+    "buyer_strategy": {"type": "object"},
+    "listing": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["seo_title_ru", "short_title_ru", "description_ru", "description_sections", "selling_points", "keywords", "hashtags"],
+      "properties": {
+        "seo_title_ru": {"type": "string", "minLength": 25},
+        "short_title_ru": {"type": "string", "minLength": 8},
+        "description_ru": {"type": "string", "minLength": 300},
+        "description_sections": {
+          "type": "object", "additionalProperties": false,
+          "required": ["product_value", "usage_scenarios", "core_advantages", "usage_method", "notices"],
+          "properties": {
+            "product_value": {"type": "string", "minLength": 30},
+            "usage_scenarios": {"type": "string", "minLength": 30},
+            "core_advantages": {"type": "string", "minLength": 30},
+            "usage_method": {"type": "string", "minLength": 30},
+            "notices": {"type": "string", "minLength": 30}
+          }
+        },
+        "selling_points": {"type": "array", "minItems": 3, "maxItems": 6, "items": {"$ref": "#/$defs/claim"}},
+        "keywords": {
+          "type": "object", "additionalProperties": false,
+          "required": ["primary", "long_tail", "scene", "excluded"],
+          "properties": {
+            "primary": {"$ref": "#/$defs/keywords"},
+            "long_tail": {"$ref": "#/$defs/keywords"},
+            "scene": {"$ref": "#/$defs/keywords"},
+            "excluded": {"$ref": "#/$defs/keywords"}
+          }
+        },
+        "hashtags": {"type": "array", "minItems": 30, "maxItems": 30, "items": {"type": "string", "pattern": "^#[А-Яа-яЁё0-9_]+$", "maxLength": 30}}
+      }
+    },
+    "attribute_plan": {"type": "array", "items": {"type": "object"}},
+    "sku_plan": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"$ref": "#/$defs/sku"}},
+    "visual_system": {"type": "object"},
+    "main_images": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"$ref": "#/$defs/image"}},
+    "detail_images": {"type": "array", "minItems": 8, "maxItems": 8, "items": {"$ref": "#/$defs/image"}},
+    "forbidden": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+    "processing": {
+      "type": "object", "additionalProperties": false,
+      "required": ["step", "status", "model_mode", "generated_at", "error"],
+      "properties": {
+        "step": {"const": "ecommerce_design"},
+        "status": {"const": "completed"},
+        "model_mode": {"const": "connected_codex"},
+        "generated_at": {"type": "string"},
+        "error": {"type": ["string", "null"]}
+      }
+    }
+  },
+  "$defs": {
+    "keywords": {"type": "array", "items": {"$ref": "#/$defs/keyword"}},
+    "keyword": {
+      "type": "object", "additionalProperties": false,
+      "required": ["text_ru", "intent", "source_refs", "metrics"],
+      "properties": {
+        "text_ru": {"type": "string", "minLength": 2},
+        "intent": {"type": "string", "minLength": 2},
+        "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string"}},
+        "metrics": {"type": "string", "const": "unknown"}
+      }
+    },
+    "claim": {
+      "type": "object", "additionalProperties": false,
+      "required": ["text_ru", "claim_type", "source_refs"],
+      "properties": {
+        "text_ru": {"type": "string", "minLength": 4},
+        "claim_type": {"type": "string", "enum": ["fact", "estimated", "supported_inference"]},
+        "source_refs": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "sku": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sku_id", "name_ru", "difference_ru", "specification", "source_image"],
+      "properties": {
+        "sku_id": {"type": "string", "minLength": 1},
+        "name_ru": {"type": "string", "minLength": 2},
+        "difference_ru": {"type": "string", "minLength": 1},
+        "specification": {"type": "object"},
+        "source_image": {"type": "string", "minLength": 1}
+      }
+    },
+    "image": {
+      "type": "object", "additionalProperties": false,
+      "required": [
+        "slot", "layout_type", "commercial_purpose", "buyer_question",
+        "source_references", "russian_text", "prompt", "operation",
+        "overlay_modules", "must_preserve"
+      ],
+      "properties": {
+        "slot": {"type": "string", "minLength": 1},
+        "sku_id": {"type": "string", "minLength": 1},
+        "layout_type": {"type": "string", "enum": ["sku_main", "core_benefit", "structure_callout", "usage_scene", "sku_comparison", "purchase_notice"]},
+        "commercial_purpose": {"type": "string", "minLength": 4},
+        "buyer_question": {"type": "string", "minLength": 4},
+        "source_references": {"type": "array", "minItems": 1, "maxItems": 10, "items": {"type": "string", "minLength": 1}},
+        "russian_text": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"type": "string", "minLength": 2}},
+        "prompt": {"type": "string", "minLength": 120},
+        "operation": {"type": "string", "enum": ["edit_real_image", "compose_from_real_images"]},
+        "overlay_modules": {"type": "array", "minItems": 2, "items": {"type": "string", "enum": ["product_name", "capacity_badge", "benefit_section", "icon_chips", "callout_arrows", "dimension_lines", "sku_labels", "purchase_notice"]}},
+        "must_preserve": {"type": "array", "minItems": 3, "items": {"type": "string"}}
+      }
+    }
+  }
+}

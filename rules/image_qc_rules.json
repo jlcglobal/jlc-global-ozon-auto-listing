@@ -61,6 +61,7 @@
     "false_certification_claim",
     "chinese_text_present",
     "garbage_text_present",
-    "russian_text_unreadable"
+    "russian_text_unreadable",
+    "empty_placeholder_panel"
   ]
 }

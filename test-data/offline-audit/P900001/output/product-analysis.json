@@ -1,0 +1,322 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900001",
+  "source_refs": [
+    "products/P000002/input/source.json#/title_cn",
+    "products/P000002/input/source.json#/product_attributes",
+    "products/P000002/input/source.json#/skus",
+    "products/P000002/input/manual-confirmation.json#/fields",
+    "products/P000002/input/manual-confirmation.json#/sku_purchase_prices_cny",
+    "products/P000002/input/category-selection.json#/category_id",
+    "products/P000002/input/category-selection.json#/type_id",
+    "products/P000002/input/category-selection.json#/category_name_zh",
+    "products/P000002/input/category-selection.json#/category_name_ru",
+    "products/P000002/input/category-selection.json#/category_path",
+    "products/P000002/input/category-selection.json#/category_path_zh",
+    "products/P000002/input/main-images/main-001.webp",
+    "products/P000002/input/main-images/main-002.webp",
+    "products/P000002/input/main-images/main-003.webp",
+    "products/P000002/input/sku-images/sku-001.jpg",
+    "products/P000002/input/sku-images/sku-002.jpg",
+    "products/P000002/input/sku-images/sku-003.jpg"
+  ],
+  "product_type": "便携式分格保温餐盒",
+  "category": "食品储藏桶 / Кадка для продуктов",
+  "target_customer": [
+    "需要送餐、外带午餐或分区运输食品的俄罗斯家庭和小型餐饮用户。"
+  ],
+  "usage_scenarios": [
+    "外带午餐",
+    "餐饮配送",
+    "学校配餐",
+    "户外聚餐"
+  ],
+  "competitive_advantages": [
+    {
+      "text": "提供单格、双格和三格三种明确的分格配置。",
+      "evidence": [
+        "products/P000002/input/source.json#/skus/0/sku_name",
+        "products/P000002/input/source.json#/skus/1/sku_name",
+        "products/P000002/input/source.json#/skus/2/sku_name"
+      ]
+    },
+    {
+      "text": "标题明确定位为便携式商用保温与冷藏运输容器。",
+      "evidence": [
+        "products/P000002/input/source.json#/title_cn"
+      ]
+    }
+  ],
+  "missing_information": [
+    {
+      "field": "accessories",
+      "reason": "标题、有效结构化属性、所选SKU文字和已查看实物图未明确独立配件清单。",
+      "needed_from_human": false
+    }
+  ],
+  "recommended": "继续后续流程，但不得把未知技术参数转化为商品卖点。",
+  "score": 78,
+  "facts": {
+    "title_cn": "不锈钢保温箱商用摆摊运输冷藏箱学校送餐保温桶分格保温便携式",
+    "category_cn": "食品储藏桶",
+    "brand": "Нет бренда",
+    "materials": [
+      "不锈钢 / Нержавеющая сталь；来源为1688标题明确文字。"
+    ],
+    "dimensions": {
+      "product": {
+        "length": 30.0,
+        "width": 20.0,
+        "height": 15.0,
+        "unit": "cm"
+      },
+      "package": {
+        "length": 31.5,
+        "width": 21.0,
+        "height": 16.0,
+        "unit": "cm"
+      },
+      "provenance": "estimated_human_approved",
+      "source_ref": "products/P000002/input/manual-confirmation.json#/fields"
+    },
+    "weight": {
+      "product_value_g": 1000.0,
+      "package_value_g": 1150.0,
+      "provenance": "estimated_human_approved",
+      "source_ref": "products/P000002/input/manual-confirmation.json#/fields"
+    },
+    "load_capacity": "unknown",
+    "certifications": [
+      "unknown"
+    ],
+    "functions": [
+      "保温；来源为1688标题明确文字。",
+      "冷藏；来源为1688标题明确文字。",
+      "商用送餐与运输；来源为1688标题明确文字。",
+      "分格收纳；来源为1688标题和所选SKU文字。",
+      "便携；来源为1688标题明确文字。"
+    ],
+    "package_quantity": {
+      "value": 1,
+      "unit": "件",
+      "provenance": "project_business_rule",
+      "source_ref": "AGENTS.md#强制原则"
+    },
+    "accessories": [
+      "unknown"
+    ],
+    "skus": [
+      {
+        "sku_id": "5477283792300",
+        "name_cn": "单格",
+        "properties": {
+          "规格1": "单格",
+          "格数": "1格",
+          "purchase_price_provenance": "estimated_human_approved; products/P000002/input/manual-confirmation.json#/sku_purchase_prices_cny/5477283792300"
+        },
+        "price_cny": 295.0,
+        "image_refs": [
+          "products/P000002/input/sku-images/sku-001.jpg"
+        ]
+      },
+      {
+        "sku_id": "5477283792301",
+        "name_cn": "双格",
+        "properties": {
+          "规格1": "双格",
+          "格数": "2格",
+          "purchase_price_provenance": "estimated_human_approved; products/P000002/input/manual-confirmation.json#/sku_purchase_prices_cny/5477283792301"
+        },
+        "price_cny": 315.0,
+        "image_refs": [
+          "products/P000002/input/sku-images/sku-002.jpg"
+        ]
+      },
+      {
+        "sku_id": "5477283792302",
+        "name_cn": "三格",
+        "properties": {
+          "规格1": "三格",
+          "格数": "3格",
+          "purchase_price_provenance": "estimated_human_approved; products/P000002/input/manual-confirmation.json#/sku_purchase_prices_cny/5477283792302"
+        },
+        "price_cny": 335.0,
+        "image_refs": [
+          "products/P000002/input/sku-images/sku-003.jpg"
+        ]
+      }
+    ]
+  },
+  "selling_points": [
+    {
+      "text": "单格、双格和三格配置可对应不同的分餐需求。",
+      "evidence": [
+        "products/P000002/input/source.json#/skus"
+      ]
+    },
+    {
+      "text": "标题明确支持冷热食品储运场景。",
+      "evidence": [
+        "products/P000002/input/source.json#/title_cn"
+      ]
+    },
+    {
+      "text": "清晰实物图显示箱体具有顶部提手、两侧提手和前部锁扣。",
+      "evidence": [
+        "products/P000002/input/main-images/main-001.webp",
+        "products/P000002/input/main-images/main-003.webp"
+      ]
+    }
+  ],
+  "inferences": [
+    {
+      "field": "physical_form",
+      "value": "矩形箱体",
+      "confidence": "high",
+      "basis": [
+        "products/P000002/input/main-images/main-001.webp",
+        "products/P000002/input/sku-images/sku-001.jpg"
+      ]
+    },
+    {
+      "field": "placement_and_carry_mode",
+      "value": "可台面放置并可手提搬运",
+      "confidence": "high",
+      "basis": [
+        "products/P000002/input/main-images/main-001.webp",
+        "products/P000002/input/main-images/main-003.webp"
+      ]
+    },
+    {
+      "field": "visible_container_count_by_sku",
+      "value": {
+        "5477283792300": 1,
+        "5477283792301": 2,
+        "5477283792302": 3
+      },
+      "confidence": "high",
+      "basis": [
+        "products/P000002/input/sku-images/sku-001.jpg",
+        "products/P000002/input/sku-images/sku-002.jpg",
+        "products/P000002/input/sku-images/sku-003.jpg"
+      ]
+    },
+    {
+      "field": "visible_carry_parts",
+      "value": "一个顶部提手和两个侧面提手",
+      "confidence": "high",
+      "basis": [
+        "products/P000002/input/main-images/main-003.webp"
+      ]
+    },
+    {
+      "field": "visible_front_latches",
+      "value": 2,
+      "confidence": "high",
+      "basis": [
+        "products/P000002/input/main-images/main-001.webp",
+        "products/P000002/input/sku-images/sku-002.jpg"
+      ]
+    },
+    {
+      "field": "wireless_use",
+      "value": "不适用，现有资料未显示该商品为充电产品。",
+      "confidence": "high",
+      "basis": [
+        "products/P000002/input/source.json#/title_cn",
+        "products/P000002/input/main-images/main-001.webp"
+      ]
+    },
+    {
+      "field": "planetary_structure",
+      "value": false,
+      "confidence": "high",
+      "basis": [
+        "products/P000002/input/main-images/main-001.webp",
+        "products/P000002/input/sku-images/sku-003.jpg"
+      ]
+    },
+    {
+      "field": "country_of_origin",
+      "value": "中国",
+      "confidence": "high",
+      "basis": [
+        "products/P000002/input/source.json#/source_platform",
+        "AGENTS.md#商品任务规则"
+      ]
+    }
+  ],
+  "unknowns": [
+    {
+      "field": "power",
+      "reason": "允许读取的来源中未提供功率信息。",
+      "needed_from_human": false
+    },
+    {
+      "field": "speed_count",
+      "reason": "允许读取的来源中未提供速度数信息。",
+      "needed_from_human": false
+    },
+    {
+      "field": "warranty",
+      "reason": "允许读取的来源中未提供保修信息。",
+      "needed_from_human": false
+    },
+    {
+      "field": "certifications",
+      "reason": "允许读取的来源中未提供认证信息。",
+      "needed_from_human": false
+    },
+    {
+      "field": "load_capacity",
+      "reason": "允许读取的来源中未提供承重信息。",
+      "needed_from_human": false
+    },
+    {
+      "field": "protection_system",
+      "reason": "允许读取的来源中未提供保护系统信息。",
+      "needed_from_human": false
+    },
+    {
+      "field": "identifier_code",
+      "reason": "允许读取的来源中未提供商品标识码。",
+      "needed_from_human": false
+    },
+    {
+      "field": "customs_code",
+      "reason": "允许读取的来源中未提供海关编码。",
+      "needed_from_human": false
+    }
+  ],
+  "risks": [
+    {
+      "area": "material_scope",
+      "level": "medium",
+      "message": "标题仅明确不锈钢，不能据此断言箱体全部部件均为不锈钢。",
+      "blocking": false
+    },
+    {
+      "area": "insulation_performance",
+      "level": "medium",
+      "message": "保温与冷藏用途有标题依据，但具体保温时长和温度性能不可确认。",
+      "blocking": false
+    },
+    {
+      "area": "accessories",
+      "level": "low",
+      "message": "独立配件数量没有可靠文字来源，后续不得补写。",
+      "blocking": false
+    }
+  ],
+  "recommendation": {
+    "decision": "continue",
+    "reason": "标题、SKU结构、实物图和人工确认的估算尺寸重量及进价足以完成事实分析，未知技术参数已显式隔离。"
+  },
+  "processing": {
+    "step": "product_analysis",
+    "status": "completed",
+    "started_at": "2026-07-14T08:39:03+00:00",
+    "finished_at": "2026-07-14T16:39:58+08:00",
+    "error": null
+  }
+}

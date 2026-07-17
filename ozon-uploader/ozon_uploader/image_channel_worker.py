@@ -7,7 +7,7 @@ import json
 import os
 import tempfile
 import time
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
 
 from .images import CloudflareImageTunnel
@@ -15,6 +15,17 @@ from .images import CloudflareImageTunnel
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
+
+
+def ttl_metadata(started_at: str, ttl_seconds: int) -> dict:
+    started = datetime.fromisoformat(started_at)
+    if started.tzinfo is None:
+        started = started.replace(tzinfo=timezone.utc)
+    return {
+        "ttl_seconds": int(ttl_seconds),
+        "expires_at": (started + timedelta(seconds=int(ttl_seconds))).isoformat(timespec="seconds"),
+        "close_policy": "fixed_ttl",
+    }
 
 
 def write_json_atomic(path: Path, value: dict) -> None:
@@ -34,10 +45,12 @@ def main() -> int:
     parser.add_argument("--max-seconds", type=int, required=True)
     args = parser.parse_args()
     started = time.monotonic()
+    started_at = now()
     state = {
         "status": "starting", "worker_pid": os.getpid(), "public_url": "unknown",
-        "started_at": now(), "stopped_at": None, "reason": None,
+        "started_at": started_at, "stopped_at": None, "reason": None,
     }
+    state.update(ttl_metadata(started_at, args.max_seconds))
     write_json_atomic(args.state, state)
     try:
         with CloudflareImageTunnel(args.directory) as tunnel:
@@ -45,10 +58,16 @@ def main() -> int:
             write_json_atomic(args.state, state)
             while not args.stop_file.exists() and time.monotonic() - started < args.max_seconds:
                 time.sleep(2)
+            stop_reason = "ozon_cdn_confirmed"
+            if args.stop_file.exists():
+                try:
+                    stop_reason = args.stop_file.read_text(encoding="utf-8").strip() or stop_reason
+                except OSError:
+                    pass
             state.update({
                 "status": "confirmed_closed" if args.stop_file.exists() else "expired",
                 "stopped_at": now(),
-                "reason": "ozon_cdn_confirmed" if args.stop_file.exists() else "max_lifetime_exceeded",
+                "reason": stop_reason if args.stop_file.exists() else "max_lifetime_exceeded",
             })
     except Exception as exc:
         state.update({"status": "failed", "stopped_at": now(), "reason": str(exc)})

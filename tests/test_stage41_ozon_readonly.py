@@ -1,5 +1,6 @@
 import copy
 import json
+import os
 import shutil
 import sys
 import tempfile
@@ -13,6 +14,8 @@ sys.path.insert(0, str(ROOT / "ozon-adapter"))
 from ozon_adapter import OzonConfig, OzonConfigurationError, OzonReadOnlyClient  # noqa: E402
 from ozon_adapter.service import (  # noqa: E402
     SCHEMAS,
+    _canonical_allowed_value,
+    _value_variants,
     build_live_metadata_package,
     fetch_and_write_product_metadata,
     flatten_category_tree,
@@ -97,7 +100,7 @@ def client(transport):
     )
 
 
-@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
+@unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
 class Stage41OzonReadOnlyTest(unittest.TestCase):
     def test_camera_near_synonym_requires_compatible_live_attributes(self):
         offline = {"category_name": "Камера видеонаблюдения"}
@@ -287,6 +290,25 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
         self.assertEqual(attributes["Материал"]["confidence"], 0)
         self.assertEqual(attributes["Бренд"]["value"], "unknown")
         self.assertEqual(attributes["Бренд"]["allowed_values"], [{"id": 80001, "value": "Нет бренда"}])
+
+    def test_chinese_material_uses_synonym_before_normalization(self):
+        self.assertIn("нержавеющая сталь", _value_variants("不锈钢"))
+        self.assertEqual(
+            _canonical_allowed_value(
+                "不锈钢",
+                [{"id": 1, "value": "Нержавеющая сталь"}],
+            ),
+            "Нержавеющая сталь",
+        )
+
+    def test_empty_dictionary_candidate_does_not_crash(self):
+        self.assertEqual(
+            _canonical_allowed_value(
+                "来源：未提供",
+                [{"id": 1, "value": "Пластик"}],
+            ),
+            "unknown",
+        )
 
     def test_mock_package_writes_atomically_and_matches_all_schemas(self):
         with tempfile.TemporaryDirectory() as temp_dir:

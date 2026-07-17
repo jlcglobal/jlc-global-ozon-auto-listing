@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/market-source-status.schema.json",
+  "title": "Ozon Market Intelligence Source Status",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["source_id", "state", "access_level", "message_zh", "checked_at", "details"],
+  "properties": {
+    "source_id": {"type": "string", "minLength": 1},
+    "state": {"type": "string", "enum": ["connected", "login_required", "premium_required", "permission_denied", "not_tested", "error"]},
+    "access_level": {"type": "string", "enum": ["official_read_only", "official_free_login", "subscription_required", "unavailable", "unknown"]},
+    "message_zh": {"type": "string", "minLength": 1},
+    "checked_at": {"type": "string", "format": "date-time"},
+    "details": {"type": "object"}
+  }
+}

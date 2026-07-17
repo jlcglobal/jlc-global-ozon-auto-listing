@@ -1,5 +1,15 @@
 const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
-let factoryConfig = { baseUrl: DEFAULT_FACTORY_URL, accessCode: "" };
+let factoryConfig = { baseUrl: DEFAULT_FACTORY_URL, deviceId: "" };
+
+async function ensureFactoryDeviceId() {
+  const stored = await chrome.storage.local.get(["factoryDeviceId"]);
+  let deviceId = String(stored.factoryDeviceId || "").trim();
+  if (!deviceId) {
+    deviceId = globalThis.crypto?.randomUUID?.() || `device-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 12)}`;
+    await chrome.storage.local.set({ factoryDeviceId: deviceId });
+  }
+  return deviceId;
+}
 
 function normalizeFactoryUrl(value) {
   const url = new URL(String(value || DEFAULT_FACTORY_URL).trim());
@@ -13,10 +23,10 @@ function normalizeFactoryUrl(value) {
 }
 
 async function loadFactoryConfig() {
-  const stored = await chrome.storage.local.get(["factoryBaseUrl", "factoryAccessCode"]);
+  const stored = await chrome.storage.local.get(["factoryBaseUrl"]);
   factoryConfig = {
     baseUrl: normalizeFactoryUrl(stored.factoryBaseUrl || DEFAULT_FACTORY_URL),
-    accessCode: String(stored.factoryAccessCode || "").trim()
+    deviceId: await ensureFactoryDeviceId()
   };
   return factoryConfig;
 }
@@ -24,7 +34,7 @@ async function loadFactoryConfig() {
 async function factoryFetch(path, options = {}) {
   await loadFactoryConfig();
   const headers = { ...(options.headers || {}) };
-  if (factoryConfig.accessCode) headers["X-Factory-Access-Code"] = factoryConfig.accessCode;
+  headers["X-Factory-Device-Id"] = factoryConfig.deviceId;
   return fetch(`${factoryConfig.baseUrl}${path}`, { ...options, headers });
 }
 
@@ -49,7 +59,6 @@ const els = {
   progress: document.getElementById("progress"),
   result: document.getElementById("result")
   ,factoryUrl: document.getElementById("factory-url")
-  ,factoryAccessCode: document.getElementById("factory-access-code")
   ,saveConnection: document.getElementById("save-connection")
   ,testConnection: document.getElementById("test-connection")
   ,connectionResult: document.getElementById("connection-result")
@@ -60,6 +69,34 @@ let duplicateProductId = null;
 
 function setResult(value) {
   els.result.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
+}
+
+function skuImagePreflight(capture) {
+  const debug = capture?.raw_snapshot?.sku_debug || {};
+  const total = Number(capture?.sku_image_preflight?.total_skus || debug.total_skus || capture?.skus?.length || 0);
+  const withImages = Number(capture?.sku_image_preflight?.sku_with_images || debug.sku_with_images || 0);
+  const missing = capture?.sku_image_preflight?.missing_sku_ids || debug.missing_image_skus || [];
+  return {
+    total,
+    withImages,
+    missing,
+    complete: total > 0 && missing.length === 0 && withImages === total
+  };
+}
+
+function showSkuImageWarning(capture) {
+  const check = skuImagePreflight(capture);
+  if (check.complete) return false;
+  const sample = check.missing.slice(0, 5).join("、") || "未识别SKU";
+  els.status.textContent = `可采集：SKU图片${check.withImages}/${check.total}，缺图将保留标记`;
+  els.progress.textContent = "缺图SKU可继续选择；生图前需要人工确认参考图";
+  setResult({
+    code: "SKU_IMAGES_INCOMPLETE_WARNING",
+    message: `1688页面识别到${check.withImages}/${check.total}个SKU图片，缺少${check.missing.length}个。仍可采集；系统会保留真实缺图状态，生图前再由你确认共用哪张同外观SKU实拍图。`,
+    missing_sku_ids: check.missing,
+    examples: sample
+  });
+  return false;
 }
 
 async function getActiveTab() {
@@ -100,7 +137,10 @@ async function loadPreview() {
       setResult(latestCapture || {});
       return;
     }
-    els.status.textContent = "可采集";
+    const skuCheck = skuImagePreflight(latestCapture);
+    els.status.textContent = skuCheck.complete
+      ? "可采集（SKU图片已完整加载）"
+      : `可采集（SKU图片${skuCheck.withImages}/${skuCheck.total}，缺图已标记）`;
     els.title.textContent = latestCapture.title_cn || "unknown";
     els.mainCount.textContent = latestCapture.main_images.length;
     els.skuCount.textContent = latestCapture.skus.length;
@@ -198,6 +238,7 @@ async function captureCurrentProduct(allowNewVersion = false) {
   try {
     const tab = await getActiveTab();
     const capture = await sendToTab(tab.id, { type: "COLLECTOR_CAPTURE" });
+    showSkuImageWarning(capture);
     if (!allowNewVersion) {
       const duplicate = await checkDuplicate(capture.source_url);
       if (duplicate.exists) {
@@ -225,8 +266,12 @@ els.previewToggle.addEventListener("click", () => {
 });
 els.debugExport.addEventListener("click", exportSkuDebug);
 els.openInbox.addEventListener("click", async () => {
-  await loadFactoryConfig();
-  chrome.tabs.create({ url: `${factoryConfig.baseUrl}/workbench` });
+  try {
+    await loadFactoryConfig();
+    chrome.tabs.create({ url: `${factoryConfig.baseUrl}/workbench` });
+  } catch (error) {
+    els.connectionResult.textContent = `工作台地址无效：${error.message}`;
+  }
 });
 els.openExisting.addEventListener("click", () => {
   if (duplicateProductId) {
@@ -239,10 +284,9 @@ els.createVersion.addEventListener("click", () => captureCurrentProduct(true));
 async function saveConnection() {
   try {
     const baseUrl = normalizeFactoryUrl(els.factoryUrl.value);
-    const accessCode = els.factoryAccessCode.value.trim();
-    await chrome.storage.local.set({ factoryBaseUrl: baseUrl, factoryAccessCode: accessCode });
-    factoryConfig = { baseUrl, accessCode };
-    els.connectionResult.textContent = "主电脑连接设置已保存";
+    await chrome.storage.local.set({ factoryBaseUrl: baseUrl });
+    factoryConfig = { baseUrl, deviceId: await ensureFactoryDeviceId() };
+    els.connectionResult.textContent = "主电脑地址已保存，本电脑会自动识别";
     await testConnection();
   } catch (error) {
     els.connectionResult.textContent = error.message;
@@ -250,12 +294,12 @@ async function saveConnection() {
 }
 
 async function testConnection() {
-  els.connectionResult.textContent = "正在连接主电脑...";
+  els.connectionResult.textContent = "正在自动识别并连接主电脑...";
   try {
     const response = await factoryFetch("/api/workbench/summary");
     const result = await response.json().catch(() => ({}));
     if (!response.ok) throw new Error(result.detail?.message || result.detail || `HTTP ${response.status}`);
-    els.connectionResult.textContent = "已连接主电脑";
+    els.connectionResult.textContent = "已连接共享工作台（无需访问码）";
   } catch (error) {
     els.connectionResult.textContent = `连接失败：${error.message}`;
   }
@@ -267,8 +311,10 @@ els.testConnection.addEventListener("click", testConnection);
 async function initialize() {
   await loadFactoryConfig();
   els.factoryUrl.value = factoryConfig.baseUrl;
-  els.factoryAccessCode.value = factoryConfig.accessCode;
   await loadPreview();
 }
 
-initialize();
+initialize().catch((error) => {
+  els.status.textContent = "插件初始化失败";
+  setResult(error.message);
+});

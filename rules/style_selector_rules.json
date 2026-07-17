@@ -52,6 +52,18 @@
       }
     },
     {
+      "rule_id": "portable-kitchen-appliances",
+      "style_family": "portable_kitchen_appliance_fresh",
+      "minimum_score": 8,
+      "signals": {
+        "product_type": ["便携式充电榨汁杯", "榨汁杯", "榨汁机", "电动果汁杯", "便携式搅拌机", "厨房小家电"],
+        "category": ["厨房搅拌机", "搅拌机", "榨汁机", "厨房小家电", "家用电器"],
+        "title": ["榨汁杯", "榨汁机", "果汁杯", "搅拌杯", "随行杯"],
+        "usage_scene": ["厨房", "办公室", "健身", "旅行", "随身携带"],
+        "purchase_motivation": ["便携", "榨汁", "随行", "容量", "快速制作"]
+      }
+    },
+    {
       "rule_id": "kitchen-tools-and-storage",
       "style_family": "kitchen_warm_home",
       "minimum_score": 8,

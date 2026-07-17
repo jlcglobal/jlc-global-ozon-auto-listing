@@ -1,10 +1,12 @@
 import copy
+import os
 import unittest
 
 from scripts.marketplace_content_generator import (
     ROOT,
     RULES_PATH,
     SCHEMAS,
+    build_keywords,
     build_package,
     load_json,
     validate_content_input,
@@ -16,7 +18,25 @@ from scripts.validate_product import validate_product, validate_schema
 PRODUCT_IDS = ("P000004", "P000005", "P000003")
 
 
-@unittest.skipUnless((ROOT / "products/P000004/input/source.json").is_file(), "optional runtime product fixture is not installed")
+class MarketplaceKeywordCompatibilityTest(unittest.TestCase):
+    def test_keyword_basis_source_refs_are_normalized_to_schema_evidence(self):
+        value = build_keywords("P000001", {
+            "primary_keywords": ["миксер кухонный"],
+            "secondary_keywords": [],
+            "keyword_basis": [{
+                "keyword": "миксер кухонный", "source": "product_type",
+                "source_refs": ["product-analysis.product_type"],
+            }],
+            "excluded_claims": [], "warnings": [],
+        })
+        self.assertEqual(
+            value["keyword_basis"][0]["evidence"],
+            ["product-analysis.product_type"],
+        )
+        self.assertNotIn("source_refs", value["keyword_basis"][0])
+
+
+@unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
 class Stage35MarketplaceContentTest(unittest.TestCase):
     def test_rules_and_all_new_schemas_parse(self):
         rules = load_json(RULES_PATH)

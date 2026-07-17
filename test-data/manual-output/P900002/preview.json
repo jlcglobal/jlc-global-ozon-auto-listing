@@ -1,0 +1,81 @@
+{
+  "product_id": "P900002",
+  "title_ru": "Органайзер для холодильника с крышкой и ручкой, прозрачный контейнер для продуктов, 3/5/6 л",
+  "brief": "test-data/manual-output/P900002/ecommerce-creative-brief.json",
+  "image_plan": "test-data/manual-output/P900002/image-plan.json",
+  "generated_images": [
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/variant-main/fridge-organizer-3l.png",
+      "role": "sku_main",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-3l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/variant-main/fridge-organizer-5l.png",
+      "role": "sku_main",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-5l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/variant-main/fridge-organizer-6l.png",
+      "role": "sku_main",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-6l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-001.png",
+      "role": "benefit",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-5l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-002.png",
+      "role": "detail",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-5l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-003.png",
+      "role": "feature",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-5l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-004.png",
+      "role": "scene",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-3l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-005.png",
+      "role": "usage",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-5l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-006.png",
+      "role": "problem_solution",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-6l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-007.png",
+      "role": "comparison",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-3l.png"
+    },
+    {
+      "path": "test-data/manual-output/P900002/generated-images/stage3.4/detail/detail-008.png",
+      "role": "disclaimer",
+      "quality_status": "technical_preview_only",
+      "source": "test-data/manual-input/P900002/sku-images/sku-3l.png"
+    }
+  ],
+  "quality_status": "technical_preview_only_waiting_for_ai_images",
+  "technical_checks": {
+    "ratio": "3:4",
+    "missing_images": 0,
+    "placeholder_frames": 0,
+    "ozon_calls": 0
+  }
+}

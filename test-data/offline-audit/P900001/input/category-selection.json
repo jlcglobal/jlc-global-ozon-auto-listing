@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "selection_source": "offline_acceptance_sample",
+  "category_id": 17027933,
+  "type_id": 92445,
+  "category_name_zh": "食品储藏桶",
+  "category_name_ru": "Кадка для продуктов",
+  "category_path_zh": [
+    "家居园艺",
+    "食品储藏",
+    "食品储藏桶"
+  ],
+  "category_path": [
+    "Дом и сад",
+    "Хранение продуктов",
+    "Кадка для продуктов"
+  ],
+  "locked_for_batch": true,
+  "allow_runtime_rematch": false
+}

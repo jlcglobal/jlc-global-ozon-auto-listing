@@ -4,6 +4,8 @@
 > 验收边界：1688 采集后进入本地商品主档，完成分析、审核、图片、定价和Ozon提交；写入返回task_id即本地交接完成，不再自动回查。明确不包含上架后商品卡修改、销售分析、动态调价、广告和运营优化。
 > 状态说明：本文件先建立审计基线；只有完成页面操作、接口调用、数据持久化和自动测试后，才可标记“已完整实现”。
 
+> 2026-07-17目标同步：当前优先做洪辰工作室内部稳定生产工具，不优先对外售卖。53项需求中40项完整、11项部分、1项静态UI、1项局部叠字按产品决策取消；完整实现率75.5%。P0最后验收是1件由当前插件新采集的正式商品，在人工确认后同时提交三个店铺并分别取得有效task_id；通过后再进入10件商品批量测试。
+
 ## 2026-07-16 当前权威生产边界
 
 | 编号 | 要求 | 当前状态 | 代码门禁与数据位置 | 验证 |
@@ -13,14 +15,14 @@
 | ISO-03 | 输入/候选/拒绝/确认图片物理隔离 | 已完整实现 | `input/*-images`、`output/generated-images`、`output/rejected-generation`、`output/accepted-images` | output不能成为reference；同名文件不能覆盖input；工作台分四栏返回 |
 | ISO-04 | 动态SKU主图与共享详情契约 | 已完整实现（结构） | `ozon-ecommerce-designer`与image planner固定N张SKU主图+8张共享详情，N=1-10 | N=1/3/4/10回归通过；总数=N+8 |
 | ISO-05 | 手动模式人工确认后才能上传 | 已完整实现（门禁） | 候选图仅经工作台明确确认进入`accepted-images`；状态`WAITING_MANUAL_REVIEW` | accepted为空/不完整或旧PASS时仍阻断；不自动预览、不自动上传 |
-| ISO-06 | 统一电商设计策划层 | 已完整实现（结构与门禁） | `.agents/skills/ozon-ecommerce-designer`、`output/ozon-ecommerce-design.json`、`scripts/image_generator_contract.py` | 单次联网执行必须一次性完成N+8整套设计；7步决策轨迹、逐图art direction与model-native typography plan缺失或乱序会整步重试；每图一次成图，正式生产禁用固定模板和后置叠字。真实联网生图和肉眼质量仍待样图验收 |
+| ISO-06 | 统一电商设计策划层 | 已完整实现（结构、门禁与测试图质量） | `.agents/skills/ozon-ecommerce-designer`、`output/ozon-ecommerce-design.json`、`scripts/image_generator_contract.py` | 单次联网执行必须一次性完成N+8整套设计；7步决策轨迹、逐图art direction与model-native typography plan缺失或乱序会整步重试；每图一次成图，正式生产禁用固定模板和后置叠字。P900002的3主图+8详情图已由用户整组验收通过；正式新商品仍待端到端验收 |
 | ISO-07 | 测试编号不污染正式商品 | 已完整实现 | P9编号段只在`test-data`；正式门禁和编号分配器限制P000001-P899999 | P900001不出现在工作台；P9不能创建正式批次/上传 |
 | ISO-08 | 批次冻结运行模式与来源快照 | 已完整实现 | 批次entry/status/asset contract冻结review_mode、auto_upload、collection_id、source manifest SHA | 单/多商品共用函数；失败不先改contract；全局开关后改不影响批次 |
 | ISO-09 | 人工确认图不可篡改 | 已完整实现 | `output/accepted-images/manifest.json`记录槽位、路径、SHA、确认人/时间和设计hash | 文件覆盖、重生、替换、删除或设计变化均撤销；上传核对N+8 |
 | ISO-10 | 手动批次状态聚合 | 已完整实现 | 商品WAITING_MANUAL_REVIEW => 批次AWAITING_MANUAL_UPLOAD | 单商品/混合失败测试通过；未上传不计success |
 | ISO-11 | SQLite连接生命周期 | 已完整实现 | MarketStore contextmanager及关键closing | ResourceWarning作为error运行全量462项：0失败/0错误 |
 
-当前主线全量回归479项全部通过，112项明确跳过，0失败、0错误；离线项目自检PASS（0错误、1项旧契约透明警告）；浏览器已验证P9样品不显示、四类素材分区独立渲染和通知状态一致性。真实新采集商品的联网整套设计/生图/接受拒绝替换交互仍待用户提供一件新的工作台采集输入。本轮Ozon写/只读/库存调用均为0。
+当前主线全量回归480项全部通过，112项明确跳过，0失败、0错误；离线项目自检PASS（0错误、1项旧契约透明警告）；P900002整套11图已由用户验收通过，浏览器已验证P9样品不显示、四类素材分区独立渲染和通知状态一致性。真实新采集商品的联网整套设计/生图/人工确认/三店提交仍待用户提供一件新的工作台采集输入。本轮Ozon写/只读/库存调用均为0。
 
 | 编号 | 需求名称 | 页面入口 | 前端组件 | 后端接口 | 数据保存位置 | 当前状态 | 自动测试 | 实际验收结果 |
 |---|---|---|---|---|---|---|---|---|

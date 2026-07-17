@@ -4,8 +4,9 @@ import unittest
 from pathlib import Path
 from unittest.mock import patch
 
-from scripts.multi_store_upload import default_runner, execute_selected_stores, refresh_pending_stores
-from scripts.store_publications import load_publications, select_stores
+from scripts.multi_store_upload import default_runner, execute_selected_stores, prepare_isolated_product, refresh_pending_stores
+from scripts.store_publications import ensure_store_offer_ids, load_publications, select_stores
+from scripts.task_database import cutover_to_sqlite
 from scripts.workbench_stores import list_stores
 
 
@@ -35,6 +36,100 @@ def make_product(root: Path) -> Path:
 
 
 class MultiStoreUploadTest(unittest.TestCase):
+    def test_offer_ids_are_unique_per_store_sku_and_stable_across_retries(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            source = json.loads((product / "input/source.json").read_text())
+            source["skus"].append({
+                "sku_id": "sku-b", "sku_name": "黑色", "purchase_price": 12,
+            })
+            write(product / "input/source.json", source)
+            select_stores(product, ["store-a", "store-b"], ["store-a", "store-b"])
+
+            first = ensure_store_offer_ids(product)
+            first_map = {
+                (store_id, sku["sku_id"]): sku["offer_id"]
+                for store_id, record in first["stores"].items()
+                for sku in record["sku_publications"]
+            }
+            self.assertEqual(len(first_map), 4)
+            self.assertEqual(len(set(first_map.values())), 4)
+            self.assertTrue(all(len(value) == 16 and value.isascii() for value in first_map.values()))
+
+            second = ensure_store_offer_ids(product)
+            second_map = {
+                (store_id, sku["sku_id"]): sku["offer_id"]
+                for store_id, record in second["stores"].items()
+                for sku in record["sku_publications"]
+            }
+            self.assertEqual(second_map, first_map)
+
+    def test_existing_task_offer_id_is_never_changed(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            data = select_stores(product, ["store-a"], ["store-a"])
+            sku = data["stores"]["store-a"]["sku_publications"][0]
+            sku.update({"offer_id": "LEGACY-OFFER", "task_id": "70001"})
+            write(product / "output/store-publications.json", data)
+            source = json.loads((product / "input/source.json").read_text())
+            source["skus"].append({
+                "sku_id": "sku-late", "sku_name": "不应补入", "purchase_price": 20,
+            })
+            write(product / "input/source.json", source)
+
+            persisted = ensure_store_offer_ids(product)
+            locked = persisted["stores"]["store-a"]["sku_publications"][0]
+            self.assertEqual(locked["offer_id"], "LEGACY-OFFER")
+            self.assertEqual(locked["task_id"], "70001")
+            self.assertEqual(len(persisted["stores"]["store-a"]["sku_publications"]), 1)
+
+    def test_offer_id_mapping_remains_stable_after_sqlite_cutover(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            select_stores(product, ["store-a", "store-b"], ["store-a", "store-b"])
+            cutover_to_sqlite(root)
+
+            first = ensure_store_offer_ids(product)
+            first_map = {
+                store_id: record["sku_publications"][0]["offer_id"]
+                for store_id, record in first["stores"].items()
+            }
+            second = ensure_store_offer_ids(product)
+            second_map = {
+                store_id: record["sku_publications"][0]["offer_id"]
+                for store_id, record in second["stores"].items()
+            }
+            self.assertEqual(first_map, second_map)
+            self.assertEqual(len(set(first_map.values())), 2)
+
+    def test_isolated_store_uses_persisted_offer_ids_and_requires_create(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = make_product(root)
+            write(product / "output/ozon-draft.json", {
+                "offer_id": "P000001-draft",
+                "skus": [{"source_sku_id": "sku-a", "offer_id": "P000001-sku-a"}],
+            })
+            write(product / "output/variant-grouping-result.json", {
+                "variants": [{"sku_id": "sku-a", "offer_id": "P000001-sku-a"}],
+            })
+            selected = select_stores(product, ["store-a"], ["store-a"])
+            selected = ensure_store_offer_ids(product)
+            record = selected["stores"]["store-a"]
+            assigned = record["sku_publications"][0]["offer_id"]
+
+            isolated = prepare_isolated_product(root, product, "store-a", record)
+            draft = json.loads((isolated / "output/ozon-draft.json").read_text())
+            grouping = json.loads((isolated / "output/variant-grouping-result.json").read_text())
+            marker = json.loads((isolated / "output/store-offer-id-map.json").read_text())
+            self.assertEqual(draft["offer_id"], assigned)
+            self.assertEqual(draft["skus"][0]["offer_id"], assigned)
+            self.assertEqual(grouping["variants"][0]["offer_id"], assigned)
+            self.assertTrue(marker["requires_create"])
+
     def test_default_runner_surfaces_prewrite_failure_from_store_log(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
@@ -43,8 +138,12 @@ class MultiStoreUploadTest(unittest.TestCase):
                 "status": "OZON_READY", "api_write_count": 0,
                 "error_message": "unknown", "ozon": {},
             })
+            write(isolated / "output/store-offer-id-map.json", {
+                "requires_create": True,
+            })
 
-            def failed_run(*_args, **kwargs):
+            def failed_run(command, *_args, **kwargs):
+                self.assertEqual(command[-3:], ["--require-action", "create", "--execute"])
                 kwargs["stdout"].write("FAILED\n- Persistent image channel did not become ready within 60 seconds\n")
                 kwargs["stdout"].flush()
                 return type("Completed", (), {"returncode": 2})()

@@ -3,14 +3,43 @@ from __future__ import annotations
 
 import hashlib
 import json
+import secrets
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Mapping, Optional
 
 
+STORE_OFFER_ID_ALPHABET = "23456789ABCDEFGHJKLMNPQRSTUVWXYZ"
+STORE_OFFER_ID_LENGTH = 16
+
+
 def now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
+
+
+def _unknown(value: Any) -> bool:
+    return value in {None, "", "unknown", "UNKNOWN"}
+
+
+def _new_store_offer_id(used: set[str]) -> str:
+    """Return an opaque seller article with no product or store information."""
+    for _ in range(100):
+        candidate = "".join(
+            secrets.choice(STORE_OFFER_ID_ALPHABET)
+            for _ in range(STORE_OFFER_ID_LENGTH)
+        )
+        if candidate not in used:
+            return candidate
+    raise RuntimeError("无法生成唯一的店铺货号，请停止上传并检查本地货号映射")
+
+
+def is_store_offer_id(value: Any) -> bool:
+    text = str(value or "")
+    return (
+        len(text) == STORE_OFFER_ID_LENGTH
+        and all(character in STORE_OFFER_ID_ALPHABET for character in text)
+    )
 
 
 def load(path: Path, default: Any = None) -> Any:
@@ -116,6 +145,77 @@ def save_publications(product_dir: Path, data: Dict[str, Any]) -> Dict[str, Any]
     except Exception:
         if not cutover_active(root):
             write(publication_path(product_dir), data)
+    return data
+
+
+def ensure_store_offer_ids(product_dir: Path) -> Dict[str, Any]:
+    """Allocate and persist one stable opaque offer_id per selected store/SKU.
+
+    Existing identifiers are never changed. In particular, a SKU with a task
+    id or Ozon product id is treated as immutable. New identifiers are written
+    before any isolated upload workspace or network client is created, so a
+    pre-write failure and later retry reuse exactly the same mapping.
+    """
+    data = load_publications(product_dir)
+    base_by_sku = {
+        str(item["sku_id"]): item for item in base_sku_records(product_dir)
+    }
+    used = {
+        str(sku.get("offer_id"))
+        for record in (data.get("stores") or {}).values()
+        for sku in (record.get("sku_publications") or [])
+        if not _unknown(sku.get("offer_id"))
+    }
+    changed = False
+    generated_at = now()
+    for store_id, record in (data.get("stores") or {}).items():
+        if not record.get("selected"):
+            continue
+        existing_records = list(record.get("sku_publications") or [])
+        if str(record.get("status") or "").upper() in {
+            "SUBMITTED", "QUEUED", "UPLOADING", "PENDING_REMOTE",
+            "OZON_MODERATION", "HANDED_OFF_TO_OZON", "SUCCESS",
+            "IMPORTED", "UPLOADED", "ACTIVE",
+        } or any(
+            not _unknown(sku.get("task_id")) or not _unknown(sku.get("ozon_product_id"))
+            for sku in existing_records
+        ):
+            # Never reshape a publication that may already have a remote
+            # identity. This also preserves legacy rows if source data drifts.
+            continue
+        existing_by_sku = {
+            str(item.get("sku_id")): item
+            for item in existing_records
+        }
+        ordered_records = []
+        for sku_id, base in base_by_sku.items():
+            sku = existing_by_sku.get(sku_id)
+            if sku is None:
+                sku = dict(base)
+                changed = True
+            ordered_records.append(sku)
+            if not _unknown(sku.get("task_id")) or not _unknown(sku.get("ozon_product_id")):
+                # A remote identity exists. Never repair or replace its article
+                # automatically, even if a legacy local row is incomplete.
+                continue
+            if _unknown(sku.get("offer_id")):
+                offer_id = _new_store_offer_id(used)
+                used.add(offer_id)
+                sku.update({
+                    "offer_id": offer_id,
+                    "offer_id_strategy": "store_specific_random_v1",
+                    "offer_id_generated_at": generated_at,
+                })
+                changed = True
+        if ordered_records != existing_records:
+            record["sku_publications"] = ordered_records
+            changed = True
+        record.setdefault("store_id", str(store_id))
+    if changed:
+        save_publications(product_dir, data)
+        # SQLite is authoritative after cutover; reload the persisted projection
+        # so callers never continue with a mapping different from the database.
+        data = load_publications(product_dir)
     return data
 
 

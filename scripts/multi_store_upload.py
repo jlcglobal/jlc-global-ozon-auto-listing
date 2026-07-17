@@ -19,12 +19,12 @@ from typing import Any, Callable, Dict, Iterable, Mapping, Optional
 
 try:
     from pipeline_runtime import load_json, normalize_checkpoint, now, write_json_atomic
-    from store_publications import load_publications, save_publications
+    from store_publications import ensure_store_offer_ids, is_store_offer_id, load_publications, save_publications
     from task_database import cutover_active
     from workbench_stores import mark_store_validation_failed
 except ModuleNotFoundError:  # Imported as scripts.multi_store_upload by tests/tools.
     from scripts.pipeline_runtime import load_json, normalize_checkpoint, now, write_json_atomic
-    from scripts.store_publications import load_publications, save_publications
+    from scripts.store_publications import ensure_store_offer_ids, is_store_offer_id, load_publications, save_publications
     from scripts.task_database import cutover_active
     from scripts.workbench_stores import mark_store_validation_failed
 
@@ -39,6 +39,7 @@ STORE_ARTIFACTS = (
     "ozon-last-upload-hashes.json", "product-exists-check.json",
     "ozon-upload-payload.json", "ozon-images.json", "ozon-image-transfer.json",
     "ozon-preflight.json", "ozon-update-request-summary.json",
+    "store-offer-id-map.json",
 )
 
 
@@ -163,6 +164,50 @@ def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publi
         if sku_id in prices:
             item["price"] = f"{float(prices[sku_id]):.2f}"
     write_json_atomic(config_path, config)
+    offer_ids = {
+        str(item.get("sku_id")): str(item.get("offer_id"))
+        for item in publication.get("sku_publications") or []
+        if not _unknown(item.get("offer_id"))
+    }
+    draft_path = output / "ozon-draft.json"
+    if draft_path.is_file():
+        draft = load_json(draft_path)
+        draft_sku_ids = [str(item.get("source_sku_id")) for item in draft.get("skus") or []]
+        missing = [sku_id for sku_id in draft_sku_ids if sku_id not in offer_ids]
+        if missing:
+            raise RuntimeError(
+                f"店铺 {store_id} 缺少SKU专属货号，已在上传前阻断：{', '.join(missing)}"
+            )
+        if len({offer_ids[sku_id] for sku_id in draft_sku_ids}) != len(draft_sku_ids):
+            raise RuntimeError(f"店铺 {store_id} 存在重复SKU货号，已在上传前阻断")
+        for sku in draft.get("skus") or []:
+            sku["offer_id"] = offer_ids[str(sku.get("source_sku_id"))]
+        if draft_sku_ids:
+            draft["offer_id"] = offer_ids[draft_sku_ids[0]]
+        write_json_atomic(draft_path, draft)
+        grouping_path = output / "variant-grouping-result.json"
+        if grouping_path.is_file():
+            grouping = load_json(grouping_path)
+            for variant in grouping.get("variants") or []:
+                sku_id = str(variant.get("sku_id"))
+                if sku_id in offer_ids:
+                    variant["offer_id"] = offer_ids[sku_id]
+            write_json_atomic(grouping_path, grouping)
+        generated_mapping = bool(draft_sku_ids) and all(
+            is_store_offer_id(offer_ids[sku_id]) for sku_id in draft_sku_ids
+        )
+        write_json_atomic(output / "store-offer-id-map.json", {
+            "schema_version": "1.0.0",
+            "product_id": product_dir.name,
+            "store_id": store_id,
+            "strategy": "store_specific_random_v1" if generated_mapping else "legacy_preserved",
+            "requires_create": generated_mapping,
+            "prepared_at": now(),
+            "sku_offer_ids": [
+                {"sku_id": sku_id, "offer_id": offer_ids[sku_id]}
+                for sku_id in draft_sku_ids
+            ],
+        })
     return isolated
 
 
@@ -171,9 +216,18 @@ def default_runner(root: Path, isolated: Path, store_id: str) -> Dict[str, Any]:
     _load_env_file(root / "ozon-adapter" / f".env.{store_id}", env)
     log_path = isolated / "logs/store-upload.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
+    command = [
+        sys.executable, str(root / "ozon-uploader/cli.py"),
+        str(isolated), "--shop", store_id,
+    ]
+    offer_map_path = isolated / "output/store-offer-id-map.json"
+    offer_map = load_json(offer_map_path) if offer_map_path.is_file() else {}
+    if offer_map.get("requires_create") is True:
+        command.extend(["--require-action", "create"])
+    command.append("--execute")
     with log_path.open("a", encoding="utf-8") as log:
         completed = subprocess.run(
-            [sys.executable, str(root / "ozon-uploader/cli.py"), str(isolated), "--shop", store_id, "--execute"],
+            command,
             cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT, check=False,
         )
     status = load_json(isolated / "status.json")
@@ -434,7 +488,9 @@ def execute_selected_stores(
     only_store_ids: Optional[Iterable[str]] = None,
     runner: Optional[Callable[[Path, Path, str], Dict[str, Any]]] = None,
 ) -> Dict[str, Any]:
-    publications = load_publications(product_dir)
+    # Allocate every selected store/SKU article in one persisted pass before
+    # creating a workspace or allowing the first Ozon request.
+    publications = ensure_store_offer_ids(product_dir)
     only = set(only_store_ids or [])
     run = runner or default_runner
     attempted = []

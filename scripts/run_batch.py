@@ -793,56 +793,24 @@ def validate_source_step(product_dir: Path) -> None:
         raise RuntimeError("Collector final Ozon category and official rule snapshot are required")
 
 
-def offer_ids(product_dir: Path) -> List[str]:
-    return [f"{product_dir.name}-{sku['sku_id']}" for sku in load_json(product_dir / "input/source.json")["skus"]]
-
-
-def offer_exists_check(product_dir: Path, settings: Dict[str, Any]) -> None:
+def offer_exists_check(product_dir: Path, _settings: Dict[str, Any]) -> None:
     output = product_dir / "output"
-    identifiers = offer_ids(product_dir)
-    mode = app_mode(settings)
-    if mode == "development":
-        write_json_atomic(output / "offer-id-precheck.json", {
-            "product_id": product_dir.name, "offer_ids": identifiers,
-            "status": "development_skipped", "action": "create", "conflicts": [],
-            "checked_at": now(),
-        })
-        return
-    sys.path.insert(0, str(ROOT / "ozon-adapter"))
-    sys.path.insert(0, str(ROOT / "ozon-uploader"))
-    from ozon_adapter import OzonConfig
-    from ozon_uploader import OzonWriteClient
-    client = OzonWriteClient(OzonConfig.from_shop(str(settings.get("shop_name") or "zhonglian1"), ROOT / "ozon-adapter/shops.json"))
-    # This entry point is also used by focused recovery/diagnostic runs, where
-    # the process-level environment has not gone through ``main()``.  The
-    # endpoint is a read-only existence check, but the shared client still
-    # requires the explicit production mode gate.  Mirror the batch setting
-    # for this one call and restore the caller's environment afterwards.
-    previous_upload_mode = os.environ.get("UPLOAD_MODE")
-    os.environ["UPLOAD_MODE"] = "production"
-    try:
-        response = client.get_products_info(identifiers)
-    finally:
-        if previous_upload_mode is None:
-            os.environ.pop("UPLOAD_MODE", None)
-        else:
-            os.environ["UPLOAD_MODE"] = previous_upload_mode
-    items = response.get("items") or response.get("result", {}).get("items") or []
-    existing = {str(item.get("offer_id")) for item in items if item.get("offer_id")}
-    if existing and len(existing) != len(identifiers):
-        status, action = "blocked_mixed_conflict", "blocked"
-    elif existing:
-        status, action = "ok", "update"
-    else:
-        status, action = "ok", "create"
+    # Offer IDs are now allocated per selected store only after the user has
+    # approved the final product. A product-level lookup using the old shared
+    # Pxxxxxx-SKU identifier would query the wrong identity and can produce a
+    # false UPDATE/mixed-conflict result. The real read-only existence check is
+    # still mandatory inside each isolated store upload immediately before the
+    # CREATE request.
     write_json_atomic(output / "offer-id-precheck.json", {
-        "product_id": product_dir.name, "offer_ids": identifiers, "status": status,
-        "action": action, "existing_offer_ids": sorted(existing),
-        "conflicts": [] if status == "ok" else ["mixed existing and new offer IDs"],
+        "product_id": product_dir.name,
+        "offer_ids": [],
+        "status": "deferred_store_specific",
+        "action": "create_after_manual_confirmation",
+        "existing_offer_ids": [],
+        "conflicts": [],
+        "reason": "Each selected store/SKU receives a persisted opaque offer_id before upload; live collision check runs per store.",
         "checked_at": now(),
     })
-    if status != "ok":
-        raise RuntimeError("Offer ID conflict cannot be safely resolved")
 
 
 def upload_feasibility(product_dir: Path) -> None:
@@ -930,7 +898,7 @@ def upload_feasibility(product_dir: Path) -> None:
         "pricing": all(float(item.get("selling_price_cny") or 0) > 0 for item in pricing.get("sku_pricing", [])),
         "measurement_hierarchy": measurement_hierarchy,
         "image": bool(source.get("main_images") or any(sku.get("local_image_path") not in {None, "unknown"} for sku in source.get("skus") or [])),
-        "offer_conflict": offers.get("status") in {"ok", "development_skipped"},
+        "offer_conflict": offers.get("status") in {"ok", "development_skipped", "deferred_store_specific"},
     }
     value = {
         "product_id": product_dir.name, "status": "PASS" if all(checks.values()) else "FAIL",

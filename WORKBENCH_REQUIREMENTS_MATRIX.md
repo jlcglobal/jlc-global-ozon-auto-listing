@@ -22,7 +22,7 @@
 | ISO-10 | 手动批次状态聚合 | 已完整实现 | 商品WAITING_MANUAL_REVIEW => 批次AWAITING_MANUAL_UPLOAD | 单商品/混合失败测试通过；未上传不计success |
 | ISO-11 | SQLite连接生命周期 | 已完整实现 | MarketStore contextmanager及关键closing | ResourceWarning作为error运行全量462项：0失败/0错误 |
 
-当前主线全量回归480项全部通过，112项明确跳过，0失败、0错误；离线项目自检PASS（0错误、1项旧契约透明警告）；P900002整套11图已由用户验收通过，浏览器已验证P9样品不显示、四类素材分区独立渲染和通知状态一致性。真实新采集商品的联网整套设计/生图/人工确认/三店提交仍待用户提供一件新的工作台采集输入。本轮Ozon写/只读/库存调用均为0。
+当前主线全量回归484项全部通过，112项明确跳过，0失败、0错误；离线项目自检PASS（0错误、1项旧契约透明警告）；P900002整套11图已由用户验收通过，浏览器已验证P9样品不显示、四类素材分区独立渲染和通知状态一致性。新增每个`SKU × 店铺`稳定随机offer_id、SQLite持久化、隔离草稿替换和首次CREATE门禁。真实新采集商品的联网整套设计/生图/人工确认/三店提交仍待用户提供一件新的工作台采集输入。本轮Ozon写/只读/库存调用均为0。
 
 | 编号 | 需求名称 | 页面入口 | 前端组件 | 后端接口 | 数据保存位置 | 当前状态 | 自动测试 | 实际验收结果 |
 |---|---|---|---|---|---|---|---|---|
@@ -40,7 +40,7 @@
 | WB-12 | 商品审核台目标店铺选择 | 商品审核 | 店铺复选器 | `PUT /api/workbench/products/{id}/stores` | `output/store-publications.json` | 已完整实现 | 页面点击、数据与交接后只读测试通过 | 提交前可多选；已有task_id后只显示已提交店铺，不可改选 |
 | WB-13 | 创建批次目标店铺选择 | 采集箱/批次 | 创建批次弹窗 | `/api/workbench/batches/create` | `batches/<id>/batch.json` | 已完整实现 | 批次店铺测试通过 | 新批次不继承旧选择 |
 | WB-14 | 全局手动/自动模式 | 顶部总开关、系统设置 | 全局模式开关 | `/api/workbench/settings`、批次创建接口 | `config/workbench-settings.json`、`batches/<id>/batch.json` | 已完整实现 | 单/多商品模式冻结与开关切换测试通过 | 点击运行时冻结本批次模式；手动流程运行到等待人工检查，自动模式按冻结值继续；启动后切换全局开关不改当前批次 |
-| WB-15 | 多店独立 task/product/hash/status | 商品详情/批次 | 店铺状态矩阵 | 多店隔离上传器 | `output/store-publications.json`、`output/store-runs/<store>` | 部分实现 | 独立执行、混合状态、pending防重传测试通过 | 代码与mock闭环完成；真实多店Seller API写入尚未验收 |
+| WB-15 | 多店独立 task/product/hash/status | 商品详情/批次 | 店铺状态矩阵 | 多店隔离上传器 | SQLite店铺发布记录、`output/store-runs/<store>` | 部分实现 | 独立执行、混合状态、pending防重传、每店每SKU随机offer_id与重试稳定性测试通过 | 新任务每个SKU×店铺使用不同且固定的16位随机offer_id；已有task_id不改，远端碰撞不允许误UPDATE；真实多店Seller API写入尚未验收 |
 | WB-16 | 单店失败仅重试失败店铺 | 商品预览店铺状态 | “只重试这家店” | `/api/workbench/products/{id}/stores/{store}/retry` | 店铺发布记录、独立运行区 | 部分实现 | 明确失败、只重试目标店测试通过 | 成功/pending/状态不明店禁止重传；真实Seller API重试尚未验收 |
 | WB-17 | 商品彻底删除 | 队列/商品详情 | 三点菜单、删除确认框 | `/api/workbench/products/{id}` DELETE | 商品目录及关联本地队列 | 已完整实现 | 已有 | 已有桌面、移动端和删除后截图 |
 | WB-18 | 处理中商品删除和旧结果作废 | 删除确认框 | 删除任务控制 | 删除接口 | 墓碑、批次与异步队列 | 已完整实现 | 已有 | 已验证只取消单商品且不调用 Ozon |

@@ -2181,8 +2181,30 @@ async def create_product(request: Request) -> Dict[str, Any]:
     return ingest_capture(payload, current_operator())
 
 
+@app.get("/api/collector/categories/cache")
+def collector_category_cache() -> FileResponse:
+    cache = load_translated_tree_cache(ROOT)
+    cache_path = ROOT / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"
+    if not cache or not cache_path.is_file():
+        raise HTTPException(
+            status_code=503,
+            detail={"message": "Ozon官方简体中文类目尚未同步，禁止使用本地翻译类目"},
+        )
+    return FileResponse(
+        cache_path,
+        media_type="application/json",
+        headers={
+            "Cache-Control": "no-cache",
+            "X-Ozon-Category-Source": "ozon_seller_api",
+            "X-Ozon-Category-Language": "ZH_HANS",
+        },
+    )
+
+
 @app.get("/api/collector/categories")
 def collector_category_search(q: str = "", limit: int = 30) -> Dict[str, Any]:
+    if not load_translated_tree_cache(ROOT):
+        raise HTTPException(status_code=503, detail={"message": "Ozon官方简体中文类目尚未同步"})
     items = search_categories(ROOT, q, limit)
     return {"query": q, "items": items, "count": len(items), "ozon_write_api_calls": 0, "inventory_api_calls": 0}
 
@@ -2200,7 +2222,8 @@ def collector_category_tree(parent_id: str = "root") -> Dict[str, Any]:
         "count": len(items),
         "locale": cache.get("locale") or "unknown",
         "cache_version": cache.get("cache_version") or "dynamic-fallback",
-        "cache_source": "versioned_local_json" if cache else "dynamic_local_catalog",
+        "cache_source": cache.get("source") or "unavailable",
+        "api_language": cache.get("api_language") or "unknown",
         "ozon_write_api_calls": 0,
         "inventory_api_calls": 0,
     }

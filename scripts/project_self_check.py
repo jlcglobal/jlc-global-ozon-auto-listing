@@ -158,8 +158,26 @@ def check_edge_extension(results: List[Dict[str, Any]]) -> None:
     tree_count = int(tree.get("item_count") or 0)
     search_count = len(tree.get("search_items") or [])
     rule_count = len(rules.get("rules_by_key") or {})
-    cache_ok = tree.get("locale") == "zh-CN" and tree_count > 0 and search_count == tree_count and rule_count >= tree_count
-    add(results, "extension_category_cache", cache_ok, "插件中文类目树和规则缓存完整" if cache_ok else "插件类目缓存不完整", tree_count=tree_count, search_count=search_count, rule_count=rule_count)
+    cache_ok = (
+        tree.get("locale") == "zh-CN"
+        and tree.get("source") == "ozon_seller_api"
+        and tree.get("api_language") == "ZH_HANS"
+        and tree.get("official_labels_required") is True
+        and tree_count > 0
+        and search_count == tree_count
+        and rule_count >= tree_count
+    )
+    add(
+        results,
+        "extension_category_cache",
+        cache_ok,
+        "插件Ozon官方中文类目树和规则缓存完整" if cache_ok else "插件官方中文类目缓存不完整或仍在使用本地翻译",
+        tree_count=tree_count,
+        search_count=search_count,
+        rule_count=rule_count,
+        source=tree.get("source"),
+        api_language=tree.get("api_language"),
+    )
 
 
 def pid_alive(value: Any) -> bool:

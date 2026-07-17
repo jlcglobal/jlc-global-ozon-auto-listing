@@ -1,4 +1,4 @@
-const PLUGIN_VERSION = "0.4.11";
+const PLUGIN_VERSION = "0.4.12";
 const MAX_SELECTED_SKUS = 10;
 const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
 let latestDrawerCapture = null;
@@ -1646,17 +1646,30 @@ async function collectorApi(path, options = {}) {
 
 async function loadLocalCategoryTreeCache() {
   if (!localCategoryTreeCachePromise) {
-    localCategoryTreeCachePromise = fetch(chrome.runtime.getURL("category-tree.zh-CN.json"))
+    const validateOfficialCache = (cache, transport) => {
+      if (
+        cache.locale !== "zh-CN"
+        || cache.source !== "ozon_seller_api"
+        || cache.api_language !== "ZH_HANS"
+        || cache.official_labels_required !== true
+        || !cache.children_by_parent
+        || !cache.search_items
+      ) {
+        throw new Error("类目缓存不是Ozon官方简体中文数据，已拒绝使用本地翻译");
+      }
+      return { ...cache, cache_transport: transport };
+    };
+    const bundled = () => fetch(chrome.runtime.getURL("category-tree.zh-CN.json"))
       .then((response) => {
-        if (!response.ok) throw new Error(`本地中文类目缓存读取失败：HTTP ${response.status}`);
+        if (!response.ok) throw new Error(`插件官方中文类目缓存读取失败：HTTP ${response.status}`);
         return response.json();
       })
       .then((cache) => {
-        if (cache.locale !== "zh-CN" || !cache.children_by_parent || !cache.search_items) {
-          throw new Error("本地中文类目缓存格式无效");
-        }
-        return cache;
+        return validateOfficialCache(cache, "插件内置");
       });
+    localCategoryTreeCachePromise = collectorApi("/api/collector/categories/cache")
+      .then((cache) => validateOfficialCache(cache, "主电脑实时缓存"))
+      .catch(() => bundled());
   }
   return localCategoryTreeCachePromise;
 }
@@ -1853,7 +1866,7 @@ function showSkuDrawer(capture, options = {}) {
       <div class="caf-list"></div>
       <div class="caf-category">
         <div class="caf-category-title">最终 Ozon 类目（必选）</div>
-        <div class="caf-category-cache-status">本地中文类目缓存：正在读取…</div>
+        <div class="caf-category-cache-status">Ozon官方中文类目：正在读取…</div>
         <div class="caf-category-search-row">
           <input class="caf-category-search" type="search" placeholder="输入中文、俄文、关键词或编号">
           <button type="button" class="caf-category-search-button">搜索</button>
@@ -1866,7 +1879,7 @@ function showSkuDrawer(capture, options = {}) {
         <div class="caf-category-selected">尚未选择，不能完成采集</div>
         <div class="caf-category-section-title">搜索结果（输入中文、俄文、关键词或编号）</div>
         <div class="caf-category-results"></div>
-        <div class="caf-category-section-title">本地中文类目树（点击逐级展开，叶子类目才可选择）</div>
+        <div class="caf-category-section-title">Ozon后台官方中文类目树（点击逐级展开，叶子类目才可选择）</div>
         <div class="caf-category-tree" role="tree" aria-label="Ozon类目树"></div>
       </div>
       <div class="caf-actions">
@@ -1912,6 +1925,13 @@ function showSkuDrawer(capture, options = {}) {
   }
 
   async function selectCategory(item) {
+    if (item.label_source !== "ozon_seller_api") {
+      selectedCategory = null;
+      categoryRules = null;
+      categorySelected.textContent = "该类目不是Ozon官方中文数据，禁止选择";
+      setMessage("请刷新官方中文类目缓存后重试，系统不会再使用本地翻译。");
+      return;
+    }
     selectedCategory = item;
     categoryRules = null;
     categorySelected.textContent = `正在加载“${item.name_zh}”的官方必填属性、字典值和 is_aspect…`;
@@ -1963,7 +1983,7 @@ function showSkuDrawer(capture, options = {}) {
     container.innerHTML = '<div class="caf-tree-empty">正在加载类目树…</div>';
     try {
       const cache = await loadLocalCategoryTreeCache();
-      categoryCacheStatus.textContent = `本地中文类目缓存：已加载 ${cache.item_count} 个最终类目 · 版本 ${cache.cache_version}`;
+      categoryCacheStatus.textContent = `Ozon官方中文类目：已加载 ${cache.item_count} 个最终类目 · ${cache.cache_transport} · 版本 ${cache.cache_version}`;
       const items = cache.children_by_parent[parentId];
       if (!items) throw new Error("本地类目树节点不存在");
       container.innerHTML = "";
@@ -2011,7 +2031,7 @@ function showSkuDrawer(capture, options = {}) {
       if (!items.length) container.innerHTML = '<div class="caf-tree-empty">此分支没有可选子类目</div>';
       refreshCategoryActiveState();
     } catch (error) {
-      categoryCacheStatus.textContent = "本地中文类目缓存：读取失败";
+      categoryCacheStatus.textContent = "Ozon官方中文类目：读取失败";
       container.innerHTML = "";
       const failure = document.createElement("div");
       failure.className = "caf-tree-empty";
@@ -2290,6 +2310,8 @@ function showSkuDrawer(capture, options = {}) {
         category_path: selectedCategory.path,
         category_name_zh: selectedCategory.name_zh,
         category_path_zh: selectedCategory.path_zh,
+        category_label_source: "ozon_seller_api",
+        category_label_language: "ZH_HANS",
         selected_at: new Date().toISOString(),
         rules_snapshot: categoryRules
       }

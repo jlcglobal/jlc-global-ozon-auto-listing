@@ -1,27 +1,32 @@
-"""Build the versioned local zh-CN Ozon category cache.
+#!/usr/bin/env python3
+"""Synchronize the exact Simplified Chinese Ozon category tree.
 
-Runtime code never imports a translator. Translation is an optional one-time
-development step; the collector and Edge extension only read the generated JSON.
+The Chinese labels come only from Ozon Seller API ``ZH_HANS`` responses.  The
+Russian and Chinese trees are joined by ``(description_category_id, type_id)``;
+text translation, fuzzy matching and label normalization are intentionally
+forbidden.
 """
 from __future__ import annotations
 
 import argparse
 import hashlib
 import json
-import re
+import os
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List
+from typing import Any, Dict, Iterable, List, Mapping, Tuple
 
 
 ROOT = Path(__file__).resolve().parents[1]
 CATALOG_PATH = ROOT / "ozon-adapter/metadata/ozon-rules-2026-07-10/categories.json"
-TRANSLATIONS_PATH = ROOT / "config/ozon-category-translations-zh.json"
-OVERRIDES_PATH = ROOT / "config/ozon-category-translation-overrides.json"
 ALIASES_PATH = ROOT / "config/ozon-category-search-aliases.json"
 CACHE_PATH = ROOT / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"
 EXTENSION_CACHE_PATH = ROOT / "collector/edge-extension/category-tree.zh-CN.json"
+ENDPOINT = "/v1/description-category/tree"
+OFFICIAL_ZH_LANGUAGE = "ZH_HANS"
+OFFICIAL_RU_LANGUAGE = "RU"
 
 
 def load_json(path: Path, default: Any) -> Any:
@@ -44,61 +49,75 @@ def branch_id(path: Iterable[str]) -> str:
     return f"branch-{hashlib.sha1(value.encode('utf-8')).hexdigest()[:16]}"
 
 
-def normalize_translation(value: str, source: str) -> str:
-    value = re.sub(r"^(货物|产品|商品|物品)\s*[:：]\s*", "", value.strip()).strip()
-    if not value or value == source or re.search(r"[А-Яа-яЁё]", value):
-        value = "其他商品类目"
-    if not re.search(r"[\u3400-\u9fff]", value):
-        value = f"相关商品（{value}）"
-    return value
+def canonical_hash(value: Any) -> str:
+    payload = json.dumps(value, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()
 
 
-def translate_missing(labels: List[str], translations: Dict[str, str], batch_size: int = 20) -> None:
-    from argostranslate import translate
+def _leaf_index(response: Mapping[str, Any]) -> Dict[Tuple[int, int], Dict[str, Any]]:
+    sys.path.insert(0, str(ROOT / "ozon-adapter"))
+    from ozon_adapter.service import flatten_category_tree
 
-    missing = [label for label in labels if not translations.get(label)]
-    for offset in range(0, len(missing), batch_size):
-        batch = missing[offset:offset + batch_size]
-        prompt = "\n".join(f"[{index}] Товар: {label}" for index, label in enumerate(batch))
-        output = translate.translate(prompt, "ru", "zh")
-        found: Dict[int, str] = {}
-        for line in output.splitlines():
-            match = re.match(r"^\[(\d+)\]\s*(.+)$", line.strip())
-            if match:
-                found[int(match.group(1))] = match.group(2).strip()
-        for index, label in enumerate(batch):
-            translated = found.get(index)
-            if not translated:
-                translated = translate.translate(f"Товар: {label}", "ru", "zh")
-            translations[label] = normalize_translation(translated, label)
-        if offset % 200 == 0 or offset + len(batch) >= len(missing):
-            write_translation_file(translations)
-            print(f"translated {min(offset + len(batch), len(missing))}/{len(missing)}", flush=True)
-
-
-def write_translation_file(translations: Dict[str, str]) -> None:
-    overrides = load_json(OVERRIDES_PATH, {}).get("translations") or {}
-    merged = {source: normalize_translation(value, source) for source, value in translations.items()}
-    merged.update(overrides)
-    write_json(TRANSLATIONS_PATH, {
-        "schema_version": "1.0.0",
-        "locale": "zh-CN",
-        "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-        "source": "offline_ru_en_zh_with_manual_overrides",
-        "translations": dict(sorted(merged.items())),
-    })
+    rows = flatten_category_tree(dict(response))
+    result: Dict[Tuple[int, int], Dict[str, Any]] = {}
+    for row in rows:
+        category_id = row.get("category_id")
+        type_id = row.get("type_id")
+        if not category_id or not type_id or row.get("disabled"):
+            continue
+        key = (int(category_id), int(type_id))
+        if key in result:
+            raise ValueError(f"Ozon官方类目树包含重复叶子：{key[0]}:{key[1]}")
+        path = [str(part).strip() for part in row.get("path") or [] if str(part).strip()]
+        if not path:
+            raise ValueError(f"Ozon官方类目缺少路径：{key[0]}:{key[1]}")
+        result[key] = {**row, "path": path}
+    if not result:
+        raise ValueError("Ozon官方类目树没有可用叶子")
+    return result
 
 
-def build_cache(catalog: List[Dict[str, Any]], translations: Dict[str, str]) -> Dict[str, Any]:
+def _catalog_keys(catalog: List[Dict[str, Any]]) -> set[Tuple[int, int]]:
+    return {(int(item["categoryId"]), int(item["typeId"])) for item in catalog}
+
+
+def build_official_cache(
+    catalog: List[Dict[str, Any]],
+    ru_response: Mapping[str, Any],
+    zh_response: Mapping[str, Any],
+    *,
+    shop_id: str,
+    generated_at: str | None = None,
+) -> Dict[str, Any]:
+    ru_items = _leaf_index(ru_response)
+    zh_items = _leaf_index(zh_response)
+    catalog_keys = _catalog_keys(catalog)
+    ru_keys = set(ru_items)
+    zh_keys = set(zh_items)
+    if ru_keys != zh_keys:
+        raise ValueError(
+            f"Ozon俄文与中文官方类目ID不一致：仅俄文{len(ru_keys - zh_keys)}，仅中文{len(zh_keys - ru_keys)}"
+        )
+    if ru_keys != catalog_keys:
+        raise ValueError(
+            f"Ozon官方类目与本地属性规则ID不一致：仅官方{len(ru_keys - catalog_keys)}，仅本地{len(catalog_keys - ru_keys)}"
+        )
+
     children: Dict[str, Dict[str, Dict[str, Any]]] = {"root": {}}
-    search_items = []
-    for raw in catalog:
-        category_id = int(raw["categoryId"])
-        type_id = int(raw["typeId"])
-        path_ru = [str(part).strip() for part in raw.get("categoryPath") or [] if str(part).strip()]
-        name_ru = str(raw.get("nameRu") or path_ru[-1]).strip()
-        path_zh = [translations[part] for part in path_ru]
-        name_zh = translations[name_ru]
+    search_items: List[Dict[str, Any]] = []
+    for category_id, type_id in sorted(catalog_keys):
+        ru = ru_items[(category_id, type_id)]
+        zh = zh_items[(category_id, type_id)]
+        path_ru = ru["path"]
+        path_zh = zh["path"]
+        if len(path_ru) != len(path_zh):
+            raise ValueError(
+                f"Ozon官方中俄类目层级不一致：{category_id}:{type_id}，俄文{len(path_ru)}层，中文{len(path_zh)}层"
+            )
+        name_ru = str(ru.get("type_name") or path_ru[-1]).strip()
+        name_zh = str(zh.get("type_name") or path_zh[-1]).strip()
+        if not name_ru or not name_zh:
+            raise ValueError(f"Ozon官方类目名称为空：{category_id}:{type_id}")
         search_items.append({
             "category_id": category_id,
             "type_id": type_id,
@@ -106,10 +125,14 @@ def build_cache(catalog: List[Dict[str, Any]], translations: Dict[str, str]) -> 
             "name_zh": name_zh,
             "path": path_ru,
             "path_zh": path_zh,
+            "label_source": "ozon_seller_api",
+            "label_language": OFFICIAL_ZH_LANGUAGE,
         })
+
         parent = "root"
-        for index, name in enumerate(path_ru):
-            prefix = path_ru[:index + 1]
+        for index, (ru_name, zh_name) in enumerate(zip(path_ru, path_zh)):
+            ru_prefix = path_ru[:index + 1]
+            zh_prefix = path_zh[:index + 1]
             is_leaf = index == len(path_ru) - 1
             if is_leaf:
                 node_id = f"leaf-{category_id}-{type_id}"
@@ -125,38 +148,52 @@ def build_cache(catalog: List[Dict[str, Any]], translations: Dict[str, str]) -> 
                     "has_children": False,
                     "category_id": category_id,
                     "type_id": type_id,
+                    "label_source": "ozon_seller_api",
                 }
             else:
-                node_id = branch_id(prefix)
+                node_id = branch_id(ru_prefix)
                 node = {
                     "node_id": node_id,
                     "parent_id": parent,
                     "kind": "branch",
-                    "name_ru": name,
-                    "name_zh": translations[name],
-                    "path": prefix,
-                    "path_zh": path_zh[:index + 1],
+                    "name_ru": ru_name,
+                    "name_zh": zh_name,
+                    "path": ru_prefix,
+                    "path_zh": zh_prefix,
                     "depth": index,
                     "has_children": True,
+                    "label_source": "ozon_seller_api",
                 }
-            children.setdefault(parent, {})[node_id] = node
+            existing = children.setdefault(parent, {}).get(node_id)
+            if existing and existing != node:
+                raise ValueError(f"Ozon官方类目分支映射冲突：{node_id}")
+            children[parent][node_id] = node
             if not is_leaf:
                 children.setdefault(node_id, {})
                 parent = node_id
+
     children_by_parent = {
         parent: sorted(nodes.values(), key=lambda item: (item["kind"] == "leaf", item["name_zh"], item["node_id"]))
         for parent, nodes in children.items()
     }
-    source_hash = hashlib.sha256(CATALOG_PATH.read_bytes()).hexdigest()
-    translation_hash = hashlib.sha256(TRANSLATIONS_PATH.read_bytes()).hexdigest()
-    cache_version = hashlib.sha256(f"{source_hash}:{translation_hash}".encode()).hexdigest()[:16]
+    catalog_hash = hashlib.sha256(CATALOG_PATH.read_bytes()).hexdigest()
+    ru_hash = canonical_hash(ru_response)
+    zh_hash = canonical_hash(zh_response)
+    cache_version = hashlib.sha256(f"{catalog_hash}:{ru_hash}:{zh_hash}".encode()).hexdigest()[:16]
     return {
-        "schema_version": "1.0.0",
+        "schema_version": "2.0.0",
         "locale": "zh-CN",
+        "source": "ozon_seller_api",
+        "api_endpoint": ENDPOINT,
+        "api_language": OFFICIAL_ZH_LANGUAGE,
+        "russian_language": OFFICIAL_RU_LANGUAGE,
+        "official_labels_required": True,
+        "shop_id": shop_id,
         "cache_version": cache_version,
-        "generated_at": datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
-        "catalog_sha256": source_hash,
-        "translation_sha256": translation_hash,
+        "generated_at": generated_at or datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds"),
+        "catalog_sha256": catalog_hash,
+        "ru_response_sha256": ru_hash,
+        "zh_response_sha256": zh_hash,
         "item_count": len(search_items),
         "search_aliases": load_json(ALIASES_PATH, {}).get("aliases") or {},
         "children_by_parent": children_by_parent,
@@ -164,27 +201,54 @@ def build_cache(catalog: List[Dict[str, Any]], translations: Dict[str, str]) -> 
     }
 
 
+def _load_env_file(path: Path) -> None:
+    if not path.is_file():
+        raise FileNotFoundError(f"店铺只读密钥文件不存在：{path}")
+    for raw in path.read_text(encoding="utf-8").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        os.environ.setdefault(key.strip(), value.strip().strip('"').strip("'"))
+
+
+def fetch_official_trees(shop_id: str, env_file: Path) -> tuple[Dict[str, Any], Dict[str, Any]]:
+    _load_env_file(env_file)
+    sys.path.insert(0, str(ROOT / "ozon-adapter"))
+    from ozon_adapter import OzonConfig, OzonReadOnlyClient
+
+    client = OzonReadOnlyClient(OzonConfig.from_shop(shop_id, ROOT / "ozon-adapter/shops.json"))
+    return client.get_category_tree(OFFICIAL_RU_LANGUAGE), client.get_category_tree(OFFICIAL_ZH_LANGUAGE)
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser()
-    parser.add_argument("--translate-missing", action="store_true")
-    parser.add_argument("--batch-size", type=int, default=20)
+    parser = argparse.ArgumentParser(description="同步Ozon官方简体中文类目树（只读）")
+    parser.add_argument("--shop", default="zhonglian1")
+    parser.add_argument("--env-file", type=Path)
+    parser.add_argument("--ru-response", type=Path, help="使用已保存的Ozon RU响应，不联网")
+    parser.add_argument("--zh-response", type=Path, help="使用已保存的Ozon ZH_HANS响应，不联网")
+    parser.add_argument("--check-only", action="store_true", help="只校验，不写入缓存")
     args = parser.parse_args()
-    catalog = load_json(CATALOG_PATH, [])
-    labels = sorted({label for item in catalog for label in [*(item.get("categoryPath") or []), item.get("nameRu")] if label})
-    translations = dict(load_json(TRANSLATIONS_PATH, {}).get("translations") or {})
-    translations.update(load_json(OVERRIDES_PATH, {}).get("translations") or {})
-    if args.translate_missing:
-        translate_missing(labels, translations, max(1, min(args.batch_size, 50)))
-    missing = [label for label in labels if not translations.get(label)]
-    if missing:
-        print(f"missing translations: {len(missing)}; rerun with --translate-missing")
-        return 2
-    write_translation_file(translations)
-    translations = load_json(TRANSLATIONS_PATH, {})["translations"]
-    cache = build_cache(catalog, translations)
-    write_json(CACHE_PATH, cache)
-    write_json(EXTENSION_CACHE_PATH, cache)
-    print(f"cache {cache['cache_version']}: {cache['item_count']} items, {len(cache['children_by_parent'])} parents")
+
+    if bool(args.ru_response) != bool(args.zh_response):
+        parser.error("--ru-response 与 --zh-response 必须同时提供")
+    if args.ru_response:
+        ru_response = load_json(args.ru_response, {})
+        zh_response = load_json(args.zh_response, {})
+    else:
+        env_file = args.env_file or ROOT / f"ozon-adapter/.env.{args.shop}"
+        ru_response, zh_response = fetch_official_trees(args.shop, env_file)
+    cache = build_official_cache(
+        load_json(CATALOG_PATH, []), ru_response, zh_response, shop_id=args.shop
+    )
+    if not args.check_only:
+        write_json(CACHE_PATH, cache)
+        write_json(EXTENSION_CACHE_PATH, cache)
+    mode = "validated" if args.check_only else "synchronized"
+    print(
+        f"official category cache {mode}: version={cache['cache_version']} "
+        f"items={cache['item_count']} source={cache['source']} language={cache['api_language']}"
+    )
     return 0
 
 

@@ -68,14 +68,25 @@ def category_key(category_id: int, type_id: int) -> str:
     return f"{category_id}:{type_id}"
 
 
+def _official_zh_cache(cache: Mapping[str, Any]) -> bool:
+    return bool(
+        cache.get("locale") == "zh-CN"
+        and cache.get("source") == "ozon_seller_api"
+        and cache.get("api_language") == "ZH_HANS"
+        and cache.get("official_labels_required") is True
+        and cache.get("children_by_parent")
+        and cache.get("search_items")
+    )
+
+
 @lru_cache(maxsize=8)
 def _load_catalog_cached(catalog_file: str, catalog_mtime_ns: int, cache_file: str, cache_mtime_ns: int) -> tuple[Dict[str, Any], ...]:
     if cache_file and Path(cache_file).is_file():
         cache = load_json(Path(cache_file), {})
         cached_items = cache.get("search_items") or []
         catalog_hash = hashlib.sha256(Path(catalog_file).read_bytes()).hexdigest()
-        if cached_items and cache.get("catalog_sha256") == catalog_hash:
-            return tuple({**item, "source": "local_ozon_rule_catalog_zh_cache"} for item in cached_items)
+        if _official_zh_cache(cache) and cache.get("catalog_sha256") == catalog_hash:
+            return tuple({**item, "source": "official_ozon_seller_api_zh_hans"} for item in cached_items)
     result: List[Dict[str, Any]] = []
     seen = set()
     for item in load_json(Path(catalog_file), []):
@@ -122,6 +133,8 @@ def get_category(root: Path, category_id: int, type_id: int) -> Dict[str, Any]:
     )
     if match is None:
         raise ValueError("所选category_id/type_id不是当前本地Ozon类目树中的有效叶子")
+    if not match.get("name_zh") or not match.get("path_zh") or match.get("source") != "official_ozon_seller_api_zh_hans":
+        raise ValueError("Ozon官方简体中文类目尚未同步，禁止使用本地翻译或猜测类目")
     return match
 
 
@@ -201,6 +214,8 @@ def search_categories(root: Path, query: str, limit: int = 30) -> List[Dict[str,
     numeric = "".join(char for char in query if char.isdigit())
     ranked = []
     for item in load_catalog(root):
+        if item.get("source") != "official_ozon_seller_api_zh_hans":
+            continue
         haystack = " ".join([
             item["name_ru"], item.get("name_zh") or "", *item["path"], *(item.get("path_zh") or [])
         ]).casefold()
@@ -224,15 +239,10 @@ def recommend_categories(root: Path, product_text: str) -> List[Dict[str, Any]]:
     return search_categories(root, product_text, limit=3)[:3]
 
 
-def _branch_node_id(path: Iterable[str]) -> str:
-    value = "\x1f".join(path)
-    return f"branch-{hashlib.sha1(value.encode('utf-8')).hexdigest()[:16]}"
-
-
 @lru_cache(maxsize=8)
 def _load_tree_cache_cached(cache_file: str, cache_mtime_ns: int, catalog_file: str, catalog_mtime_ns: int) -> Dict[str, Any]:
     cache = load_json(Path(cache_file), {})
-    if not cache.get("children_by_parent"):
+    if not _official_zh_cache(cache):
         return {}
     current_catalog_hash = hashlib.sha256(Path(catalog_file).read_bytes()).hexdigest()
     if cache.get("catalog_sha256") != current_catalog_hash:
@@ -241,6 +251,11 @@ def _load_tree_cache_cached(cache_file: str, cache_mtime_ns: int, catalog_file: 
 
 
 def load_translated_tree_cache(root: Path) -> Dict[str, Any]:
+    """Return only the official Ozon ZH_HANS cache.
+
+    The historical function name is kept for compatibility with existing
+    callers; locally translated caches are deliberately rejected.
+    """
     cache_file = translated_tree_cache_path(root)
     catalog_file = catalog_path(root)
     if not cache_file.is_file() or not catalog_file.is_file():
@@ -251,58 +266,14 @@ def load_translated_tree_cache(root: Path) -> Dict[str, Any]:
 
 
 def category_tree_children(root: Path, parent_id: str = "root") -> List[Dict[str, Any]]:
-    """Return one lazily browsable level from the local Ozon category catalog."""
+    """Return one level from the exact official Ozon Simplified Chinese tree."""
     translated_cache = load_translated_tree_cache(root)
     if translated_cache:
         children = translated_cache["children_by_parent"]
         if parent_id not in children:
             raise ValueError("类目树节点不存在或不是可展开分支")
         return [dict(item) for item in children[parent_id]]
-    children: Dict[str, Dict[str, Dict[str, Any]]] = {"root": {}}
-    branch_ids = {"root"}
-    for item in load_catalog(root):
-        path = item["path"] or [item["name_ru"]]
-        current_parent = "root"
-        for index, name in enumerate(path):
-            prefix = path[:index + 1]
-            is_leaf = index == len(path) - 1
-            if is_leaf:
-                node_id = f"leaf-{item['category_id']}-{item['type_id']}"
-                node = {
-                    "node_id": node_id,
-                    "parent_id": current_parent,
-                    "kind": "leaf",
-                    "name_ru": item["name_ru"],
-                    "name_zh": item.get("name_zh"),
-                    "path": path,
-                    "depth": index,
-                    "has_children": False,
-                    "category_id": item["category_id"],
-                    "type_id": item["type_id"],
-                }
-            else:
-                node_id = _branch_node_id(prefix)
-                node = {
-                    "node_id": node_id,
-                    "parent_id": current_parent,
-                    "kind": "branch",
-                    "name_ru": name,
-                    "name_zh": None,
-                    "path": prefix,
-                    "depth": index,
-                    "has_children": True,
-                }
-                branch_ids.add(node_id)
-            children.setdefault(current_parent, {})[node_id] = node
-            if not is_leaf:
-                children.setdefault(node_id, {})
-                current_parent = node_id
-    if parent_id not in branch_ids:
-        raise ValueError("类目树节点不存在或不是可展开分支")
-    return sorted(
-        children.get(parent_id, {}).values(),
-        key=lambda item: (item["kind"] == "leaf", item["name_ru"].casefold(), item["node_id"]),
-    )
+    raise ValueError("Ozon官方简体中文类目尚未同步，禁止显示本地翻译类目")
 
 
 def _cache_dir(root: Path, shop_id: str, category_id: int, type_id: int) -> Path:
@@ -370,7 +341,15 @@ def prepare_rules(
     if not cache_hit:
         bundled = bundled_collector_rules(root, category_id, type_id, shop_id)
         if bundled is not None:
-            return bundled
+            return {
+                **bundled,
+                "category_name_ru": category["name_ru"],
+                "category_name_zh": category["name_zh"],
+                "category_path": category["path"],
+                "category_path_zh": category["path_zh"],
+                "category_label_source": "ozon_seller_api",
+                "category_label_language": "ZH_HANS",
+            }
         if not allow_fetch:
             raise FileNotFoundError("该类目的官方属性规则尚未缓存，请先执行只读规则加载")
         if client is None:
@@ -424,8 +403,10 @@ def prepare_rules(
         "schema_version": "1.0.0",
         **snapshot_payload,
         "category_name_ru": category["name_ru"],
-        "category_name_zh": category.get("name_zh") or "unknown",
-        "category_path_zh": category.get("path_zh") or ["unknown"],
+        "category_name_zh": category["name_zh"],
+        "category_path_zh": category["path_zh"],
+        "category_label_source": "ozon_seller_api",
+        "category_label_language": "ZH_HANS",
         "shop_id": shop_id,
         "rules_source": "ozon_seller_api_cache",
         "rules_snapshot_hash": digest,
@@ -485,9 +466,11 @@ def build_selection(
         "category_id": category_id,
         "type_id": type_id,
         "category_name_ru": category["name_ru"],
-        "category_name_zh": category.get("name_zh") or "unknown",
+        "category_name_zh": category["name_zh"],
         "category_path": category["path"],
-        "category_path_zh": category.get("path_zh") or ["unknown"],
+        "category_path_zh": category["path_zh"],
+        "category_label_source": "ozon_seller_api",
+        "category_label_language": "ZH_HANS",
         "rules_snapshot": rules,
         "rules_snapshot_hash": expected_hash,
         "locked_for_batch": True,

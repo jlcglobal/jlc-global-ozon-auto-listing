@@ -1,8 +1,8 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import importlib.util
-import re
 import tempfile
 import unittest
 from pathlib import Path
@@ -18,6 +18,7 @@ from scripts.collector_categories import (
     set_favorite,
 )
 from scripts.build_collector_category_rules_cache import build_cache
+from scripts.build_category_zh_cache import build_official_cache
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
@@ -34,13 +35,57 @@ def write_json(path: Path, value: dict | list) -> None:
 def make_root() -> tuple[tempfile.TemporaryDirectory, Path]:
     temporary = tempfile.TemporaryDirectory()
     root = Path(temporary.name)
-    write_json(root / "ozon-adapter/metadata/ozon-rules-2026-07-10/categories.json", [
+    catalog = [
         {"categoryId": "101", "typeId": "201", "nameRu": "Наушники", "nameZh": "", "categoryPath": ["Электроника", "Наушники"]},
         {"categoryId": "102", "typeId": "202", "nameRu": "Весы для багажа", "nameZh": "", "categoryPath": ["Туризм", "Весы для багажа"]},
         {"categoryId": "103", "typeId": "203", "nameRu": "Точилка для ножей", "nameZh": "", "categoryPath": ["Дом", "Кухня", "Точилка для ножей"]},
         {"categoryId": "104", "typeId": "204", "nameRu": "Сумка", "nameZh": "", "categoryPath": ["Аксессуары", "Сумки"]},
         {"categoryId": "105", "typeId": "205", "nameRu": "Контейнер пищевой", "nameZh": "", "categoryPath": ["Дом и сад", "Хранение продуктов", "Контейнер пищевой"]},
-    ])
+    ]
+    catalog_file = root / "ozon-adapter/metadata/ozon-rules-2026-07-10/categories.json"
+    write_json(catalog_file, catalog)
+    labels = {
+        "Электроника": "电子产品", "Наушники": "耳机",
+        "Туризм": "旅游", "Весы для багажа": "行李秤",
+        "Дом": "家居", "Кухня": "厨房", "Точилка для ножей": "磨刀器",
+        "Аксессуары": "配饰", "Сумки": "包袋", "Сумка": "包",
+        "Дом и сад": "住宅和花园", "Хранение продуктов": "食物贮藏", "Контейнер пищевой": "食品储存罐",
+    }
+    children: dict[str, dict[str, dict]] = {"root": {}}
+    search_items = []
+    for item in catalog:
+        category_id, type_id = int(item["categoryId"]), int(item["typeId"])
+        path = item["categoryPath"]
+        path_zh = [labels[part] for part in path]
+        search_items.append({
+            "category_id": category_id, "type_id": type_id,
+            "name_ru": item["nameRu"], "name_zh": path_zh[-1],
+            "path": path, "path_zh": path_zh,
+            "label_source": "ozon_seller_api", "label_language": "ZH_HANS",
+        })
+        parent = "root"
+        for index, (name_ru, name_zh) in enumerate(zip(path, path_zh)):
+            leaf = index == len(path) - 1
+            node_id = f"leaf-{category_id}-{type_id}" if leaf else "branch-" + hashlib.sha1("\x1f".join(path[:index + 1]).encode()).hexdigest()[:16]
+            node = {
+                "node_id": node_id, "parent_id": parent, "kind": "leaf" if leaf else "branch",
+                "name_ru": item["nameRu"] if leaf else name_ru, "name_zh": path_zh[-1] if leaf else name_zh,
+                "path": path if leaf else path[:index + 1], "path_zh": path_zh if leaf else path_zh[:index + 1],
+                "depth": index, "has_children": not leaf, "label_source": "ozon_seller_api",
+            }
+            if leaf:
+                node.update({"category_id": category_id, "type_id": type_id})
+            children.setdefault(parent, {})[node_id] = node
+            if not leaf:
+                children.setdefault(node_id, {})
+                parent = node_id
+    write_json(root / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json", {
+        "schema_version": "2.0.0", "locale": "zh-CN", "source": "ozon_seller_api",
+        "api_language": "ZH_HANS", "official_labels_required": True,
+        "catalog_sha256": hashlib.sha256(catalog_file.read_bytes()).hexdigest(),
+        "children_by_parent": {key: list(value.values()) for key, value in children.items()},
+        "search_items": search_items, "item_count": len(search_items),
+    })
     write_json(root / "config/ozon-category-search-aliases.json", {"aliases": {
         "电子": "электроника", "耳机": "наушники", "行李": "багаж", "秤": "весы",
         "食品储藏": "хранение продуктов"
@@ -79,7 +124,7 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertEqual(home["kind"], "branch")
         self.assertTrue(home["has_children"])
         storage = category_tree_children(root, home["node_id"])[0]
-        self.assertEqual(storage["name_ru"], "Хранение продуктов")
+        self.assertEqual(storage["name_zh"], "食物贮藏")
         leaf = category_tree_children(root, storage["node_id"])[0]
         self.assertEqual((leaf["category_id"], leaf["type_id"]), (105, 205))
         self.assertEqual(leaf["kind"], "leaf")
@@ -112,6 +157,7 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertEqual(snapshot["attributes"][0]["allowed_values"][0]["id"], 10)
         self.assertEqual(snapshot["ozon_write_api_calls"], 0)
         self.assertEqual(snapshot["inventory_api_calls"], 0)
+        self.assertEqual(snapshot["category_label_source"], "ozon_seller_api")
 
     def test_offline_bulk_cache_prevents_category_selection_from_stopping(self):
         temporary, root = make_root()
@@ -159,6 +205,39 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertEqual((selection["category_id"], selection["type_id"]), (102, 202))
         self.assertFalse(selection["allow_runtime_rematch"])
         self.assertEqual(selection["rules_snapshot_hash"], rules["rules_snapshot_hash"])
+        self.assertEqual(selection["category_label_language"], "ZH_HANS")
+
+    def test_official_cache_pairs_labels_only_by_exact_ozon_ids(self):
+        catalog = [{"categoryId": "101", "typeId": "201"}]
+        def response(root_name, leaf_name):
+            return {"result": [{
+                "description_category_id": 100, "category_name": root_name,
+                "children": [{
+                    "description_category_id": 101, "category_name": root_name,
+                    "children": [{"type_id": 201, "type_name": leaf_name}],
+                }],
+            }]}
+        cache = build_official_cache(
+            catalog, response("Дом", "Контейнер пищевой"), response("住宅和花园", "食品储存罐"),
+            shop_id="test", generated_at="2026-07-17T00:00:00+08:00",
+        )
+        item = cache["search_items"][0]
+        self.assertEqual(item["name_zh"], "食品储存罐")
+        self.assertEqual(item["label_source"], "ozon_seller_api")
+        self.assertEqual(cache["api_language"], "ZH_HANS")
+
+    def test_official_cache_rejects_unpaired_chinese_tree(self):
+        catalog = [{"categoryId": "101", "typeId": "201"}]
+        ru = {"result": [{
+            "description_category_id": 101, "category_name": "Дом",
+            "children": [{"type_id": 201, "type_name": "Контейнер"}],
+        }]}
+        zh = {"result": [{
+            "description_category_id": 101, "category_name": "住宅和花园",
+            "children": [{"type_id": 999, "type_name": "其他"}],
+        }]}
+        with self.assertRaisesRegex(ValueError, "类目ID不一致"):
+            build_official_cache(catalog, ru, zh, shop_id="test")
 
     def test_category_change_invalidates_attributes_image_strategy_and_payload_without_ozon_write(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -200,6 +279,7 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertEqual(source, built)
         self.assertIn("最终 Ozon 类目（必选）", built)
         self.assertIn("/api/collector/categories/rules", built)
+        self.assertIn("/api/collector/categories/cache", built)
         self.assertIn('chrome.runtime.getURL("category-tree.zh-CN.json")', built)
         self.assertIn('chrome.runtime.getURL("category-rules-cache.json")', built)
         self.assertIn("searchLocalCategoryCache", built)
@@ -214,14 +294,15 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertIn("收藏类目读取失败", built)
         self.assertIn("收藏失败：", built)
         self.assertIn("allow_readonly_fetch: false", built)
-        self.assertIn("本地中文类目树（点击逐级展开", built)
+        self.assertIn("Ozon后台官方中文类目树（点击逐级展开", built)
+        self.assertIn("已拒绝使用本地翻译", built)
         self.assertIn("选择SKU（勾选下方商品）", built)
         self.assertIn("蓝色仅表示筛选，不代表已选SKU", built)
         self.assertIn(".caf-list { overflow: auto; padding: 0 16px 8px; flex: 3 1 0; min-height: 180px", built)
         self.assertIn(".caf-category { border-top: 1px solid #e5e7eb; padding: 10px 16px; background: #f8fafc; overflow: auto", built)
         self.assertNotIn("collectorApi(`/api/collector/categories/tree", built)
         self.assertIn("请先选择最终Ozon类目", built)
-        self.assertEqual(manifest["version"], "0.4.11")
+        self.assertEqual(manifest["version"], "0.4.12")
         self.assertIn("无SKU图 · 可采集，生图前需人工确认参考图", built)
         self.assertIn('status: skuDebug.missing_image_skus.length ? "WARNING" : "PASS"', built)
         resources = manifest["web_accessible_resources"][0]["resources"]
@@ -234,15 +315,18 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         extension_cache = json.loads(extension_path.read_text(encoding="utf-8"))
         self.assertEqual(server_cache, extension_cache)
         self.assertEqual(server_cache["locale"], "zh-CN")
+        self.assertEqual(server_cache["source"], "ozon_seller_api")
+        self.assertEqual(server_cache["api_language"], "ZH_HANS")
+        self.assertTrue(server_cache["official_labels_required"])
         self.assertEqual(server_cache["item_count"], 7424)
         self.assertEqual(len(server_cache["children_by_parent"]["root"]), 26)
         nodes = [node for values in server_cache["children_by_parent"].values() for node in values]
-        self.assertTrue(all(re.search(r"[\u3400-\u9fff]", node["name_zh"]) for node in nodes))
-        self.assertFalse(any(re.search(r"[А-Яа-яЁё]", node["name_zh"]) for node in nodes))
-        self.assertTrue(all(all(re.search(r"[\u3400-\u9fff]", part) for part in node["path_zh"]) for node in nodes))
+        self.assertTrue(all(str(node["name_zh"]).strip() for node in nodes))
+        self.assertTrue(all(node.get("label_source") == "ozon_seller_api" for node in nodes))
+        self.assertTrue(all(all(str(part).strip() for part in node["path_zh"]) for node in nodes))
         self.assertEqual(
             next(node for node in nodes if node["name_ru"] == "Хранение продуктов")["name_zh"],
-            "食品储藏",
+            "食物贮藏",
         )
         first_load = load_translated_tree_cache(PROJECT_ROOT)
         second_load = load_translated_tree_cache(PROJECT_ROOT)

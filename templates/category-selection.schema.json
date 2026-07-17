@@ -19,6 +19,8 @@
     "category_name_zh": {"type": "string", "minLength": 1},
     "category_path": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
     "category_path_zh": {"type": "array", "minItems": 1, "items": {"type": "string", "minLength": 1}},
+    "category_label_source": {"type": "string", "const": "ozon_seller_api"},
+    "category_label_language": {"type": "string", "const": "ZH_HANS"},
     "rules_snapshot_hash": {"type": "string", "minLength": 1},
     "locked_for_batch": {"type": "boolean", "const": true},
     "allow_runtime_rematch": {"type": "boolean", "const": false},

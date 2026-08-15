@@ -1,0 +1,99 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/product-positioning.schema.json",
+  "title": "Product Positioning",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_id",
+    "source_refs",
+    "market_positioning",
+    "target_customer",
+    "purchase_motivation",
+    "customer_pain_points",
+    "core_sales_angle",
+    "buyer_selling_points",
+    "usage_scenarios",
+    "emotional_trigger",
+    "competitive_advantage",
+    "recommended_visual_direction",
+    "recommended_price_position",
+    "positioning_evidence",
+    "unknowns",
+    "processing"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "$ref": "#/$defs/productId" },
+    "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
+    "market_positioning": { "$ref": "#/$defs/unknownableString" },
+    "target_customer": { "$ref": "#/$defs/unknownableString" },
+    "purchase_motivation": { "$ref": "#/$defs/unknownableString" },
+    "customer_pain_points": { "type": "array", "items": { "$ref": "#/$defs/unknownableString" } },
+    "core_sales_angle": { "$ref": "#/$defs/unknownableString" },
+    "buyer_selling_points": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
+    "usage_scenarios": { "type": "array", "items": { "$ref": "#/$defs/claim" } },
+    "emotional_trigger": { "$ref": "#/$defs/unknownableString" },
+    "competitive_advantage": { "$ref": "#/$defs/unknownableString" },
+    "recommended_visual_direction": { "$ref": "#/$defs/unknownableString" },
+    "recommended_price_position": {
+      "type": "string",
+      "enum": ["budget", "mass_market", "mid_range", "premium", "unknown"]
+    },
+    "positioning_evidence": { "type": "array", "items": { "$ref": "#/$defs/evidence" } },
+    "unknowns": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "processing": { "$ref": "#/$defs/processingStep" }
+  },
+  "$defs": {
+    "productId": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "unknownableString": { "type": ["string", "null"], "minLength": 1 },
+    "evidence": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "claim_type", "statement", "source_refs"],
+      "properties": {
+        "field": {
+          "type": "string",
+          "enum": [
+            "market_positioning",
+            "target_customer",
+            "purchase_motivation",
+            "customer_pain_points",
+            "core_sales_angle",
+            "usage_scenarios",
+            "emotional_trigger",
+            "competitive_advantage",
+            "recommended_visual_direction",
+            "recommended_price_position"
+          ]
+        },
+        "claim_type": { "type": "string", "enum": ["fact", "supported_inference", "unknown"] },
+        "statement": { "type": "string", "minLength": 1 },
+        "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "claim": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["text", "claim_type", "source_refs"],
+      "properties": {
+        "text": { "type": "string", "minLength": 1 },
+        "claim_type": { "type": "string", "enum": ["fact", "supported_inference"] },
+        "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+      }
+    },
+    "processingStep": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["step", "status", "started_at", "finished_at", "error"],
+      "properties": {
+        "step": { "type": "string", "const": "product_positioning" },
+        "status": { "type": "string", "enum": ["not_started", "in_progress", "completed", "failed", "retryable"] },
+        "started_at": { "$ref": "#/$defs/unknownableString" },
+        "finished_at": { "$ref": "#/$defs/unknownableString" },
+        "error": { "$ref": "#/$defs/unknownableString" }
+      }
+    }
+  }
+}

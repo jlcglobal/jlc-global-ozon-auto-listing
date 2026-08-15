@@ -1,0 +1,46 @@
+{
+  "result": [
+    {
+      "description_category_id": 40000,
+      "category_name": "Товары",
+      "children": [
+        {
+          "description_category_id": 41001,
+          "category_name": "Раздел 41001",
+          "disabled": false,
+          "children": [
+            {
+              "type_id": 51001,
+              "type_name": "Весы для багажа",
+              "disabled": false
+            }
+          ]
+        },
+        {
+          "description_category_id": 41002,
+          "category_name": "Раздел 41002",
+          "disabled": false,
+          "children": [
+            {
+              "type_id": 51002,
+              "type_name": "Электрические точилки для ножей",
+              "disabled": false
+            }
+          ]
+        },
+        {
+          "description_category_id": 41003,
+          "category_name": "Раздел 41003",
+          "disabled": false,
+          "children": [
+            {
+              "type_id": 51003,
+              "type_name": "Искусственный газон",
+              "disabled": false
+            }
+          ]
+        }
+      ]
+    }
+  ]
+}

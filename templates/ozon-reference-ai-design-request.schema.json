@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-reference-ai-design-request.schema.json",
+  "title": "Ozon Reference AI Design Request",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "task_id",
+    "source_kind",
+    "source_url",
+    "generated_at",
+    "input_ref",
+    "expected_output_path",
+    "prompt",
+    "must_not_call",
+    "write_api_calls",
+    "inventory_api_calls"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "task_id": {"type": "string", "minLength": 1},
+    "source_kind": {"const": "ozon_reference_listing"},
+    "source_url": {"type": "string", "minLength": 1},
+    "generated_at": {"type": "string", "minLength": 1},
+    "input_ref": {"type": "string", "minLength": 1},
+    "expected_output_path": {"type": "string", "minLength": 1},
+    "prompt": {"type": "string", "minLength": 100},
+    "must_not_call": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "write_api_calls": {"const": 0},
+    "inventory_api_calls": {"const": 0}
+  }
+}

@@ -1,0 +1,33 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-category-tree.schema.json",
+  "title": "Ozon Category Tree Snapshot",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "fetched_at", "api_endpoint", "categories"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "fetched_at": { "type": "string", "format": "date-time" },
+    "api_endpoint": { "type": "string", "const": "/v1/description-category/tree" },
+    "categories": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["category_id", "category_name", "parent_id", "type_id", "type_name", "disabled", "is_leaf", "path"],
+        "properties": {
+          "category_id": { "type": "integer", "minimum": 1 },
+          "category_name": { "type": "string", "minLength": 1 },
+          "parent_id": { "type": ["integer", "null"], "minimum": 1 },
+          "type_id": { "type": ["integer", "null"], "minimum": 1 },
+          "type_name": { "type": ["string", "null"], "minLength": 1 },
+          "disabled": { "type": "boolean" },
+          "is_leaf": { "type": "boolean" },
+          "path": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    }
+  }
+}

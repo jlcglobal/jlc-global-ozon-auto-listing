@@ -1,0 +1,62 @@
+{
+  "schema_version": "1.0.0",
+  "benchmarks": [
+    {
+      "benchmark_id": "workshop-toilet-stand-score-100",
+      "source": "workshop_manual_product",
+      "public_url": "https://www.ozon.ru/product/derzhatel-dlya-ershika-1-sht-4423220069/",
+      "content_score": 100,
+      "seller_ui_locale": "zh-CN",
+      "buyer_content_locale": "ru-RU",
+      "category_path": [
+        "Дом и сад",
+        "Аксессуары для ванной комнаты",
+        "Держатель туалетной бумаги"
+      ],
+      "observed_field_roles": [
+        "product_name",
+        "category_and_type",
+        "offer_id",
+        "price",
+        "package_dimensions",
+        "package_weight",
+        "brand",
+        "merge_model_name",
+        "product_weight",
+        "accounting_unit_quantity",
+        "hashtags",
+        "description",
+        "bathroom_stand_type",
+        "toilet_paper_holder_configuration",
+        "material",
+        "product_height",
+        "product_length",
+        "product_width",
+        "installation_type",
+        "units_per_product",
+        "product_color",
+        "color_name",
+        "country_of_origin",
+        "package_contents",
+        "factory_package_count",
+        "images",
+        "color_sample",
+        "rich_content"
+      ],
+      "observed_optional_blank_roles": [
+        "warranty_period",
+        "hs_code",
+        "video_cover"
+      ],
+      "rules": [
+        "Chinese labels in Seller screenshots are interface translations only; buyer-facing title, description, tags and attribute values remain Russian.",
+        "Never use translated Seller UI labels as Ozon API attribute identifiers.",
+        "Resolve every attribute ID from the selected live category and type metadata.",
+        "Use only field roles that exist in the selected category; never copy this benchmark's IDs to another category.",
+        "A content score of 100 does not require every optional field to be filled.",
+        "Use source-backed category-specific facts first, workspace defaults second, and omit unsupported optional claims.",
+        "Workspace defaults are Нет бренда, country Китай for 1688 sourcing, and quantity 1 when no explicit package quantity exists."
+      ]
+    }
+  ]
+}

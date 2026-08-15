@@ -1,0 +1,88 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-reference-listing-design-draft.schema.json",
+  "title": "Ozon Reference Listing Design Draft",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "schema_version",
+    "task_id",
+    "source_kind",
+    "generated_at",
+    "own_listing_copy_ru",
+    "attribute_draft",
+    "visual_reference_analysis",
+    "image_prompt_plan",
+    "risks",
+    "next_action",
+    "write_api_calls",
+    "inventory_api_calls"
+  ],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "task_id": {"type": "string", "minLength": 1},
+    "source_kind": {"const": "ozon_reference_listing"},
+    "source_url": {"type": "string"},
+    "generated_at": {"type": "string", "minLength": 1},
+    "mode": {"const": "create_without_inventory"},
+    "inventory_submission_enabled": {"const": false},
+    "own_listing_copy_ru": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": [
+        "seo_title_ru",
+        "short_title_ru",
+        "description_ru",
+        "hashtags_ru"
+      ],
+      "properties": {
+        "seo_title_ru": {"type": "string", "minLength": 20},
+        "short_title_ru": {"type": "string", "minLength": 3},
+        "description_ru": {"type": "string", "minLength": 120},
+        "selling_points_ru": {
+          "type": "array",
+          "minItems": 3,
+          "items": {"type": "string", "minLength": 3}
+        },
+        "hashtags_ru": {
+          "type": "array",
+          "minItems": 3,
+          "items": {
+            "type": "string",
+            "pattern": "^#[А-Яа-яЁё]+$"
+          }
+        }
+      }
+    },
+    "attribute_draft": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "visual_reference_analysis": {
+      "type": "object",
+      "additionalProperties": true
+    },
+    "image_prompt_plan": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": true,
+        "required": ["image_role", "visual_goal", "shot_type", "prompt"],
+        "properties": {
+          "image_role": {"type": "string", "minLength": 1},
+          "visual_goal": {"type": "string", "minLength": 1},
+          "shot_type": {"type": "string", "minLength": 1},
+          "prompt": {"type": "string", "minLength": 40}
+        }
+      }
+    },
+    "risks": {
+      "type": "array",
+      "items": {"type": "object", "additionalProperties": true}
+    },
+    "next_action": {"type": "string", "minLength": 1},
+    "write_api_calls": {"const": 0},
+    "inventory_api_calls": {"const": 0}
+  }
+}

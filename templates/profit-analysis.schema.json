@@ -1,0 +1,45 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/profit-analysis.schema.json",
+  "title": "Profitability Analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "sku_analysis", "summary", "generated_at"],
+  "properties": {
+    "schema_version": {"const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "sku_analysis": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/analysis"}},
+    "summary": {"$ref": "#/$defs/summary"},
+    "generated_at": {"type": "string", "minLength": 1}
+  },
+  "$defs": {
+    "money": {"type": ["number", "null"]},
+    "ratio": {"type": ["number", "null"]},
+    "analysis": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sku_id", "total_cost_cny", "selling_price_cny", "profit_cny", "profit_margin", "logistics_ratio", "recommendation", "issues"],
+      "properties": {
+        "sku_id": {"type": "string", "minLength": 1},
+        "total_cost_cny": {"$ref": "#/$defs/money"},
+        "selling_price_cny": {"$ref": "#/$defs/money"},
+        "profit_cny": {"$ref": "#/$defs/money"},
+        "profit_margin": {"$ref": "#/$defs/ratio"},
+        "logistics_ratio": {"$ref": "#/$defs/ratio"},
+        "recommendation": {"enum": ["UPLOAD", "WARNING", "REJECT"]},
+        "issues": {"type": "array", "items": {"type": "string", "minLength": 1}}
+      }
+    },
+    "summary": {
+      "type": "object", "additionalProperties": false,
+      "required": ["total_cost_cny", "selling_price_cny", "profit_cny", "profit_margin", "logistics_ratio", "recommendation"],
+      "properties": {
+        "total_cost_cny": {"$ref": "#/$defs/money"},
+        "selling_price_cny": {"$ref": "#/$defs/money"},
+        "profit_cny": {"$ref": "#/$defs/money"},
+        "profit_margin": {"$ref": "#/$defs/ratio"},
+        "logistics_ratio": {"$ref": "#/$defs/ratio"},
+        "recommendation": {"enum": ["UPLOAD", "WARNING", "REJECT"]}
+      }
+    }
+  }
+}

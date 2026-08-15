@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/collector-capture.schema.json",
+  "title": "Collector Extension Capture Payload",
+  "type": "object",
+  "additionalProperties": true,
+  "required": [
+    "source_platform",
+    "source_url",
+    "captured_at",
+    "page_title",
+    "title_cn",
+    "supplier_name",
+    "product_attributes",
+    "price_information",
+    "minimum_order_quantity",
+    "main_images",
+    "detail_images",
+    "skus",
+    "field_diagnostics",
+    "capture_warnings",
+    "raw_snapshot",
+    "plugin_version"
+  ],
+  "properties": {
+    "source_platform": { "type": "string", "const": "1688" },
+    "source_url": { "type": "string", "minLength": 1 },
+    "captured_at": { "type": "string", "minLength": 1 },
+    "page_title": { "type": ["string", "null"] },
+    "title_cn": { "type": ["string", "null"] },
+    "supplier_name": { "type": ["string", "null"] },
+    "product_attributes": { "type": "array" },
+    "price_information": { "type": "object" },
+    "minimum_order_quantity": { "type": "object" },
+    "main_images": { "type": "array" },
+    "detail_images": { "type": "array" },
+    "skus": { "type": "array" },
+    "field_diagnostics": { "type": "array" },
+    "capture_warnings": { "type": "array" },
+    "raw_snapshot": { "type": "object" },
+    "plugin_version": { "type": "string", "minLength": 1 }
+  }
+}

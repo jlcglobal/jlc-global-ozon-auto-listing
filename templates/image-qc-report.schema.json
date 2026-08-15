@@ -1,0 +1,151 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/image-qc-report.schema.json",
+  "title": "Ozon Image Quality Control Report",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_id",
+    "checked_at",
+    "source_refs",
+    "images_checked",
+    "technical_checks",
+    "dimensions",
+    "score",
+    "decision",
+    "recommendation",
+    "issues",
+    "suggestions",
+    "critical_failures",
+    "regenerate_needed"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "checked_at": { "type": "string", "format": "date-time" },
+    "source_refs": {
+      "type": "array",
+      "minItems": 3,
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "images_checked": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slot", "image_type", "path", "reference_images"],
+        "properties": {
+          "slot": { "type": "string", "minLength": 1 },
+          "image_type": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "reference_images": {
+            "type": "array",
+            "minItems": 1,
+            "items": { "type": "string", "minLength": 1 }
+          }
+        }
+      }
+    },
+    "technical_checks": {
+      "type": "array",
+      "minItems": 1,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["slot", "path", "format", "width", "height", "aspect_ratio", "status", "message"],
+        "properties": {
+          "slot": { "type": "string", "minLength": 1 },
+          "path": { "type": "string", "minLength": 1 },
+          "format": { "type": "string", "minLength": 1 },
+          "width": { "type": "integer", "minimum": 1 },
+          "height": { "type": "integer", "minimum": 1 },
+          "aspect_ratio": { "type": "string", "minLength": 1 },
+          "status": { "type": "string", "enum": ["pass", "revise", "reject"] },
+          "message": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product_consistency", "conversion_logic", "style_match", "visual_quality", "compliance"],
+      "properties": {
+        "product_consistency": { "$ref": "#/$defs/scoredDimension" },
+        "conversion_logic": { "$ref": "#/$defs/scoredDimension" },
+        "style_match": { "$ref": "#/$defs/scoredDimension" },
+        "visual_quality": { "$ref": "#/$defs/scoredDimension" },
+        "compliance": { "$ref": "#/$defs/scoredDimension" }
+      }
+    },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "decision": { "type": "string", "enum": ["pass", "revise", "reject"] },
+    "recommendation": { "type": "string", "minLength": 1 },
+    "issues": {
+      "type": "array",
+      "items": { "$ref": "#/$defs/issue" }
+    },
+    "suggestions": {
+      "type": "array",
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "critical_failures": {
+      "type": "array",
+      "uniqueItems": true,
+      "items": { "type": "string", "minLength": 1 }
+    },
+    "regenerate_needed": { "type": "boolean" }
+  },
+  "$defs": {
+    "scoredDimension": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["max_score", "score", "status", "checks"],
+      "properties": {
+        "max_score": { "type": "integer", "minimum": 1, "maximum": 30 },
+        "score": { "type": "integer", "minimum": 0, "maximum": 30 },
+        "status": { "type": "string", "enum": ["pass", "revise", "reject"] },
+        "checks": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "$ref": "#/$defs/dimensionCheck" }
+        }
+      }
+    },
+    "dimensionCheck": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["criterion", "max_score", "deduction", "score", "status", "message", "evidence"],
+      "properties": {
+        "criterion": { "type": "string", "minLength": 1 },
+        "max_score": { "type": "integer", "minimum": 1, "maximum": 12 },
+        "deduction": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "score": { "type": "integer", "minimum": 0, "maximum": 12 },
+        "status": { "type": "string", "enum": ["pass", "revise", "reject"] },
+        "message": { "type": "string", "minLength": 1 },
+        "evidence": {
+          "type": "array",
+          "minItems": 1,
+          "items": { "type": "string", "minLength": 1 }
+        }
+      }
+    },
+    "issue": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["code", "severity", "image_slots", "message"],
+      "properties": {
+        "code": { "type": "string", "minLength": 1 },
+        "severity": { "type": "string", "enum": ["low", "medium", "high", "critical"] },
+        "image_slots": {
+          "type": "array",
+          "items": { "type": "string", "minLength": 1 }
+        },
+        "message": { "type": "string", "minLength": 1 },
+        "evidence": { "type": "object" }
+      }
+    }
+  }
+}

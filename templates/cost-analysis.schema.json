@@ -1,0 +1,100 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/cost-analysis.schema.json",
+  "title": "Cost Intelligence Analysis",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "source_refs", "weight", "dimensions", "sku_costs", "warnings", "generated_at"],
+  "properties": {
+    "schema_version": {"enum": ["1.0.0", "1.1.0"]},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "source_refs": {"type": "array", "minItems": 3, "uniqueItems": true, "items": {"type": "string", "minLength": 1}},
+    "weight": {"$ref": "#/$defs/weight"},
+    "dimensions": {"$ref": "#/$defs/dimensions"},
+    "product_weight": {"$ref": "#/$defs/weight"},
+    "product_dimensions": {"$ref": "#/$defs/dimensions"},
+    "package_weight": {"$ref": "#/$defs/weight"},
+    "package_dimensions": {"$ref": "#/$defs/dimensions"},
+    "measurement_hierarchy": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["valid", "rule"],
+      "properties": {
+        "valid": {"const": true},
+        "rule": {"type": "string", "minLength": 1}
+      }
+    },
+    "sku_costs": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/skuCost"}},
+    "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "generated_at": {"type": "string", "minLength": 1}
+  },
+  "allOf": [{
+    "if": {"properties": {"schema_version": {"const": "1.1.0"}}},
+    "then": {"required": ["product_weight", "product_dimensions", "package_weight", "package_dimensions", "measurement_hierarchy"]}
+  }],
+  "$defs": {
+    "validation": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "original_value", "corrected_value", "reason"],
+      "properties": {
+        "status": {"enum": ["valid", "corrected"]},
+        "original_value": {},
+        "corrected_value": {},
+        "reason": {"type": "string", "minLength": 1}
+      }
+    },
+    "weight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "source", "source_ref", "confidence", "estimated", "profile", "validation"],
+      "properties": {
+        "value": {"type": "integer", "minimum": 1},
+        "unit": {"const": "g"},
+        "source": {"enum": ["1688", "product_analysis", "sku_specification", "estimated"]},
+        "source_ref": {"type": "string", "minLength": 1},
+        "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+        "estimated": {"type": "boolean"},
+        "profile": {"type": "string", "minLength": 1},
+        "validation": {"$ref": "#/$defs/validation"}
+      }
+    },
+    "dimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length", "width", "height", "unit", "source", "source_ref", "confidence", "estimated", "profile", "validation"],
+      "properties": {
+        "length": {"type": "number", "exclusiveMinimum": 0},
+        "width": {"type": "number", "exclusiveMinimum": 0},
+        "height": {"type": "number", "exclusiveMinimum": 0},
+        "unit": {"const": "cm"},
+        "source": {"enum": ["1688", "product_analysis", "sku_specification", "estimated"]},
+        "source_ref": {"type": "string", "minLength": 1},
+        "confidence": {"type": "integer", "minimum": 0, "maximum": 100},
+        "estimated": {"type": "boolean"},
+        "profile": {"type": "string", "minLength": 1},
+        "validation": {"$ref": "#/$defs/validation"}
+      }
+    },
+    "skuCost": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["sku_id", "sku_name", "purchase_cost"],
+      "properties": {
+        "sku_id": {"type": "string", "minLength": 1},
+        "sku_name": {"type": "string", "minLength": 1},
+        "purchase_cost": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["value_cny", "source", "source_ref", "confidence"],
+          "properties": {
+            "value_cny": {"type": ["number", "null"], "exclusiveMinimum": 0},
+            "source": {"enum": ["sku_specific_price", "product_analysis", "price_range_conservative", "unknown"]},
+            "source_ref": {"type": "string", "minLength": 1},
+            "confidence": {"type": "integer", "minimum": 0, "maximum": 100}
+          }
+        }
+      }
+    }
+  }
+}

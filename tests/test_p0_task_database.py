@@ -1,0 +1,196 @@
+from __future__ import annotations
+
+import json
+import sqlite3
+import tempfile
+import threading
+import unittest
+from datetime import datetime, timezone
+from contextlib import closing
+from pathlib import Path
+
+from scripts.task_database import (
+    database,
+    due_pending_store_ids,
+    initialize,
+    migrate_all,
+    publications_from_db,
+    product_snapshot,
+    record_remote_check,
+    remote_backoff_seconds,
+    sync_publications_json,
+)
+
+
+def _write(path: Path, value: dict) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(json.dumps(value, ensure_ascii=False), encoding="utf-8")
+
+
+class P0TaskDatabaseTest(unittest.TestCase):
+    def test_initialize_is_safe_for_parallel_readers(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            initialize(root)
+            errors = []
+
+            def initialize_again() -> None:
+                try:
+                    initialize(root)
+                except Exception as exc:  # pragma: no cover - asserted below
+                    errors.append(exc)
+
+            workers = [threading.Thread(target=initialize_again) for _ in range(12)]
+            for worker in workers:
+                worker.start()
+            for worker in workers:
+                worker.join()
+
+            self.assertEqual(errors, [])
+
+    def test_simulated_30_products_20_categories_10_stores(self) -> None:
+        """The P0 state model remains aggregate-safe at launch scale."""
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            for product_number in range(1, 31):
+                product_id = f"P{product_number:06d}"
+                product_dir = root / "products" / product_id
+                _write(product_dir / "input/source.json", {
+                    "product_id": product_id,
+                    "owner_id": "owner-a",
+                    "skus": [{"sku_id": f"sku-{index}"} for index in range(1, 4)],
+                })
+                _write(product_dir / "status.json", {
+                    "product_id": product_id,
+                    "category": {"category_id": 1000 + product_number % 20, "type_id": 2000 + product_number % 20},
+                })
+                stores = {}
+                for store_number in range(1, 11):
+                    store_id = f"store-{store_number:02d}"
+                    state = "SUCCESS" if store_number <= 7 else "PENDING_REMOTE" if store_number <= 9 else "FAILED"
+                    task_id = "unknown" if state == "SUCCESS" else f"task-{product_id}-{store_id}"
+                    product_ids = [f"{product_number}{store_number}{sku}" for sku in range(1, 4)] if state == "SUCCESS" else ["unknown"] * 3
+                    stores[store_id] = {
+                        "selected": True,
+                        "status": state,
+                        "api_write_count": 1,
+                        "sku_publications": [
+                            {
+                                "sku_id": f"sku-{sku}",
+                                "offer_id": f"offer-{product_id}-{store_id}-{sku}",
+                                "task_id": task_id,
+                                "ozon_product_id": product_ids[sku - 1],
+                                "action": "CREATE",
+                            }
+                            for sku in range(1, 4)
+                        ],
+                    }
+                _write(product_dir / "output/store-publications.json", {"product_id": product_id, "stores": stores})
+
+            report = migrate_all(root)
+            self.assertEqual(len(report["migrated"]), 30)
+            self.assertEqual(report["errors"], [])
+            snapshot = product_snapshot(root, "P000001")
+            self.assertEqual(snapshot["product"]["target_store_count"], 10)
+            self.assertEqual(snapshot["product"]["created_store_count"], 7)
+            self.assertEqual(snapshot["product"]["pending_store_count"], 2)
+            self.assertEqual(snapshot["product"]["failed_store_count"], 1)
+            self.assertEqual(snapshot["product"]["aggregate_status"], "PARTIAL_FAILED")
+            self.assertEqual(len(snapshot["stores"]), 10)
+            self.assertEqual(len(snapshot["sku_publications"]), 30)
+
+    def test_task_id_stays_pending_until_read_only_recovery_finishes(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = root / "products/P000001"
+            _write(product / "input/source.json", {"product_id": "P000001", "skus": [{"sku_id": "sku-1"}]})
+            _write(product / "status.json", {})
+            _write(product / "output/store-publications.json", {"product_id": "P000001", "stores": {
+                "store-a": {"selected": True, "status": "PENDING_REMOTE", "sku_publications": [{"sku_id": "sku-1", "task_id": "task-a", "offer_id": "offer-a", "action": "CREATE"}]},
+            }})
+            initialize(root)
+            migrate_all(root)
+            self.assertEqual([remote_backoff_seconds(i) for i in range(5)], [60, 300, 900, 1800, 3600])
+            mode = (root / "runtime/task-db.sqlite3").stat().st_mode & 0o777
+            self.assertEqual(mode, 0o600)
+            self.assertEqual(due_pending_store_ids(root, "P000001"), [])
+            record_remote_check(root, "P000001", ["store-a"])
+            self.assertEqual(due_pending_store_ids(root, "P000001"), [])
+            with closing(sqlite3.connect(root / "runtime/task-db.sqlite3")) as db:
+                row = db.execute("SELECT status, read_query_count, next_check_at FROM tasks WHERE task_id='task-a'").fetchone()
+                publication = db.execute("SELECT status FROM store_publications WHERE product_id='P000001'").fetchone()
+                product_state = db.execute("SELECT aggregate_status FROM products WHERE product_id='P000001'").fetchone()
+            self.assertEqual(row[0], "PENDING_REMOTE")
+            self.assertEqual(row[1], 1)
+            self.assertIsNotNone(row[2])
+            self.assertEqual(publication[0], "PENDING_REMOTE")
+            self.assertEqual(product_state[0], "PENDING_REMOTE")
+            projected = publications_from_db(root, product)
+            self.assertEqual(projected["stores"]["store-a"]["action"], "CREATE")
+            self.assertEqual(projected["stores"]["store-a"]["sku_publications"][0]["action"], "CREATE")
+
+    def test_existing_pending_rows_remain_read_only_recoverable(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = root / "products/P000001"
+            _write(product / "input/source.json", {"product_id": "P000001", "skus": [{"sku_id": "sku-1"}]})
+            _write(product / "status.json", {})
+            _write(product / "output/store-publications.json", {"stores": {
+                "store-a": {"selected": True, "status": "PENDING_REMOTE", "api_write_count": 1,
+                            "sku_publications": [{"sku_id": "sku-1", "task_id": "task-a"}]},
+            }})
+            sync_publications_json(root, product)
+            with database(root) as db:
+                db.execute("UPDATE store_publications SET status='PENDING_REMOTE'")
+                db.execute("UPDATE store_sku_publications SET status='PENDING_REMOTE'")
+                db.execute("UPDATE tasks SET status='PENDING_REMOTE', next_check_at=?", (datetime(2000, 1, 1, tzinfo=timezone.utc).isoformat(),))
+                db.execute("UPDATE products SET aggregate_status='PENDING_REMOTE', pending_store_count=1")
+                db.execute("DELETE FROM schema_migrations WHERE version='003'")
+            initialize(root)
+            snapshot = product_snapshot(root, "P000001")
+            self.assertEqual(snapshot["product"]["aggregate_status"], "PENDING_REMOTE")
+            self.assertEqual(snapshot["stores"][0]["status"], "PENDING_REMOTE")
+            self.assertEqual(snapshot["sku_publications"][0]["status"], "PENDING_REMOTE")
+            with database(root) as db:
+                task = db.execute("SELECT status,next_check_at,terminal_reason FROM tasks WHERE task_id='task-a'").fetchone()
+            self.assertEqual(task[0], "PENDING_REMOTE")
+            self.assertIsNotNone(task[1])
+            self.assertIsNone(task[2])
+
+    def test_zero_write_submitted_projection_returns_selected(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = root / "products/P000001"
+            _write(product / "input/source.json", {"product_id": "P000001", "skus": [{"sku_id": "sku-1"}]})
+            _write(product / "status.json", {})
+            _write(product / "output/store-publications.json", {"stores": {
+                "store-a": {"selected": True, "status": "SUBMITTED", "api_write_count": 0,
+                            "sku_publications": [{"sku_id": "sku-1", "task_id": "unknown", "offer_id": "offer-a"}]},
+            }})
+            sync_publications_json(root, product)
+
+            snapshot = product_snapshot(root, "P000001")
+            self.assertEqual(snapshot["stores"][0]["status"], "SELECTED")
+            self.assertEqual(snapshot["product"]["aggregate_status"], "UNKNOWN")
+            self.assertEqual(snapshot["product"]["pending_store_count"], 0)
+            projected = publications_from_db(root, product)
+            self.assertEqual(projected["stores"]["store-a"]["status"], "SELECTED")
+            self.assertEqual(projected["stores"]["store-a"]["api_write_count"], 0)
+
+    def test_mixed_handoff_and_selected_store_is_not_full_handoff(self) -> None:
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = root / "products/P000001"
+            _write(product / "input/source.json", {"product_id": "P000001", "skus": [{"sku_id": "sku-1"}]})
+            _write(product / "status.json", {})
+            _write(product / "output/store-publications.json", {"product_id": "P000001", "stores": {
+                "store-a": {"selected": True, "status": "HANDED_OFF_TO_OZON", "api_write_count": 1,
+                            "sku_publications": [{"sku_id": "sku-1", "task_id": "task-a", "offer_id": "offer-a"}]},
+                "store-b": {"selected": True, "status": "SELECTED", "api_write_count": 0,
+                            "sku_publications": [{"sku_id": "sku-1", "task_id": "unknown", "offer_id": "offer-b"}]},
+            }})
+            sync_publications_json(root, product)
+
+            snapshot = product_snapshot(root, "P000001")
+
+            self.assertEqual(snapshot["product"]["aggregate_status"], "PARTIAL")

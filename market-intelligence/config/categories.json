@@ -1,0 +1,11 @@
+{
+  "schema_version": "1.0.0",
+  "categories": [
+    {"key": "home", "name_zh": "家居", "name_ru": "Дом и сад", "enabled": true, "source_level_1": ["Дом и сад", "Мебель"]},
+    {"key": "electronics", "name_zh": "电子产品", "name_ru": "Электроника", "enabled": true, "source_level_1": ["Электроника"]},
+    {"key": "bathroom", "name_zh": "卫浴", "name_ru": "Сантехника и ванная", "enabled": true, "source_level_1_restrict": ["Строительство и ремонт", "Дом и сад", "Бытовая техника"], "source_level_3_contains": ["ванн", "душ", "смесител", "раковин", "унитаз", "сантех", "полотенцесуш", "водонагревател"]},
+    {"key": "kitchen", "name_zh": "厨房", "name_ru": "Товары для кухни", "enabled": true, "source_level_1_restrict": ["Дом и сад", "Бытовая техника"], "source_level_3_contains": ["кухон", "посуд", "чайник", "кофе", "аэрогрил", "мультиварк", "микроволн", "вароч", "духов", "блендер", "тостер", "вафель", "электрогрил", "соковыжим", "мясоруб", "вакуумн", "хлебопеч", "плита"]},
+    {"key": "outdoor", "name_zh": "户外", "name_ru": "Туризм и отдых", "enabled": true, "source_level_1": ["Спорт и отдых"]},
+    {"key": "auto", "name_zh": "汽车配件", "name_ru": "Автотовары", "enabled": true, "source_level_1": ["Автотовары", "Автомототехника"]}
+  ]
+}

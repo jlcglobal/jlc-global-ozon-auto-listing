@@ -1,0 +1,42 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/description-ru.schema.json",
+  "title": "Ozon Russian Product Description",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["product_id", "description_ru"],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "source_refs": { "type": "array", "minItems": 3, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "source_ref": { "type": "string", "minLength": 1 },
+    "description_ru": { "type": "string", "minLength": 80 },
+    "sections": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["product_value", "usage_scenarios", "core_advantages", "usage_method", "notices"],
+      "properties": {
+        "product_value": { "type": "string", "minLength": 10 },
+        "usage_scenarios": { "type": "string", "minLength": 10 },
+        "core_advantages": { "type": "string", "minLength": 10 },
+        "usage_method": { "type": "string", "minLength": 10 },
+        "notices": { "type": "string", "minLength": 10 }
+      }
+    },
+    "section_evidence": {
+      "type": "array",
+      "minItems": 5,
+      "items": {
+        "type": "object",
+        "additionalProperties": false,
+        "required": ["section", "source_refs"],
+        "properties": {
+          "section": { "type": "string", "enum": ["product_value", "usage_scenarios", "core_advantages", "usage_method", "notices"] },
+          "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } }
+        }
+      }
+    },
+    "unknown_fields": { "type": "array", "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } }
+  }
+}

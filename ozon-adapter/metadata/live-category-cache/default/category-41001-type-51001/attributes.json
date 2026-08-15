@@ -1,0 +1,30 @@
+{
+  "result": [
+    {
+      "id": 41002,
+      "name": "Тип",
+      "is_required": true,
+      "type": "String",
+      "dictionary_id": 70000
+    },
+    {
+      "id": 41003,
+      "name": "Назначение",
+      "is_required": false,
+      "type": "String"
+    },
+    {
+      "id": 41004,
+      "name": "Бренд",
+      "is_required": true,
+      "type": "Dictionary",
+      "dictionary_id": 70001
+    },
+    {
+      "id": 41005,
+      "name": "Материал",
+      "is_required": true,
+      "type": "String"
+    }
+  ]
+}

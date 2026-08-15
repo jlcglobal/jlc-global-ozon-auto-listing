@@ -1,0 +1,81 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/ozon-upload-payload.schema.json",
+  "title": "Ozon Upload Dry Run Payload",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "product_name_cn", "upload_mode", "api_writes_performed", "generated_at", "shop_name", "category", "product_group", "title", "description", "images", "attributes", "variants", "price", "image_upload_gate", "product_exists_check", "production_blockers", "api_request_template"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "product_name_cn": {"type": "string", "minLength": 1},
+    "upload_mode": {"type": "string", "enum": ["dry-run", "production"]},
+    "api_writes_performed": {"type": "boolean"},
+    "generated_at": {"type": "string", "format": "date-time"},
+    "shop_name": {"type": "string", "minLength": 1},
+    "category": {
+      "type": "object", "additionalProperties": false,
+      "required": ["category_id", "type_id", "category_name", "source"],
+      "properties": {
+        "category_id": {"type": "integer", "minimum": 1},
+        "type_id": {"type": "integer", "minimum": 1},
+        "category_name": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "const": "ozon_seller_api"}
+      }
+    },
+    "product_group": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["product_group_id", "selected_sku_count", "product_group_count", "variant_count", "must_merge", "variant_mapping_status", "upload_allowed"],
+      "properties": {
+        "product_group_id": {"type": "string", "minLength": 1},
+        "selected_sku_count": {"type": "integer", "minimum": 1},
+        "product_group_count": {"type": "integer", "const": 1},
+        "variant_count": {"type": "integer", "minimum": 1},
+        "must_merge": {"type": "boolean"},
+        "variant_mapping_status": {"type": "string", "enum": ["MAPPED", "RULE_REQUIRED", "SEPARATE_CARDS_REQUIRED", "NOT_REQUIRED"]},
+        "upload_allowed": {"type": "boolean"}
+      }
+    },
+    "title": {"type": "string", "minLength": 1},
+    "description": {"type": "string", "minLength": 1},
+    "images": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": true}},
+    "attributes": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "attributes_by_sku": {
+      "type": "object",
+      "additionalProperties": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+    },
+    "sku_measurements": {"type": "object", "additionalProperties": true},
+    "variants": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/variant"}},
+    "price": {
+      "type": "object", "additionalProperties": false,
+      "required": ["currency_code", "source"],
+      "properties": {
+        "currency_code": {"type": "string", "minLength": 3},
+        "source": {"type": "string", "minLength": 1}
+      }
+    },
+    "image_upload_gate": {"type": "object", "additionalProperties": true},
+    "product_exists_check": {"type": "object", "additionalProperties": true},
+    "production_blockers": {"type": "array", "items": {"type": "string", "minLength": 1}},
+    "api_request_template": {"type": "object", "additionalProperties": true}
+  },
+  "$defs": {
+    "variant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["source_sku_id", "offer_id", "sku_name", "display_name_ru", "price", "currency_code", "color", "color_image", "attributes", "variant_attribute_values"],
+      "properties": {
+        "source_sku_id": {"type": "string", "minLength": 1},
+        "offer_id": {"type": "string", "minLength": 1},
+        "sku_name": {"type": "string", "minLength": 1},
+        "display_name_ru": {"type": "string", "minLength": 1},
+        "price": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"},
+        "currency_code": {"type": "string", "minLength": 3},
+        "color": {"type": "string", "minLength": 1},
+        "color_image": {"type": "string", "minLength": 1},
+        "attributes": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+        "variant_attribute_values": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+      }
+    }
+  }
+}

@@ -1,0 +1,18 @@
+{
+  "schema_version": "1.1.0",
+  "default_read_shop": "default",
+  "shops": [
+    {
+      "id": "default",
+      "name": "default",
+      "display_name": "My Ozon Store",
+      "enabled": true,
+      "default_currency_code": "CNY",
+      "default_vat": "0",
+      "default_unbranded_value": "Нет бренда",
+      "default_unbranded_dictionary_value_id": 126745801,
+      "client_id_env": "OZON_DEFAULT_CLIENT_ID",
+      "api_key_env": "OZON_DEFAULT_API_KEY"
+    }
+  ]
+}

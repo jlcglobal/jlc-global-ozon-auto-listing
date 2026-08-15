@@ -1,0 +1,31 @@
+{
+  "schema_version": "1.0.0",
+  "heat_index": {
+    "official_rank": 35,
+    "search_demand": 25,
+    "rating_review_signal": 15,
+    "search_visibility": 15,
+    "price_promotion_activity": 10
+  },
+  "rising_index": {
+    "rank_growth_7d": 35,
+    "review_growth_acceleration": 25,
+    "keyword_coverage_growth": 20,
+    "price_promotion_change": 10,
+    "new_product_momentum": 10
+  },
+  "fbs_fit_index": {
+    "package_fit": 25,
+    "margin_space": 25,
+    "demand_trend": 20,
+    "competition": 15,
+    "compliance_and_shipping_safety": 15
+  },
+  "keyword_opportunity_index": {
+    "official_search_demand": 35,
+    "product_relevance": 25,
+    "trend_7d_30d": 20,
+    "competition": 10,
+    "purchase_intent": 10
+  }
+}

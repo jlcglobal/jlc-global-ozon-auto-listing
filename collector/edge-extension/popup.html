@@ -1,0 +1,65 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <title>1688采集</title>
+    <link rel="stylesheet" href="popup.css">
+  </head>
+  <body>
+    <main>
+      <details class="connection-settings">
+        <summary>主电脑连接</summary>
+        <label for="factory-url">工作台地址</label>
+        <input id="factory-url" type="url" placeholder="http://192.168.3.13:8765" spellcheck="false">
+        <div class="connection-actions">
+          <button id="save-connection" type="button">保存并连接</button>
+          <button id="test-connection" type="button" class="secondary">测试连接</button>
+        </div>
+        <small id="connection-result">局域网电脑自动识别，无需访问码；商品与任务在工作室共享</small>
+      </details>
+      <div id="page-status" class="status">检查当前页面...</div>
+      <section class="summary">
+        <div class="label">标题</div>
+        <div id="title" class="value">unknown</div>
+        <div class="grid">
+          <div>
+            <span id="main-count">0</span>
+            <small>主图候选</small>
+          </div>
+          <div>
+            <span id="sku-count">0</span>
+            <small>SKU</small>
+          </div>
+          <div>
+            <span id="detail-count">0</span>
+            <small>详情图</small>
+          </div>
+        </div>
+      </section>
+      <button id="capture" disabled>采集当前商品</button>
+      <button id="preview-toggle" class="secondary" disabled>查看采集预览</button>
+      <button id="debug-export" class="secondary" disabled>导出当前页面SKU诊断</button>
+      <section class="task-runner">
+        <button id="open-inbox" class="secondary">打开共享工作台</button>
+        <small>采集完成后，请在共享工作台运行单个商品或批次</small>
+      </section>
+      <div id="progress" class="progress">等待操作</div>
+      <section id="preview" class="preview" hidden>
+        <h2>采集预览</h2>
+        <div class="label">SKU列表</div>
+        <ul id="sku-list"></ul>
+        <div class="label">主图缩略图</div>
+        <div id="main-thumbs" class="thumbs"></div>
+        <div class="label">详情图缩略图</div>
+        <div id="detail-thumbs" class="thumbs"></div>
+      </section>
+      <section id="duplicate" class="duplicate" hidden>
+        <div id="duplicate-message"></div>
+        <button id="open-existing" class="secondary">打开已有商品</button>
+        <button id="create-version">重新采集并创建新版本</button>
+      </section>
+      <pre id="result"></pre>
+    </main>
+    <script src="popup.js"></script>
+  </body>
+</html>

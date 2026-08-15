@@ -1,0 +1,31 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/color-variant-qc.schema.json",
+  "title": "AI Color Variant Image QC",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "variants"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "variants": {"type": "array", "items": {"$ref": "#/$defs/variant"}}
+  },
+  "$defs": {
+    "variant": {
+      "type": "object", "additionalProperties": false,
+      "required": ["sku_id", "image", "status", "product_consistency", "color_consistency", "structure_consistency", "material_consistency", "angle_consistency", "issues"],
+      "properties": {
+        "sku_id": {"type": "string", "minLength": 1},
+        "image": {"type": "string", "minLength": 1},
+        "source": {"type": "string", "minLength": 1},
+        "status": {"type": "string", "enum": ["pass", "revise", "reject"]},
+        "product_consistency": {"type": "number", "minimum": 0, "maximum": 100},
+        "color_consistency": {"type": "number", "minimum": 0, "maximum": 100},
+        "structure_consistency": {"type": "number", "minimum": 0, "maximum": 100},
+        "material_consistency": {"type": "number", "minimum": 0, "maximum": 100},
+        "angle_consistency": {"type": "number", "minimum": 0, "maximum": 100},
+        "issues": {"type": "array", "items": {"type": "string", "minLength": 1}, "default": []}
+      }
+    }
+  }
+}

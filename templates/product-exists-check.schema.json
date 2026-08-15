@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/product-exists-check.schema.json",
+  "title": "Ozon Product Exists Check",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["schema_version", "product_id", "checked_at", "check_source", "exists", "action", "existing_product_id", "existing_offer_id", "reason", "current_hashes", "previous_uploaded_hashes", "offers"],
+  "properties": {
+    "schema_version": {"type": "string", "const": "1.0.0"},
+    "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
+    "checked_at": {"type": "string", "format": "date-time"},
+    "check_source": {"type": "string", "enum": ["saved_ozon_result", "ozon_seller_api"]},
+    "exists": {"type": "boolean"},
+    "action": {"type": "string", "enum": ["create", "update", "skip"]},
+    "existing_product_id": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "string", "const": "unknown"}]},
+    "existing_offer_id": {"type": "string", "minLength": 1},
+    "reason": {"type": "string", "enum": ["product_not_found", "existing_product_found", "content_unchanged"]},
+    "current_hashes": {"$ref": "#/$defs/hashes"},
+    "previous_uploaded_hashes": {"oneOf": [{"$ref": "#/$defs/hashes"}, {"type": "null"}]},
+    "offers": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/offer"}}
+  },
+  "$defs": {
+    "hashes": {
+      "type": "object", "additionalProperties": false,
+      "required": ["product_data_hash", "image_hash", "price_hash"],
+      "properties": {
+        "product_data_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "image_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"},
+        "price_hash": {"type": "string", "pattern": "^[a-f0-9]{64}$"}
+      }
+    },
+    "offer": {
+      "type": "object", "additionalProperties": false,
+      "required": ["offer_id", "source_sku_id", "exists", "action", "existing_product_id"],
+      "properties": {
+        "offer_id": {"type": "string", "minLength": 1},
+        "source_sku_id": {"type": "string", "minLength": 1},
+        "exists": {"type": "boolean"},
+        "action": {"type": "string", "enum": ["create", "update", "skip"]},
+        "existing_product_id": {"oneOf": [{"type": "integer", "minimum": 1}, {"type": "string", "const": "unknown"}]}
+      }
+    }
+  }
+}

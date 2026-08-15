@@ -1,0 +1,64 @@
+{
+  "schema_version": "1.0.0",
+  "weights": {
+    "product_consistency": 30,
+    "conversion_logic": 25,
+    "style_match": 20,
+    "visual_quality": 15,
+    "compliance": 10
+  },
+  "criteria": {
+    "product_consistency": {
+      "product_identity": 12,
+      "color_consistency": 6,
+      "structure_consistency": 8,
+      "accessory_consistency": 4
+    },
+    "conversion_logic": {
+      "explicit_sales_purpose": 8,
+      "positioning_alignment": 9,
+      "buyer_objection_coverage": 8
+    },
+    "style_match": {
+      "selected_style_alignment": 10,
+      "category_visual_behavior": 6,
+      "style_product_conflict": 4
+    },
+    "visual_quality": {
+      "composition": 4,
+      "clarity": 4,
+      "typography": 4,
+      "information_density": 3
+    },
+    "compliance": {
+      "no_false_parameters": 4,
+      "no_false_certifications": 3,
+      "no_exaggerated_claims": 3
+    }
+  },
+  "thresholds": {
+    "pass_min": 90,
+    "revise_min": 75
+  },
+  "technical_requirements": {
+    "aspect_ratio": "3:4",
+    "aspect_ratio_tolerance": 0.002,
+    "minimum_width": 900,
+    "minimum_height": 1200,
+    "allowed_formats": ["png"]
+  },
+  "critical_failures": [
+    "image_file_unreadable",
+    "aspect_ratio_mismatch",
+    "source_preflight_missing",
+    "source_reference_too_small",
+    "product_identity_changed",
+    "wrong_sku_or_color",
+    "product_structure_changed",
+    "unverified_accessory_added",
+    "false_parameter_claim",
+    "chinese_text_present",
+    "garbage_text_present",
+    "russian_text_unreadable"
+  ]
+}

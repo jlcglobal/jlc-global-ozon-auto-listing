@@ -1,0 +1,197 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/source.schema.json",
+  "title": "1688 Captured Source Data",
+  "type": "object",
+  "additionalProperties": false,
+  "required": [
+    "schema_version",
+    "product_id",
+    "collection_id",
+    "source_kind",
+    "source_path",
+    "collected_at",
+    "source_platform",
+    "source_url",
+    "captured_at",
+    "title_cn",
+    "supplier_name",
+    "product_attributes",
+    "price_information",
+    "minimum_order_quantity",
+    "main_images",
+    "detail_images",
+    "skus",
+    "raw_capture_file",
+    "capture_warnings",
+    "field_diagnostics"
+  ],
+  "properties": {
+    "schema_version": { "type": "string", "const": "1.0.0" },
+    "product_id": { "$ref": "#/$defs/productId" },
+    "collection_id": { "type": "string", "pattern": "^COL-[A-Za-z0-9._-]{8,80}$" },
+    "source_kind": { "type": "string", "const": "workbench_collection" },
+    "source_path": { "type": "string", "pattern": "^products/P[0-9]{6}/input/source\\.json$" },
+    "collected_at": { "$ref": "#/$defs/unknownableString" },
+    "source_platform": { "type": "string", "const": "1688" },
+    "source_url": { "$ref": "#/$defs/unknownableString" },
+    "captured_at": { "$ref": "#/$defs/unknownableString" },
+    "title_cn": { "$ref": "#/$defs/unknownableString" },
+    "supplier_name": { "$ref": "#/$defs/unknownableString" },
+    "product_attributes": { "type": "array", "items": { "$ref": "#/$defs/sourceAttribute" } },
+    "price_information": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["currency", "price_ranges", "raw_text"],
+      "properties": {
+        "currency": { "type": "string", "enum": ["CNY", "unknown"] },
+        "price_ranges": { "type": "array", "items": { "$ref": "#/$defs/priceRange" } },
+        "raw_text": { "$ref": "#/$defs/unknownableString" }
+      }
+    },
+    "minimum_order_quantity": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value", "unit", "raw_text"],
+      "properties": {
+        "value": { "type": ["integer", "null"], "minimum": 1 },
+        "unit": { "$ref": "#/$defs/unknownableString" },
+        "raw_text": { "$ref": "#/$defs/unknownableString" }
+      }
+    },
+    "package_dimensions": { "$ref": "#/$defs/packageDimensions" },
+    "package_weight": { "$ref": "#/$defs/packageWeight" },
+    "main_images": { "type": "array", "items": { "$ref": "#/$defs/capturedImage" } },
+    "detail_images": { "type": "array", "items": { "$ref": "#/$defs/capturedImage" } },
+    "sku_property_groups": { "type": "array", "items": { "$ref": "#/$defs/skuPropertyGroup" } },
+    "skus": { "type": "array", "items": { "$ref": "#/$defs/sourceSku" } },
+    "raw_capture_file": { "type": "string", "minLength": 1 },
+    "capture_warnings": { "type": "array", "items": { "type": "string" } },
+    "field_diagnostics": { "type": "array", "items": { "$ref": "#/$defs/fieldDiagnostic" } }
+  },
+  "$defs": {
+    "productId": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "unknownableString": { "type": ["string", "null"], "minLength": 1 },
+    "sourceAttribute": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["name_cn", "value_cn", "source", "source_text"],
+      "properties": {
+        "name_cn": { "$ref": "#/$defs/unknownableString" },
+        "value_cn": { "$ref": "#/$defs/unknownableString" },
+        "source": { "type": "string", "enum": ["structured_json", "script_init_data", "dom_semantic", "candidate_selector", "text_inference", "unknown"] },
+        "source_text": { "$ref": "#/$defs/unknownableString" }
+      }
+    },
+    "priceRange": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["min_quantity", "price_cny", "raw_text"],
+      "properties": {
+        "min_quantity": { "type": ["integer", "null"], "minimum": 1 },
+        "price_cny": { "type": ["number", "null"], "minimum": 0 },
+        "raw_text": { "$ref": "#/$defs/unknownableString" }
+      }
+    },
+    "packageDimensions": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["length_cm", "width_cm", "height_cm", "source_status", "source", "source_text"],
+      "properties": {
+        "length_cm": { "type": "number", "exclusiveMinimum": 0 },
+        "width_cm": { "type": "number", "exclusiveMinimum": 0 },
+        "height_cm": { "type": "number", "exclusiveMinimum": 0 },
+        "source_status": { "type": "string", "const": "confirmed_source" },
+        "source": { "type": "string", "enum": ["structured_json", "script_init_data", "dom_semantic"] },
+        "source_text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "packageWeight": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["value_g", "source_status", "source", "source_text"],
+      "properties": {
+        "value_g": { "type": "number", "exclusiveMinimum": 0 },
+        "source_status": { "type": "string", "const": "confirmed_source" },
+        "source": { "type": "string", "enum": ["structured_json", "script_init_data", "dom_semantic"] },
+        "source_text": { "type": "string", "minLength": 1 }
+      }
+    },
+    "capturedImage": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["id", "original_url", "local_path", "source", "source_order", "download_status", "sha256", "content_duplicate_of", "error"],
+      "properties": {
+        "id": { "type": "string", "minLength": 1 },
+        "original_url": { "$ref": "#/$defs/unknownableString" },
+        "local_path": { "$ref": "#/$defs/unknownableString" },
+        "source": { "type": "string", "enum": ["main_gallery", "sku_option", "sku_property_value", "detail_area", "unknown"] },
+        "source_order": { "type": "integer", "minimum": 0 },
+        "download_status": { "type": "string", "enum": ["downloaded", "failed", "skipped_duplicate_url", "skipped_duplicate_content", "missing"] },
+        "sha256": { "$ref": "#/$defs/unknownableString" },
+        "content_duplicate_of": { "$ref": "#/$defs/unknownableString" },
+        "error": { "$ref": "#/$defs/unknownableString" }
+      }
+    },
+    "sourceSku": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": [
+        "sku_id",
+        "sku_name",
+        "option_values",
+        "purchase_price",
+        "price_source",
+        "image_url",
+        "local_image_path",
+        "sku_image_missing",
+        "availability",
+        "selection_order",
+        "source_data"
+      ],
+      "properties": {
+        "sku_id": { "$ref": "#/$defs/unknownableString" },
+        "sku_identity_type": { "type": "string", "enum": ["1688_sku", "single_specification", "visible_variant"] },
+        "sku_name": { "$ref": "#/$defs/unknownableString" },
+        "option_values": { "type": "array", "items": { "$ref": "#/$defs/sourceAttribute" } },
+        "price": { "type": ["number", "null"], "minimum": 0 },
+        "purchase_price": { "type": ["number", "null"], "minimum": 0 },
+        "price_source": { "type": "string", "enum": ["sku_specific_price", "price_range", "unknown"] },
+        "image_url": { "$ref": "#/$defs/unknownableString" },
+        "local_image_path": { "$ref": "#/$defs/unknownableString" },
+        "variant_image_url": { "$ref": "#/$defs/unknownableString" },
+        "variant_local_image_path": { "$ref": "#/$defs/unknownableString" },
+        "variant_image_source": { "$ref": "#/$defs/unknownableString" },
+        "variant_image_prop_id": { "$ref": "#/$defs/unknownableString" },
+        "variant_image_value_id": { "$ref": "#/$defs/unknownableString" },
+        "variant_image_value_name": { "$ref": "#/$defs/unknownableString" },
+        "sku_image_missing": { "type": "boolean" },
+        "availability": { "type": "string", "enum": ["in_stock", "out_of_stock", "unknown"] },
+        "selection_order": { "type": ["integer", "null"], "minimum": 1 },
+        "source_data": { "type": "object", "additionalProperties": true }
+      }
+    },
+    "skuPropertyGroup": {
+      "type": "object",
+      "additionalProperties": true,
+      "required": ["prop_id", "prop_name", "values"],
+      "properties": {
+        "prop_id": {"type": "string", "minLength": 1},
+        "prop_name": {"type": "string", "minLength": 1},
+        "values": {"type": "array"}
+      }
+    },
+    "fieldDiagnostic": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["field", "strategy", "hit", "failure_reason", "candidate_count"],
+      "properties": {
+        "field": { "type": "string", "minLength": 1 },
+        "strategy": { "type": "string", "enum": ["structured_json", "script_init_data", "dom_semantic", "candidate_selector", "text_inference", "local_ingest"] },
+        "hit": { "type": "boolean" },
+        "failure_reason": { "$ref": "#/$defs/unknownableString" },
+        "candidate_count": { "type": "integer", "minimum": 0 }
+      }
+    }
+  }
+}

@@ -1,0 +1,16 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["category_id", "type_id", "legacy_snapshot_variant_rule_data_incomplete", "official_metadata_cache", "removed_from_allowed_variant_fields", "allowed_variant_fields", "ozon_write_operations", "summary"],
+  "properties": {
+    "category_id": {"type": "integer", "minimum": 1},
+    "type_id": {"type": "integer", "minimum": 1},
+    "legacy_snapshot_variant_rule_data_incomplete": {"type": "boolean"},
+    "official_metadata_cache": {"type": "object"},
+    "removed_from_allowed_variant_fields": {"type": "array", "items": {"type": "object"}},
+    "allowed_variant_fields": {"type": "array", "items": {"type": "object"}},
+    "ozon_write_operations": {"type": "integer", "const": 0},
+    "summary": {"type": "string", "minLength": 1}
+  }
+}

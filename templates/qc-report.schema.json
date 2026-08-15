@@ -1,0 +1,23 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://local.crossborder-ai-factory/templates/qc-report.schema.json",
+  "title": "Current Product QC Report",
+  "type": "object",
+  "additionalProperties": true,
+  "required": ["schema_version", "product_id", "checked_at", "status", "summary", "checks", "failures"],
+  "properties": {
+    "schema_version": { "type": "string", "minLength": 1 },
+    "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "checked_at": { "type": ["string", "null"], "minLength": 1 },
+    "status": { "type": "string", "enum": ["not_started", "pass", "review_required", "fail"] },
+    "summary": { "type": "string", "minLength": 1 },
+    "source_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "checks": { "type": "array", "items": { "type": "object" } },
+    "failures": { "type": "array", "items": { "type": "object" } },
+    "retryable_steps": { "type": "array", "items": { "type": "string" } },
+    "manual_review_required": { "type": "boolean" },
+    "score": { "type": "integer", "minimum": 0, "maximum": 100 },
+    "image_scores": { "type": "array", "items": { "type": "object" } },
+    "ozon_sales_logic": { "type": "object" }
+  }
+}

@@ -1,0 +1,124 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>JLC Global 嘉联创</title>
+    <link rel="icon" href="/brand/jlc-global-logo.png">
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #03120c; color: #f4f6ee; }
+      body { min-width: 320px; }
+      .app-shell, .workspace, #view-root { background: #06150f; }
+    </style>
+    <link rel="stylesheet" href="/icons/phosphor.css">
+    <link rel="stylesheet" href="/workbench.css?v=20260727-jlc-perf-1">
+    <link rel="stylesheet" href="/workbench-future.css?v=20260727-jlc-perf-1">
+  </head>
+  <body>
+    <div class="app-shell">
+      <aside class="sidebar" id="sidebar">
+        <div class="brand" title="JLC Global 嘉联创 · 商品生产控制台">
+          <span class="brand-logo"><img src="/brand/jlc-global-logo.png" alt="JLC Global"></span>
+          <div class="brand-copy"><strong>JLC Global</strong><small>嘉联创商品控制台</small></div>
+        </div>
+        <nav id="primary-nav" aria-label="主导航">
+          <button class="nav-item active" data-view="inbox" data-label="采集箱"><span class="nav-icon ph ph-package"></span><span class="nav-label">采集箱</span></button>
+          <button class="nav-item" data-view="batches" data-label="处理中"><span class="nav-icon ph ph-spinner-gap"></span><span class="nav-label">处理中</span></button>
+          <button class="nav-item" data-view="waiting" data-label="等待上传"><span class="nav-icon ph ph-storefront"></span><span class="nav-label">等待上传</span></button>
+          <button class="nav-item" data-view="attention" data-label="需要处理"><span class="nav-icon ph ph-warning-circle"></span><span class="nav-label">需要处理</span><i id="attention-nav-count"></i></button>
+        </nav>
+        <div class="sidebar-foot" title="本地服务运行中"><span class="service-dot"></span><span class="ph ph-users-three" aria-hidden="true"></span><span class="sidebar-foot-label">识别设备中</span></div>
+      </aside>
+
+      <div class="workspace">
+        <header class="topbar">
+          <button class="icon-button" id="toggle-sidebar" title="收起导航" aria-label="收起导航"><span class="ph ph-list" aria-hidden="true"></span></button>
+          <div class="page-heading"><h1 id="page-title">采集箱</h1><span id="page-subtitle">本次采集、生成和上传入口</span></div>
+          <label class="search-box"><span class="ph ph-magnifying-glass" aria-hidden="true"></span><input id="global-search" type="search" placeholder="搜索商品、SKU、任务号"></label>
+          <button class="secondary-button topbar-icon-action" id="refresh-all" title="刷新当前页面" aria-label="刷新当前页面"><span class="ph ph-arrow-clockwise" aria-hidden="true"></span><span class="button-label">刷新</span></button>
+          <button class="notification-button" id="enable-notifications" title="开启电脑通知" aria-label="开启电脑通知"><span class="ph ph-bell" aria-hidden="true"></span><span class="button-label">通知</span><span id="notification-count">0</span></button>
+          <div class="image-host-status" id="image-host-status" data-state="normal" title="生图主机状态"><i></i><span><strong id="image-host-label">检查主机</strong><small id="image-host-note">正在读取状态</small></span></div>
+          <label class="global-mode-switch owner-only" data-owner-only title="自动模式开启后，点击运行任务会自动质检并上传；真实性和防重复规则仍然生效">
+            <span><strong id="global-mode-label">手动检查</strong><small id="global-mode-note">自动模式已关闭</small></span>
+            <input type="checkbox" id="global-auto-mode">
+          </label>
+          <button class="icon-button owner-only" data-owner-only id="safe-exit-workbench" title="安全退出 JLC Global" aria-label="安全退出 JLC Global"><span class="ph ph-power" aria-hidden="true"></span></button>
+          <div class="operator"><strong id="operator-name">正在识别电脑</strong><small id="operator-role">共享工作台</small></div>
+        </header>
+
+        <div class="notice hidden" id="notice" role="status"></div>
+        <main id="view-root" tabindex="-1"></main>
+      </div>
+    </div>
+
+    <dialog id="image-dialog" class="image-dialog">
+      <button class="dialog-close" id="close-image" aria-label="关闭"><span class="ph ph-x" aria-hidden="true"></span></button>
+      <img id="dialog-image" alt="商品大图">
+    </dialog>
+    <dialog id="question-dialog" class="form-dialog" aria-labelledby="question-dialog-title">
+      <form id="question-form">
+        <div class="form-dialog-head"><div><span>只询问关键歧义</span><h2 id="question-dialog-title">商品需要你确认</h2></div><button type="button" class="dialog-close-static" data-close-dialog="question-dialog" aria-label="关闭"><span class="ph ph-x" aria-hidden="true"></span></button></div>
+        <div class="form-dialog-body">
+          <input type="hidden" id="question-product-id">
+          <p id="question-product-title" class="form-help"></p>
+          <div id="question-text" class="question-text"></div>
+          <label class="field"><span>你的回答</span><textarea id="question-answer" rows="5" required maxlength="1000" placeholder="用简单中文说明正确的SKU对应、商品结构或配件数量"></textarea></label>
+        </div>
+        <div class="form-dialog-actions"><button type="button" class="secondary-button" data-close-dialog="question-dialog">稍后处理</button><button class="primary-button" type="submit">保存回答</button></div>
+      </form>
+    </dialog>
+    <dialog id="delete-dialog" class="delete-dialog" aria-labelledby="delete-dialog-title">
+      <div class="delete-dialog-head">
+        <div><span>永久操作</span><h2 id="delete-dialog-title">彻底删除本地商品</h2></div>
+        <button class="dialog-close-static" id="cancel-delete-x" aria-label="关闭"><span class="ph ph-x" aria-hidden="true"></span></button>
+      </div>
+      <div id="delete-preview" class="delete-preview"></div>
+      <div class="delete-warning">
+        <strong>此操作会永久删除本地项目中该商品的采集资料、生成资料、图片、任务和记录，删除后无法恢复。</strong>
+        <p id="delete-remote-warning" class="hidden">此操作只删除本地项目资料，不会删除、撤回或下架Ozon后台商品。远端Ozon任务可能仍会完成。</p>
+      </div>
+      <div class="delete-dialog-actions">
+        <button class="secondary-button" id="cancel-delete">取消</button>
+        <button class="danger-confirm" id="confirm-delete" disabled><span class="ph ph-trash" aria-hidden="true"></span>确认彻底删除</button>
+      </div>
+    </dialog>
+    <dialog id="store-dialog" class="form-dialog" aria-labelledby="store-dialog-title">
+      <form id="store-form">
+        <div class="form-dialog-head"><div><span>本地安全配置</span><h2 id="store-dialog-title">添加Ozon店铺</h2></div><button type="button" class="dialog-close-static" data-close-dialog="store-dialog" aria-label="关闭"><span class="ph ph-x" aria-hidden="true"></span></button></div>
+        <div class="form-dialog-body">
+          <input type="hidden" id="store-edit-id">
+          <label class="field"><span>店铺显示名称</span><input id="store-display-name" required maxlength="80"></label>
+          <label class="field"><span>Ozon客户端编号（Client-Id）</span><input id="store-client-id" autocomplete="off" placeholder="编辑时留空表示不修改"></label>
+          <label class="field"><span>Ozon接口密钥（Api-Key）</span><input id="store-api-key" type="password" autocomplete="new-password" placeholder="编辑时留空表示不修改"></label>
+          <label class="field"><span>采购成本币种</span><select id="store-currency"><option value="CNY">CNY</option><option value="RUB">RUB</option></select></label>
+          <label class="field"><span>备注</span><textarea id="store-notes" rows="3"></textarea></label>
+          <p class="form-help">凭证只保存在本机受限文件中，页面、日志和浏览器存储不会保存明文。</p>
+        </div>
+        <div class="form-dialog-actions"><button type="button" class="secondary-button" data-close-dialog="store-dialog">取消</button><button class="primary-button" type="submit">保存店铺</button></div>
+      </form>
+    </dialog>
+    <dialog id="batch-dialog" class="form-dialog" aria-labelledby="batch-dialog-title">
+      <form id="batch-form">
+        <div class="form-dialog-head"><div><span>一次性批次设置</span><h2 id="batch-dialog-title">创建商品批次</h2></div><button type="button" class="dialog-close-static" data-close-dialog="batch-dialog" aria-label="关闭"><span class="ph ph-x" aria-hidden="true"></span></button></div>
+        <div class="form-dialog-body">
+          <p id="batch-product-summary" class="form-help"></p>
+          <fieldset class="store-fieldset"><legend>上传至</legend><div id="batch-store-options" class="store-options"></div></fieldset>
+          <div id="batch-mode-summary" class="batch-mode-summary">当前为手动检查模式：先完成本批次唯一一次确认，再开始生成商品资料。</div>
+        </div>
+        <div class="form-dialog-actions"><button type="button" class="secondary-button" data-close-dialog="batch-dialog">取消</button><button class="primary-button" type="submit" id="confirm-create-batch" disabled>请选择目标店铺</button></div>
+      </form>
+    </dialog>
+    <dialog id="category-dialog" class="form-dialog category-dialog" aria-labelledby="category-dialog-title">
+      <div class="form-dialog-head"><div><span>重新运行前修改</span><h2 id="category-dialog-title">修改最终Ozon类目</h2></div><button type="button" class="dialog-close-static" data-close-dialog="category-dialog" aria-label="关闭"><span class="ph ph-x" aria-hidden="true"></span></button></div>
+      <div class="form-dialog-body">
+        <p class="form-help">修改后，旧属性、旧图片策略和旧上传数据会被归档并失效。原始1688资料和原图不会删除。</p>
+        <label class="field"><span>搜索类目</span><input id="category-search-input" placeholder="中文、俄文、关键词、category_id或type_id"></label>
+        <p id="category-dialog-status" class="form-help"></p>
+        <div id="category-dialog-results" class="category-dialog-results"></div>
+        <div id="category-dialog-selected" class="category-dialog-selected">尚未选择新类目</div>
+      </div>
+      <div class="form-dialog-actions"><button type="button" class="secondary-button" data-close-dialog="category-dialog">取消</button><button type="button" class="danger-confirm" id="confirm-category-change" disabled>确认修改并使旧结果失效</button></div>
+    </dialog>
+    <script src="/workbench.js?v=20260727-jlc-perf-1"></script>
+  </body>
+</html>

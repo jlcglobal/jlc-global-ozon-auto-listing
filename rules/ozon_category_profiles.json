@@ -1,0 +1,293 @@
+{
+  "schema_version": "1.0.0",
+  "metadata_mode": "offline_semantic_profiles",
+  "confidence_cap_without_live_ozon_metadata": 0.82,
+  "minimum_semantic_match": 0.45,
+  "near_synonym_policy": {
+    "enabled": true,
+    "require_live_shop_category": true,
+    "require_semantic_compatibility": true,
+    "require_attribute_compatibility": true,
+    "forbid_shape_or_usage_conflicts": true,
+    "on_failure": "block_product_without_upload"
+  },
+  "field_weights": {
+    "product_type": 0.35,
+    "category": 0.2,
+    "usage": 0.2,
+    "purchase_motivation": 0.15,
+    "visual_evidence": 0.1
+  },
+  "profiles": {
+    "luggage_scales": {
+      "category_id": "unknown",
+      "category_name": "Весы для багажа",
+      "signals": {
+        "product_type": ["行李电子秤", "行李称", "箱包电子秤", "手提电子秤", "行李重量"],
+        "category": ["旅行配件", "行李电子秤", "行李称", "箱包"],
+        "usage": ["行李箱", "旅行包", "行李重量", "出行", "旅途", "快递称重"],
+        "purchase_motivation": ["检查行李重量", "出发前", "机场", "提前检查", "减少临时处理"],
+        "visual_evidence": ["显示屏", "按键", "挂带", "连接件", "行李"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Дорожные аксессуары"},
+        {"category_id": "unknown", "category_name": "Бытовые весы"}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "usage_scenarios", "name_ru": "Назначение", "value_source": "analysis.usage_scenarios"},
+        {"field_key": "functions", "name_ru": "Функции", "value_source": "facts.functions"},
+        {"field_key": "sku_configuration", "name_ru": "Вариант товара", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"},
+        {"field_key": "dimensions", "name_ru": "Размеры", "value_source": "facts.dimensions"},
+        {"field_key": "weight", "name_ru": "Вес товара", "value_source": "facts.weight"},
+        {"field_key": "max_load", "name_ru": "Максимальная нагрузка", "value_source": "facts.load_capacity"},
+        {"field_key": "measurement_accuracy", "name_ru": "Точность измерения", "value_source": "unknown"},
+        {"field_key": "certifications", "name_ru": "Сертификация", "value_source": "facts.certifications"},
+        {"field_key": "package_quantity", "name_ru": "Количество в упаковке", "value_source": "facts.package_quantity"}
+      ]
+    },
+    "electric_knife_sharpeners": {
+      "category_id": "unknown",
+      "category_name": "Электрические точилки для ножей",
+      "signals": {
+        "product_type": ["电动磨刀器", "磨刀机", "磨刀器", "刀具磨刀"],
+        "category": ["厨房用品", "厨房小工具", "厨房", "磨刀器"],
+        "usage": ["厨房台面", "家用刀具", "菜刀", "烹饪前", "磨刀"],
+        "purchase_motivation": ["刀具维护", "减少手工磨刀", "日常维护", "更直观", "磨刀操作"],
+        "visual_evidence": ["磨刀槽", "刀具插入", "透明", "磨片", "厨房"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Точилки для ножей"},
+        {"category_id": "unknown", "category_name": "Кухонные электроприборы"}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "usage_scenarios", "name_ru": "Назначение", "value_source": "analysis.usage_scenarios"},
+        {"field_key": "functions", "name_ru": "Функции", "value_source": "facts.functions"},
+        {"field_key": "kit_configuration", "name_ru": "Комплектация SKU", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"},
+        {"field_key": "dimensions", "name_ru": "Размеры", "value_source": "facts.dimensions"},
+        {"field_key": "weight", "name_ru": "Вес товара", "value_source": "facts.weight"},
+        {"field_key": "power", "name_ru": "Мощность", "value_source": "unknown"},
+        {"field_key": "voltage", "name_ru": "Напряжение", "value_source": "unknown"},
+        {"field_key": "compatible_knife_types", "name_ru": "Совместимые типы ножей", "value_source": "unknown"},
+        {"field_key": "certifications", "name_ru": "Сертификация", "value_source": "facts.certifications"},
+        {"field_key": "package_quantity", "name_ru": "Количество в упаковке", "value_source": "facts.package_quantity"}
+      ]
+    },
+    "artificial_turf": {
+      "category_id": "unknown",
+      "category_name": "Искусственный газон",
+      "signals": {
+        "product_type": ["人造草坪", "仿真草坪", "假草坪", "草坪垫"],
+        "category": ["户外铺装", "地面铺装", "人造草坪", "户外"],
+        "usage": ["足球场", "运动场", "幼儿园", "庭院", "围挡", "户外铺装"],
+        "purchase_motivation": ["铺装", "场地", "草高", "颜色", "密度", "视觉效果"],
+        "visual_evidence": ["草丝", "底背", "运动场", "庭院", "户外"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Садовые покрытия"},
+        {"category_id": "unknown", "category_name": "Напольные покрытия для улицы"}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "usage_scenarios", "name_ru": "Область применения", "value_source": "analysis.usage_scenarios"},
+        {"field_key": "functions", "name_ru": "Назначение", "value_source": "facts.functions"},
+        {"field_key": "sku_configuration", "name_ru": "Цвет и высота ворса по SKU", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"},
+        {"field_key": "roll_dimensions", "name_ru": "Ширина и длина рулона", "value_source": "facts.dimensions"},
+        {"field_key": "weight", "name_ru": "Вес", "value_source": "facts.weight"},
+        {"field_key": "certifications", "name_ru": "Сертификация", "value_source": "facts.certifications"},
+        {"field_key": "package_quantity", "name_ru": "Количество в упаковке", "value_source": "facts.package_quantity"}
+      ]
+    },
+    "storage_bags": {
+      "category_id": "unknown",
+      "category_name": "Кофр для хранения вещей",
+      "signals": {
+        "product_type": ["收纳袋", "收纳包", "搬家袋", "衣物收纳", "被褥收纳"],
+        "category": ["家居收纳", "衣物被褥收纳", "收纳"],
+        "usage": ["被褥", "衣物", "搬家", "家庭杂物", "换季"],
+        "purchase_motivation": ["整理", "收纳", "节省空间", "搬家", "分类"],
+        "visual_evidence": ["提手", "拉链", "箱式袋体", "收纳"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Органайзер для хранения вещей"},
+        {"category_id": "unknown", "category_name": "Мешок для хранения"}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "usage_scenarios", "name_ru": "Назначение", "value_source": "analysis.usage_scenarios"},
+        {"field_key": "sku_configuration", "name_ru": "Вариант товара", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"},
+        {"field_key": "dimensions", "name_ru": "Размеры", "value_source": "facts.dimensions"},
+        {"field_key": "weight", "name_ru": "Вес товара", "value_source": "facts.weight"}
+      ]
+    },
+    "phone_cases": {
+      "category_id": "unknown",
+      "category_name": "Чехол для смартфона",
+      "signals": {
+        "product_type": ["手机保护壳", "手机壳", "iphone", "保护套"],
+        "category": ["手机配件", "手机保护壳", "保护壳", "чехол"],
+        "usage": ["手机保护", "iphone", "磁吸配件"],
+        "purchase_motivation": ["保护", "颜色", "适配机型", "磁吸"],
+        "visual_evidence": ["壳体", "摄像头", "磁吸", "手机壳"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Чехлы для телефонов"},
+        {"category_id": "unknown", "category_name": "Аксессуары для смартфонов"}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "sku_configuration", "name_ru": "Модель и цвет", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"}
+      ]
+    },
+    "surveillance_cameras": {
+      "category_id": "unknown",
+      "category_name": "Камера видеонаблюдения",
+      "signals": {
+        "product_type": ["监控摄像机", "监控摄像头", "网络监控", "网络摄像机", "球机"],
+        "category": ["安防监控", "监控摄像头", "监控器球机", "户外网络监控"],
+        "usage": ["远程监控", "实时查看", "夜间监控", "移动事件告警", "室外区域"],
+        "purchase_motivation": ["远程查看", "夜视", "移动侦测", "安全监控", "人形追踪"],
+        "visual_evidence": ["双镜头", "摄像机", "监控", "云台", "夜视"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Комплект охранной системы для дома"},
+        {"category_id": "unknown", "category_name": "IP-камера"},
+        {"category_id": "unknown", "category_name": "Система видеонаблюдения"}
+      ],
+      "compatible_live_types": [
+        {
+          "name_ru": "Комплект охранной системы для дома",
+          "reason": "所选SKU由监控摄像机、欧规电源、UPS续航电源和存储卡组成，可作为家庭安防套装候选。",
+          "required_attribute_names": ["Тип связи", "Питание от", "Степень защиты", "Особенности"],
+          "forbidden_attribute_names": ["Тип гарнитуры", "Конструкция наушников"]
+        }
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "usage_scenarios", "name_ru": "Назначение", "value_source": "analysis.usage_scenarios"},
+        {"field_key": "functions", "name_ru": "Функции", "value_source": "facts.functions"},
+        {"field_key": "sku_configuration", "name_ru": "Вариант товара", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"},
+        {"field_key": "dimensions", "name_ru": "Размеры", "value_source": "facts.dimensions"},
+        {"field_key": "weight", "name_ru": "Вес товара", "value_source": "facts.weight"},
+        {"field_key": "video_resolution", "name_ru": "Разрешение видео", "value_source": "unknown"},
+        {"field_key": "connection_type", "name_ru": "Тип подключения", "value_source": "unknown"},
+        {"field_key": "power_supply", "name_ru": "Питание", "value_source": "unknown"},
+        {"field_key": "certifications", "name_ru": "Сертификация", "value_source": "facts.certifications"},
+        {"field_key": "package_quantity", "name_ru": "Количество в упаковке", "value_source": "facts.package_quantity"}
+      ]
+    },
+    "kitchen_utensil_sets": {
+      "category_id": "unknown",
+      "category_name": "Набор кухонной навески",
+      "signals": {
+        "product_type": ["厨房烹饪铲勺", "炒菜锅铲", "厨房工具套装", "锅铲套装", "厨具套装", "餐厨套装"],
+        "category": ["厨房用品", "烹饪工具", "餐厨", "厨房工具"],
+        "usage": ["炒菜", "烹饪", "锅铲", "汤勺", "漏勺"],
+        "purchase_motivation": ["套装", "烹饪", "厨房", "多件"],
+        "visual_evidence": ["锅铲", "汤勺", "漏勺", "木纹柄"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Кухонные принадлежности"},
+        {"category_id": "unknown", "category_name": "Лопатка кухонная"}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "kit_configuration", "name_ru": "Комплектация", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"}
+      ]
+    },
+    "electric_heating_cups": {
+      "category_id": "unknown",
+      "category_name": "Электрический чайник",
+      "signals": {
+        "product_type": ["便携电热杯", "便携式电热杯", "电热杯", "加热杯", "小型烧水壶", "迷你电热水壶", "电热水杯", "便携加热水杯"],
+        "category": ["厨房用品", "水杯", "便携式电热杯", "加热杯", "小家电", "电热水壶"],
+        "usage": ["办公室", "宿舍", "旅行", "饮水", "烧水", "加热饮水"],
+        "purchase_motivation": ["便携加热", "快速加热", "单人饮水", "温度调节", "充电/插电"],
+        "visual_evidence": ["电量显示", "调温", "加热", "杯体", "电源", "遥控"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Термокружка"},
+        {"category_id": "unknown", "category_name": "Электрические чайники и термопоты"}
+      ],
+      "compatible_live_types": [
+        {"name_ru": "Электрический чайник", "required_attribute_names": [], "forbidden_attribute_names": []}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "usage_scenarios", "name_ru": "Назначение", "value_source": "analysis.usage_scenarios"},
+        {"field_key": "functions", "name_ru": "Функции", "value_source": "facts.functions"},
+        {"field_key": "sku_configuration", "name_ru": "Вариант товара", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"},
+        {"field_key": "dimensions", "name_ru": "Размеры", "value_source": "facts.dimensions"},
+        {"field_key": "weight", "name_ru": "Вес товара", "value_source": "facts.weight"},
+        {"field_key": "capacity", "name_ru": "Объем", "value_source": "unknown"},
+        {"field_key": "power", "name_ru": "Мощность", "value_source": "unknown"},
+        {"field_key": "voltage", "name_ru": "Напряжение", "value_source": "unknown"},
+        {"field_key": "certifications", "name_ru": "Сертификация", "value_source": "facts.certifications"},
+        {"field_key": "package_quantity", "name_ru": "Количество в упаковке", "value_source": "facts.package_quantity"}
+      ]
+    },
+    "drain_odor_seals": {
+      "category_id": "unknown",
+      "category_name": "Пробка для ванны",
+      "signals": {
+        "product_type": ["地漏防臭", "下水道防返臭", "地漏密封", "排水口密封"],
+        "category": ["卫浴", "地漏", "排水", "卫生间"],
+        "usage": ["下水道", "排水口", "卫生间", "防返臭"],
+        "purchase_motivation": ["防臭", "密封", "返味", "排水"],
+        "visual_evidence": ["地漏", "硅胶垫", "排水口", "密封盖"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Донный клапан"},
+        {"category_id": "unknown", "category_name": "Трап для душа"}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"},
+        {"field_key": "dimensions", "name_ru": "Размеры", "value_source": "facts.dimensions"}
+      ]
+    },
+    "pet_leashes": {
+      "category_id": "unknown",
+      "category_name": "Поводки для собак",
+      "signals": {
+        "product_type": ["宠物牵引绳", "狗牵引绳", "狗链", "遛狗牵引"],
+        "category": ["宠物用品", "宠物牵引", "狗用品"],
+        "usage": ["遛狗", "外出牵引", "日常散步", "宠物主人"],
+        "purchase_motivation": ["牵引", "日常使用", "颜色", "规格"],
+        "visual_evidence": ["牵引绳", "连接扣", "宠物互动", "遛狗"]
+      },
+      "alternatives": [
+        {"category_id": "unknown", "category_name": "Аксессуар для прогулки и дрессировки"},
+        {"category_id": "unknown", "category_name": "Амуниция для собак"}
+      ],
+      "required_attributes": [
+        {"field_key": "product_type", "name_ru": "Тип товара", "value_source": "analysis.product_type"},
+        {"field_key": "usage_scenarios", "name_ru": "Назначение", "value_source": "analysis.usage_scenarios"},
+        {"field_key": "sku_configuration", "name_ru": "Вариант товара", "value_source": "source.skus"},
+        {"field_key": "brand", "name_ru": "Бренд", "value_source": "facts.brand"},
+        {"field_key": "material", "name_ru": "Материал", "value_source": "facts.materials"},
+        {"field_key": "dimensions", "name_ru": "Размеры", "value_source": "facts.dimensions"},
+        {"field_key": "weight", "name_ru": "Вес товара", "value_source": "facts.weight"},
+        {"field_key": "max_load", "name_ru": "Максимальная нагрузка", "value_source": "facts.load_capacity"}
+      ]
+    }
+  }
+}

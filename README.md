@@ -1,4 +1,4 @@
-# JLC GLOBAL Community
+# JLC GLOBAL｜Ozon 自动化上架
 
 JLC GLOBAL Community 是面向 Codex 的本地 `1688 → Ozon` 商品生产工作台。用户克隆仓库后，用 Codex 打开项目，配置自己的 Ozon 店铺，即可运行商品采集、俄文资料生成、属性编译、图片规划与生成，以及受控的 Ozon 商品创建/更新流程。
 
@@ -35,8 +35,8 @@ JLC GLOBAL Community 是面向 Codex 的本地 `1688 → Ozon` 商品生产工�
 ### 1. 克隆并用 Codex 打开
 
 ```bash
-git clone https://github.com/jlcglobal/jlc-global-community.git
-cd jlc-global-community
+git clone https://github.com/jlcglobal/jlc-global-ozon-auto-listing.git
+cd jlc-global-ozon-auto-listing
 ```
 
 在 Codex 中打开这个目录，然后说：

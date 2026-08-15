@@ -2,7 +2,7 @@
 
 JLC GLOBAL Community 是面向 Codex 的本地 `1688 → Ozon` 商品生产工作台。用户克隆仓库后，用 Codex 打开项目，配置自己的 Ozon 店铺，即可运行商品采集、俄文资料生成、属性编译、图片规划与生成，以及受控的 Ozon 商品创建/更新流程。
 
-> 这是源码公开社区版，不是 OSI 定义的开源软件。仅允许学习、研究、个人实验和其他非商业用途，详见 [LICENSE](LICENSE)。商业使用需要另行获得授权。
+> 这是源码公开社区版，不是 OSI 定义的开源软件。仅允许学习、研究、个人实验和其他非商业用途，详见 [LICENSE](LICENSE)。商业使用必须事先取得著作权人的书面授权。
 
 ## 核心能力
 
@@ -147,4 +147,11 @@ python3 -m unittest discover -s tests -p 'test*.py'
 
 PolyForm Noncommercial License 1.0.0。允许非商业使用、修改和分发；商业使用不在许可范围内。
 
-Required Notice: Copyright 2026 JLC GLOBAL.
+- 著作权与权利人：[COPYRIGHT.md](COPYRIGHT.md)
+- 商业授权：[COMMERCIAL-LICENSE.md](COMMERCIAL-LICENSE.md)
+- 侵权线索与举报：[INFRINGEMENT-REPORTING.md](INFRINGEMENT-REPORTING.md)
+- 安全问题：[SECURITY.md](SECURITY.md)
+
+商业授权及侵权举报邮箱：`18920385676@163.com`
+
+Required Notice: Copyright 2026 洪辰 (Hongchen), JLC GLOBAL.

@@ -1559,7 +1559,7 @@ async def create_collector_ozon_reference_page(request: Request) -> Dict[str, An
 @app.get("/api/collector/categories/cache")
 def collector_category_cache() -> FileResponse:
     cache = load_translated_tree_cache(ROOT)
-    cache_path = ROOT / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"
+    cache_path = effective_tree_cache_path(ROOT)
     if not cache or not cache_path.is_file():
         raise HTTPException(
             status_code=503,
@@ -1572,6 +1572,8 @@ def collector_category_cache() -> FileResponse:
             "Cache-Control": "no-cache",
             "X-Ozon-Category-Source": "ozon_seller_api",
             "X-Ozon-Category-Language": "ZH_HANS",
+            "X-Ozon-Category-Version": str(cache.get("cache_version") or "unknown"),
+            "X-Ozon-Category-Generated-At": str(cache.get("generated_at") or "unknown"),
         },
     )
 

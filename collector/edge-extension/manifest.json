@@ -1,7 +1,7 @@
 {
   "manifest_version": 3,
   "name": "1688 Single Product Collector",
-  "version": "0.4.25",
+  "version": "0.4.26",
   "description": "Capture current 1688 product pages or Ozon reference product pages into the local JLC GLOBAL workbench.",
   "permissions": ["activeTab", "scripting", "storage", "tabs"],
   "host_permissions": [

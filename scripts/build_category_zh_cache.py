@@ -88,6 +88,7 @@ def build_official_cache(
     *,
     shop_id: str,
     generated_at: str | None = None,
+    strict_catalog: bool = True,
 ) -> Dict[str, Any]:
     ru_items = _leaf_index(ru_response)
     zh_items = _leaf_index(zh_response)
@@ -98,14 +99,15 @@ def build_official_cache(
         raise ValueError(
             f"Ozon俄文与中文官方类目ID不一致：仅俄文{len(ru_keys - zh_keys)}，仅中文{len(zh_keys - ru_keys)}"
         )
-    if ru_keys != catalog_keys:
+    if strict_catalog and ru_keys != catalog_keys:
         raise ValueError(
             f"Ozon官方类目与本地属性规则ID不一致：仅官方{len(ru_keys - catalog_keys)}，仅本地{len(catalog_keys - ru_keys)}"
         )
+    selected_keys = catalog_keys if strict_catalog else ru_keys
 
     children: Dict[str, Dict[str, Dict[str, Any]]] = {"root": {}}
     search_items: List[Dict[str, Any]] = []
-    for category_id, type_id in sorted(catalog_keys):
+    for category_id, type_id in sorted(selected_keys):
         ru = ru_items[(category_id, type_id)]
         zh = zh_items[(category_id, type_id)]
         path_ru = ru["path"]
@@ -195,6 +197,7 @@ def build_official_cache(
         "ru_response_sha256": ru_hash,
         "zh_response_sha256": zh_hash,
         "item_count": len(search_items),
+        "catalog_compatibility": "strict" if strict_catalog else "runtime_live_tree",
         "search_aliases": load_json(ALIASES_PATH, {}).get("aliases") or {},
         "children_by_parent": children_by_parent,
         "search_items": search_items,

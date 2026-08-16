@@ -46,9 +46,15 @@ class FakeOzonReadClient:
     def __init__(self):
         self.calls = 0
 
-    def get_category_tree(self):
+    def get_category_tree(self, language="DEFAULT"):
         self.calls += 1
-        return {"result": [{"description_category_id": 1, "type_id": 2}]}
+        category_name = "测试类目" if language == "ZH_HANS" else "Тестовая категория"
+        type_name = "测试类型" if language == "ZH_HANS" else "Тестовый тип"
+        return {"result": [{
+            "description_category_id": 1,
+            "category_name": category_name,
+            "children": [{"type_id": 2, "type_name": type_name}],
+        }]}
 
 
 class PipelineSpeedOptimizationTests(unittest.TestCase):
@@ -553,7 +559,10 @@ class PipelineSpeedOptimizationTests(unittest.TestCase):
             second = prewarm_category_tree(settings, root=root, client=client)
             self.assertEqual(first["status"], "prewarmed")
             self.assertEqual(second["status"], "cache_fresh")
-            self.assertEqual(client.calls, 1)
+            self.assertEqual(client.calls, 2)
+            cache = json.loads(Path(first["cache_path"]).read_text(encoding="utf-8"))
+            self.assertEqual(cache["api_language"], "ZH_HANS")
+            self.assertEqual(cache["catalog_compatibility"], "runtime_live_tree")
 
     def test_embedded_qc_completes_without_second_codex_task(self):
         with tempfile.TemporaryDirectory() as directory:

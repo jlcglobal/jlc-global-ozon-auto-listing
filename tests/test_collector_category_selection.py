@@ -10,6 +10,7 @@ from pathlib import Path
 from scripts.collector_categories import (
     build_selection,
     category_tree_children,
+    effective_tree_cache_path,
     load_translated_tree_cache,
     prepare_rules,
     public_preferences,
@@ -108,6 +109,25 @@ def make_root() -> tuple[tempfile.TemporaryDirectory, Path]:
 
 
 class CollectorCategorySelectionTest(unittest.TestCase):
+    def test_valid_runtime_tree_overrides_bundled_cache(self):
+        temporary, root = make_root()
+        self.addCleanup(temporary.cleanup)
+        bundled_path = root / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"
+        live_path = root / "ozon-adapter/metadata/live-category-cache/current/category-tree.zh-CN.json"
+        live = json.loads(bundled_path.read_text(encoding="utf-8"))
+        live["cache_version"] = "live-test-version"
+        live["generated_at"] = "2026-08-16T00:00:00+08:00"
+        write_json(live_path, live)
+        self.assertEqual(effective_tree_cache_path(root), live_path)
+        self.assertEqual(load_translated_tree_cache(root)["cache_version"], "live-test-version")
+
+    def test_invalid_runtime_tree_falls_back_to_bundled_cache(self):
+        temporary, root = make_root()
+        self.addCleanup(temporary.cleanup)
+        live_path = root / "ozon-adapter/metadata/live-category-cache/current/category-tree.zh-CN.json"
+        write_json(live_path, {"source": "unknown"})
+        self.assertEqual(effective_tree_cache_path(root), root / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json")
+
     def test_search_supports_chinese_russian_keyword_and_ids(self):
         temporary, root = make_root()
         self.addCleanup(temporary.cleanup)
@@ -358,7 +378,7 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertIn("最近类目读取失败", built)
         self.assertIn("收藏类目读取失败", built)
         self.assertIn("收藏失败：", built)
-        self.assertIn("allow_readonly_fetch: false", built)
+        self.assertIn("allow_readonly_fetch: true", built)
         self.assertIn("Ozon后台官方中文类目树（点击逐级展开", built)
         self.assertIn("已拒绝使用本地翻译", built)
         self.assertIn("选择SKU（勾选下方商品）", built)

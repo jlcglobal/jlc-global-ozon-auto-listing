@@ -1,4 +1,4 @@
-const PLUGIN_VERSION = "0.4.25";
+const PLUGIN_VERSION = "0.4.26";
 const MAX_SELECTED_SKUS = 10;
 const DEFAULT_FACTORY_URL = "http://192.168.3.13:8765";
 let latestDrawerCapture = null;
@@ -2612,10 +2612,10 @@ function showSkuDrawer(capture, options = {}) {
     try {
       categoryRules = await collectorApi("/api/collector/categories/rules", {
         method: "POST",
-        body: JSON.stringify({ category_id: item.category_id, type_id: item.type_id, allow_readonly_fetch: false })
+        body: JSON.stringify({ category_id: item.category_id, type_id: item.type_id, allow_readonly_fetch: true })
       });
       await rememberCategoryRules(item, categoryRules);
-      const sourceLabel = categoryRules.offline_fallback ? "本地离线规则" : "完整本地规则";
+      const sourceLabel = categoryRules.offline_fallback ? "本地离线规则" : "Ozon只读实时规则";
       categorySelected.textContent = `已选：${item.name_zh} · 必填 ${categoryRules.required_attribute_ids.length} · SKU维度 ${categoryRules.aspect_attribute_ids.length} · ${sourceLabel}`;
       setMessage("");
     } catch (error) {

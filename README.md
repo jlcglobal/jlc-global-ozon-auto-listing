@@ -62,10 +62,10 @@ cd ../..
 
 ```bash
 cp ozon-adapter/shops.example.json ozon-adapter/shops.json
-cp .env.example .env
+cp .env.example ozon-adapter/.env.default
 ```
 
-把你自己的 Ozon 凭证写入 `.env`。这些本地文件已被 `.gitignore` 排除：
+把你自己的 Ozon 凭证写入 `ozon-adapter/.env.default`。该本地密钥文件已被 `.gitignore` 排除：
 
 ```dotenv
 OZON_DEFAULT_CLIENT_ID=your_client_id
@@ -82,6 +82,14 @@ OZON_DEFAULT_API_KEY=your_api_key
 
 插件不会携带 JLC GLOBAL 的 Cookie 或登录状态；用户需要在自己的浏览器中登录 1688。
 
+#### 1688 详情页无法采集
+
+1. 必须先启动本地工作台，并确认 <http://127.0.0.1:8765/workbench> 可以打开。
+2. 在 Edge/Chrome 扩展管理页确认插件已启用；更新代码后点击插件的“重新加载”。
+3. 使用自己的账号登录 1688，再打开形如 `https://detail.1688.com/offer/商品编号.html` 的单品详情页；列表页、搜索页和登录验证页不能作为商品详情采集。
+4. 等待商品标题、SKU 和图片在页面中加载完成后再点击插件。若页面要求滑块、短信验证或重新登录，先在浏览器中人工完成验证。
+5. 仍失败时，同时记录插件显示的错误、浏览器开发者工具 Console 错误及本地工作台终端输出。插件不绕过 1688 登录、验证码、风控或访问权限。
+
 ### 5. 启动工作台
 
 ```bash
@@ -92,6 +100,21 @@ OZON_DEFAULT_API_KEY=your_api_key
 ```
 
 访问 <http://127.0.0.1:8765/workbench>。
+
+### Ozon 类目树与匹配
+
+- 仓库自带一份 Ozon 官方简体中文类目树和类目规则缓存，未配置 API、网络失败或 Ozon 暂时不可用时自动离线兜底。
+- 配置并启用自己的 Ozon 店铺后，工作台每次启动都会在后台调用两次 Ozon **只读**类目接口，分别取得俄文和简体中文树，生成本机最新缓存；不会创建/更新商品，也不会调用库存接口。
+- 刷新成功后插件优先读取本机实时缓存；刷新失败则继续使用仓库内置缓存，不阻断工作台启动。刷新日志位于 `logs/ozon-category-refresh.log`。
+- 新出现且未包含在内置规则包中的类目，在用户选择时才通过只读接口加载该类目的属性和字典值，并缓存在本机。
+- 类目名称搜索不到时，可以输入更短的商品核心词、俄文名称、`category_id` 或 `type_id`，也可以从类目树逐级展开。系统只允许选择 Ozon 返回的有效叶子节点，不会靠翻译文本猜测类目 ID。
+
+排查顺序：
+
+1. 确认 `ozon-adapter/shops.json` 中的店铺 ID 与 `config/pipeline-settings.json` 的 `shop_name` 一致。
+2. 确认对应的 `ozon-adapter/.env.<店铺ID>` 已填写该店铺的 `Client-Id` 和 `Api-Key`。
+3. 重启工作台并查看 `logs/ozon-category-refresh.log`；`prewarmed` 表示实时树已更新，`cache_fresh` 表示本地缓存仍在有效期，`bundled_fallback` 表示正在使用内置缓存。
+4. 更新仓库代码后，在浏览器扩展管理页点击“重新加载”，避免旧插件继续持有旧类目缓存。
 
 ### 6. 允许真实 Ozon 上传（可选）
 

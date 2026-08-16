@@ -55,7 +55,7 @@ export function TelemetryPanel({
   const ozonTagCount = (searchAction?.existing_subject_tags?.length || 0) + (searchAction?.subject_tags?.length || 0);
 
   return (
-    <Card className="telemetry-panel glass-panel simple-monitor-panel">
+    <Card className="telemetry-panel simple-monitor-panel">
       <CardHeader>
         <div className="panel-kicker">状态</div>
         <CardTitle>系统状态</CardTitle>

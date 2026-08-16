@@ -109,3 +109,4 @@ prototypes/three-pane-ai-studio-share/
 *.swo
 Thumbs.db
 Desktop.ini
+config/collector-category-preferences.json

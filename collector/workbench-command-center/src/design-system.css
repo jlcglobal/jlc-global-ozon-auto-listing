@@ -1,0 +1,391 @@
+/* ==========================================================================
+   JLC GLOBAL 工作台 — Design System v4 (light / bento)
+   Source: ui-ux-pro-max skill — "Data-Dense Dashboard" + "Bento Box Grid"
+   Palette:  E-commerce emerald #059669 / accent orange #EA580C / white on #F8FAFC
+   --------------------------------------------------------------------------
+   This file is the single maintained UI layer. It is imported AFTER the
+   legacy styles.css so its rules intentionally win.
+   ========================================================================== */
+
+/* ---------- 1. Design tokens ---------- */
+:root {
+  --jlc-primary: #059669;
+  --jlc-primary-strong: #047857;
+  --jlc-primary-soft: #ecfdf5;
+  --jlc-accent: #ea580c;
+  --jlc-accent-soft: #fff7ed;
+  --jlc-bg: #f5f7fa;
+  --jlc-surface: #ffffff;
+  --jlc-surface-muted: #f8fafc;
+  --jlc-text: #0f172a;
+  --jlc-text-2: #475569;
+  --jlc-text-3: #5b6b80;
+  --jlc-border: #e2e8f0;
+  --jlc-border-strong: #cbd5e1;
+  --jlc-success: #10b981;
+  --jlc-warning: #d97706;
+  --jlc-danger: #dc2626;
+  --jlc-radius: 16px;
+  --jlc-radius-lg: 20px;
+  --jlc-radius-sm: 10px;
+  --jlc-shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 10px 30px -18px rgba(15, 23, 42, 0.18);
+  --jlc-shadow-hover: 0 2px 6px rgba(15, 23, 42, 0.06), 0 18px 40px -20px rgba(15, 23, 42, 0.28);
+  --jlc-font-ui: "Inter", "Plus Jakarta Sans", "Segoe UI", "Microsoft YaHei", "PingFang SC", "Noto Sans SC", system-ui, sans-serif;
+  --jlc-font-mono: "JetBrains Mono", "Fira Code", Consolas, "SFMono-Regular", ui-monospace, monospace;
+  --jlc-ease: cubic-bezier(0.2, 0.8, 0.2, 1);
+}
+
+/* ---------- 2. Kill glassmorphism / ghost blur everywhere ---------- */
+html, body, #root { background: var(--jlc-bg) !important; color: var(--jlc-text) !important; }
+body * { backdrop-filter: none !important; -webkit-backdrop-filter: none !important; }
+
+/* ---------- 3. Base typography ---------- */
+html { font-size: 15px; }
+body {
+  font-family: var(--jlc-font-ui);
+  color: var(--jlc-text) !important;
+  background: var(--jlc-bg);
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+.font-mono, .clock, kbd, .hud-meta strong, .metric strong, .service-chip strong,
+.activity-item time, .queue-item em, .ozon-product-row-facts, .live-monitor-stats strong {
+  font-family: var(--jlc-font-mono);
+}
+
+/* ---------- 4. Shell & top command bar ---------- */
+.command-center { background: transparent; }
+
+.command-bar {
+  position: relative;
+  z-index: 30;
+  height: 64px;
+  display: grid;
+  grid-template-columns: minmax(250px, 340px) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: 14px;
+  padding: 0 16px;
+  border: 1px solid var(--jlc-border) !important;
+  border-radius: 18px !important;
+  background: var(--jlc-surface) !important;
+  box-shadow: var(--jlc-shadow) !important;
+}
+.brand-core {
+  background: var(--jlc-primary-soft);
+  border: 1px solid #d1fae5;
+  border-radius: 12px;
+}
+.brand-lockup strong { color: var(--jlc-text) !important; font-size: 15px; font-weight: 700; }
+.brand-lockup span { color: var(--jlc-text-3) !important; font-size: 12px; }
+.brand-lockup small { color: var(--jlc-text-3) !important; font-size: 11px; }
+.clock { color: var(--jlc-text-2) !important; font-size: 13px; font-weight: 600; }
+
+.service-chip {
+  background: var(--jlc-surface-muted);
+  border: 1px solid var(--jlc-border);
+  border-radius: 12px;
+  padding: 6px 10px;
+  transition: box-shadow 0.2s var(--jlc-ease), transform 0.2s var(--jlc-ease);
+}
+.service-chip:hover { box-shadow: var(--jlc-shadow-hover); }
+.service-chip small { color: var(--jlc-text-3) !important; font-size: 11px; }
+.service-chip strong { color: var(--jlc-text) !important; font-size: 13px; }
+.status-dot { box-shadow: none; border: 2px solid #fff; outline: 1px solid rgba(15,23,42,0.08); }
+.status-dot.ok { background: var(--jlc-success); }
+.status-dot.warn { background: var(--jlc-warning); }
+
+.workspace-mode-tabs {
+  background: var(--jlc-surface-muted);
+  border: 1px solid var(--jlc-border);
+  border-radius: 10px;
+  padding: 3px;
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+}
+
+/* ---------- 5. Panels / cards (bento surfaces) ---------- */
+.glass-panel,
+.jlc-panel,
+.jlc-card,
+.pipeline-panel,
+.production-stage,
+.telemetry-panel,
+.ozon-optimization-stage,
+.attention-panel,
+.activity-stream,
+.timeline-panel,
+.workspace-panel,
+.current-task-card,
+.simple-monitor-panel,
+.simple-status-list,
+.pending-question-card {
+  background: var(--jlc-surface) !important;
+  border: 1px solid var(--jlc-border) !important;
+  border-radius: var(--jlc-radius-lg) !important;
+  box-shadow: var(--jlc-shadow) !important;
+}
+.hero-layer {
+  box-shadow: var(--jlc-shadow) !important;
+}
+.glass-panel { transition: box-shadow 0.25s var(--jlc-ease), transform 0.25s var(--jlc-ease), border-color 0.25s var(--jlc-ease); }
+.glass-panel:hover { border-color: #d8e2ec; box-shadow: var(--jlc-shadow-hover); }
+
+/* Card component (shared <Card/>) */
+.rounded-xl.border.border-gray-200.bg-\[rgba\(15\,21\,28\,0\.78\)\] {
+  background: var(--jlc-surface) !important;
+  border-color: var(--jlc-border) !important;
+  color: var(--jlc-text) !important;
+  box-shadow: var(--jlc-shadow) !important;
+}
+
+/* hud image frame (production stage) */
+.hud-frame {
+  border: 1px solid var(--jlc-border) !important;
+  border-radius: var(--jlc-radius-lg) !important;
+  background: var(--jlc-surface-muted) !important;
+  box-shadow: var(--jlc-shadow) !important;
+}
+.hud-meta, .hud-metrics { color: var(--jlc-text-2) !important; }
+.hud-meta span { color: var(--jlc-text-3) !important; font-size: 11px; }
+.hud-meta strong { color: var(--jlc-text) !important; font-size: 15px; }
+.hud-image-zone { background: var(--jlc-surface-muted); border: 1px dashed var(--jlc-border-strong); border-radius: 14px; }
+
+/* production live monitor */
+.production-live-monitor {
+  background: linear-gradient(90deg, rgba(16,185,129,0.07), transparent 45%), var(--jlc-surface) !important;
+  border: 1px solid var(--jlc-border) !important;
+  border-radius: 18px !important;
+  box-shadow: var(--jlc-shadow) !important;
+}
+.live-monitor-current span, .live-monitor-progress span, .live-monitor-stats span,
+.live-monitor-stats small, .live-monitor-note {
+  color: var(--jlc-text-2) !important;
+}
+.live-monitor-current strong, .live-monitor-progress strong, .live-monitor-stats strong {
+  color: var(--jlc-text) !important;
+}
+
+/* ---------- 6. Kickers / labels / status lines ---------- */
+.panel-kicker {
+  color: var(--jlc-primary-strong) !important;
+  font-size: 10.5px;
+  font-weight: 700;
+  letter-spacing: 0.16em;
+  text-transform: uppercase;
+}
+.stage-status-line { color: var(--jlc-text-2) !important; font-size: 11px; }
+.stage-status-line strong { color: var(--jlc-text) !important; }
+.stage-status-line small { color: var(--jlc-text-3) !important; }
+
+.metric span { color: var(--jlc-text-3) !important; font-size: 11px; }
+.metric strong { color: var(--jlc-text) !important; font-size: 18px; }
+.stage-issue-strip, .missing-attribute-strip { background: var(--jlc-accent-soft); border: 1px solid #fed7aa; color: #9a3412; border-radius: 12px; }
+
+/* ---------- 7. Rows & lists ---------- */
+.ozon-product-row,
+.queue-item,
+.batch-row,
+.workspace-product,
+.store-manager-row,
+.category-result-list button,
+.attention-item,
+.confirmation-product,
+.batch-detail-product,
+.ozon-reference-fitkun-item,
+.search-visibility-item {
+  background: var(--jlc-surface) !important;
+  border: 1px solid var(--jlc-border) !important;
+  border-radius: 14px !important;
+  transition: border-color 0.2s var(--jlc-ease), background 0.2s var(--jlc-ease), transform 0.2s var(--jlc-ease), box-shadow 0.2s var(--jlc-ease);
+}
+.ozon-product-row, .queue-item, .batch-row, .workspace-product, .store-manager-row,
+.category-result-list button, .attention-item, .confirmation-product, .batch-detail-product,
+.ozon-reference-fitkun-item, .search-visibility-item, .ozon-product-row.active { cursor: pointer; }
+.ozon-product-row:hover, .queue-item:hover, .batch-row:hover, .workspace-product:hover,
+.store-manager-row:hover, .category-result-list button:hover, .attention-item:hover,
+.confirmation-product:hover, .batch-detail-product:hover, .ozon-reference-fitkun-item:hover,
+.search-visibility-item:hover {
+  border-color: #cfe8df !important;
+  background: #fbfdfc !important;
+  box-shadow: var(--jlc-shadow-hover);
+}
+.ozon-product-row.active {
+  border-color: var(--jlc-primary) !important;
+  background: var(--jlc-primary-soft) !important;
+  box-shadow: 0 0 0 3px rgba(5,150,105,0.12);
+}
+.ozon-product-row-main strong { color: var(--jlc-text) !important; }
+.ozon-product-row-facts span, .ozon-product-row-tags > span {
+  background: var(--jlc-surface-muted) !important;
+  border: 1px solid var(--jlc-border) !important;
+  color: var(--jlc-text-2) !important;
+}
+.ozon-product-row-facts b, .ozon-product-row-tags b { color: var(--jlc-text-2) !important; }
+.ozon-product-row-facts small { color: var(--jlc-text-3) !important; }
+.queue-item strong, .queue-item span, .workspace-product-main strong { color: var(--jlc-text) !important; }
+.queue-item small, .workspace-product-meta span { color: var(--jlc-text-3) !important; }
+.queue-section-title, .queue-title, .section-title-row h2, .section-title-row h3 { color: var(--jlc-text) !important; }
+
+/* ---------- 8. Empty states & notices ---------- */
+.ozon-product-list-empty, .queue-empty, .batch-empty, .drawer-empty, .launcher-empty,
+.store-empty, .task-center-empty, .category-empty {
+  color: var(--jlc-text-3) !important;
+}
+.empty { color: var(--jlc-text-3) !important; }
+.error-card { background: #fef2f2; border: 1px solid #fecaca; color: #991b1b; border-radius: 14px; }
+.launcher-alert, .danger-zone-section { background: #fef2f2; border: 1px solid #fecaca; border-radius: 14px; }
+
+/* ---------- 9. Inputs / search bars ---------- */
+.command-search input, .workspace-search input, .queue-search input,
+.ozon-reference-category-search input, .ozon-reference-field textarea,
+.ozon-reference-measure-grid input, .ozon-yandex-import textarea,
+.copy-edit-panel input, .copy-edit-panel textarea, .price-edit-grid input,
+.measurement-fields input, .finance-search input, .category-search-bar input,
+.pending-question-card textarea {
+  background: var(--jlc-surface-muted) !important;
+  border: 1px solid var(--jlc-border) !important;
+  border-radius: 10px !important;
+  color: var(--jlc-text) !important;
+  transition: border-color 0.2s var(--jlc-ease), box-shadow 0.2s var(--jlc-ease);
+}
+.command-search input:focus, .workspace-search input:focus, .queue-search input:focus,
+.ozon-reference-category-search input:focus, .ozon-reference-field textarea:focus,
+.ozon-reference-measure-grid input:focus, .ozon-yandex-import textarea:focus,
+.copy-edit-panel input:focus, .copy-edit-panel textarea:focus, .price-edit-grid input:focus,
+.measurement-fields input:focus, .finance-search input:focus, .category-search-bar input:focus,
+.pending-question-card textarea:focus {
+  border-color: var(--jlc-primary) !important;
+  box-shadow: 0 0 0 3px rgba(5,150,105,0.12) !important;
+  outline: none;
+}
+input::placeholder, textarea::placeholder { color: #94a3b8; }
+
+/* ---------- 10. Dialogs / drawers / overlays ---------- */
+.detail-drawer, .detail-drawer-header,
+.task-center-drawer, .batch-launcher, .batch-launcher-head,
+.batch-confirmation-dialog, .batch-detail-dialog, .batch-detail-summary,
+.batch-status-panel, .store-manager-dialog, .store-manager-head,
+.finance-dialog, .finance-dialog-header, .finance-table-wrap,
+.image-management-panel, .image-preview-dialog, .image-preview-stage,
+.category-dialog-shell, .confirmation-summary, .confirmation-product,
+.measurement-edit-panel, .price-edit-panel, .copy-edit-panel,
+.sku-binding-panel, .visual-preference-panel, .search-visibility-panel,
+.ozon-opt-panels > section, .ozon-product-meta-card, .ozon-gallery-card {
+  background: var(--jlc-surface) !important;
+  border: 1px solid var(--jlc-border) !important;
+  border-radius: var(--jlc-radius-lg) !important;
+  box-shadow: var(--jlc-shadow) !important;
+}
+.detail-drawer-header, .task-center-title, .batch-launcher-head h2, .store-manager-head h2,
+.finance-dialog-header h2, .category-dialog-shell h2, .image-management-heading h2 {
+  color: var(--jlc-text) !important;
+}
+.detail-section h3, .detail-section h4, .task-center-item strong, .batch-row-main strong,
+.finance-tabs, .store-manager-row strong, .confirmation-product strong, .ozon-detail-actions {
+  color: var(--jlc-text) !important;
+}
+.detail-facts span, .task-center-item span, .batch-row small, .finance-status-line,
+.store-manager-row span, .confirmation-product span, .ozon-product-facts span {
+  color: var(--jlc-text-3) !important;
+}
+
+/* ---------- 11. Tables ---------- */
+.finance-table-wrap table th {
+  background: var(--jlc-surface-muted) !important;
+  color: var(--jlc-text-2) !important;
+  border-bottom: 1px solid var(--jlc-border) !important;
+}
+.finance-table-wrap table td {
+  color: var(--jlc-text) !important;
+  border-bottom: 1px solid #f1f5f9 !important;
+}
+.finance-table-wrap table tr:hover td { background: #fbfdfc !important; }
+
+/* ---------- 12. Scrollbars ---------- */
+::-webkit-scrollbar { width: 10px; height: 10px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #cbd5e1; border-radius: 999px; border: 2px solid var(--jlc-surface); }
+::-webkit-scrollbar-thumb:hover { background: #94a3b8; }
+
+/* ---------- 13. Focus rings (accessibility) ---------- */
+:focus-visible {
+  outline: 2px solid var(--jlc-primary);
+  outline-offset: 2px;
+  border-radius: 6px;
+}
+
+/* ---------- 14. Motion polish ---------- */
+.glass-panel, .pipeline-panel, .production-stage, .telemetry-panel,
+.ozon-optimization-stage, .timeline-panel, .attention-panel,
+.current-task-card, .command-bar, .service-chip, .hud-frame {
+  transition: box-shadow 0.25s var(--jlc-ease), border-color 0.25s var(--jlc-ease), transform 0.25s var(--jlc-ease);
+}
+.command-bar:hover, .glass-panel:hover, .jlc-panel:hover { border-color: #d4e2ec; }
+
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* ---------- 15. Ant Design light-theme complements ---------- */
+.ant-layout { background: var(--jlc-bg); }
+.ant-layout-sider { border-right: 1px solid var(--jlc-border); }
+.ant-layout-header { background: var(--jlc-surface); }
+.ant-menu-light .ant-menu-item-selected { font-weight: 600; }
+.ant-tabs .ant-tabs-tab { font-size: 13px; }
+.ant-table { font-size: 13px; }
+.ant-tag, .ant-badge { font-size: 12px; }
+.ant-drawer-content, .ant-modal-content { background: var(--jlc-surface); }
+.ant-tooltip-inner { font-size: 12px; }
+
+/* ---------- 15b. AA contrast fixups for legacy muted text ---------- */
+.center-tools span,
+.simple-status-line span,
+.workspace-product-main small,
+.workspace-product-main span,
+.simple-status-list span,
+.ozon-list-summary span,
+.ozon-list-summary small,
+.launcher-product small,
+.launcher-shop small,
+.batch-detail-meta span,
+.confirmation-summary span,
+.store-manager-row small,
+.task-center-product-chips span {
+  color: var(--jlc-text-3) !important;
+}
+
+/* ---------- 15c. Tag chips: light surfaces, readable text ---------- */
+.workspace-product-tags span,
+.workspace-tag-strip em, .workspace-tag-strip span,
+.ozon-tag-strip em, .ozon-tag-strip span,
+.tag-strip em, .tag-strip span,
+.ozon-current-tags span, .current-tags span,
+.sku-fact-chips span, .ozon-product-meta-card .ozon-tag-strip span {
+  background: var(--jlc-surface-muted) !important;
+  border: 1px solid var(--jlc-border) !important;
+  color: var(--jlc-text-2) !important;
+}
+.workspace-product-tags b,
+.ozon-tag-strip em b, .ozon-tag-strip span b,
+.tag-strip b { color: var(--jlc-text-2) !important; }
+
+/* ---------- 15d. Current-task metric chips ---------- */
+.current-task-metrics span {
+  background: var(--jlc-surface-muted) !important;
+  border: 1px solid var(--jlc-border) !important;
+  color: var(--jlc-text-2) !important;
+}
+.current-task-metrics b { color: var(--jlc-text) !important; }
+
+/* ---------- 15e. Button count badges ---------- */
+.ozon-toolbar-actions button b {
+  background: rgba(255, 255, 255, 0.92) !important;
+  color: #047857 !important;
+  box-shadow: 0 1px 2px rgba(15, 23, 42, 0.15);
+}

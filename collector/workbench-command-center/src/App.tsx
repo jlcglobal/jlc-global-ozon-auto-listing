@@ -1,6 +1,19 @@
 import { useEffect, useMemo, useState } from "react";
 import { motion } from "framer-motion";
 import { TooltipProvider } from "@/components/ui/tooltip";
+import { Badge, Button, Layout, Menu, Space } from "antd";
+import {
+  AppstoreOutlined,
+  DollarOutlined,
+  GlobalOutlined,
+  InboxOutlined,
+  PlayCircleOutlined,
+  PoweroffOutlined,
+  ShopOutlined,
+  UnorderedListOutlined,
+} from "@ant-design/icons";
+import brandLogo from "@/assets/jlc-global-logo.png";
+
 import { AttentionPanel } from "@/components/attention/AttentionPanel";
 import { CommandBar } from "@/components/command-center/CommandBar";
 import { OzonOptimizationStage } from "@/components/command-center/OzonOptimizationStage";
@@ -1053,19 +1066,63 @@ export default function App() {
     }
   }
 
+  const [activeNavKey, setActiveNavKey] = useState("workbench");
+
   return (
     <TooltipProvider>
-      <div className="min-h-screen overflow-auto bg-[#040D0C] text-emerald-50">
-        <div className="orb orb-a" />
-        <div className="orb orb-b" />
-        <div className="grid-noise" />
-        <motion.main
-          className="command-center"
-          data-build-version={commandCenterConfig.buildVersion}
-          initial={{ opacity: 0 }}
-          animate={{ opacity: 1 }}
-          transition={{ duration: 0.5 }}
+      <Layout className="min-h-screen">
+        <Layout.Sider
+          width={208}
+          theme="light"
+          style={{ borderRight: "1px solid #eef0f3", position: "sticky", top: 0, height: "100vh", overflow: "auto" }}
         >
+          <div style={{ padding: "16px 16px 12px", display: "flex", alignItems: "center", gap: 10 }}>
+            <img src={brandLogo} alt="JLC" style={{ width: 34, height: 34, borderRadius: 8, objectFit: "contain" }} />
+            <div>
+              <div style={{ fontWeight: 700, fontSize: 14, color: "#111827", lineHeight: 1.2 }}>JLC GLOBAL</div>
+              <div style={{ fontSize: 11, color: "#8a94a6" }}>Ozon 自动化上架工作台</div>
+            </div>
+          </div>
+          <Menu
+            mode="inline"
+            selectedKeys={[activeNavKey]}
+            style={{ borderInlineEnd: "none" }}
+            onClick={({ key }) => {
+              setActiveNavKey(String(key));
+              if (key === "inbox") openBatchLauncher("");
+              else if (key === "tasks") setTaskCenterOpen(true);
+              else if (key === "ozon") setOzonReferenceLauncherOpen(true);
+              else if (key === "stores") setStoreManagerOpen(true);
+              else if (key === "finance") setFinanceCenterOpen(true);
+            }}
+            items={[
+              { key: "workbench", icon: <AppstoreOutlined />, label: "工作台" },
+              { key: "inbox", icon: <InboxOutlined />, label: "采集箱 / 商品" },
+              { key: "tasks", icon: <UnorderedListOutlined />, label: "任务中心" },
+              { key: "ozon", icon: <GlobalOutlined />, label: "Ozon 参考页" },
+              { key: "stores", icon: <ShopOutlined />, label: "店铺管理" },
+              { key: "finance", icon: <DollarOutlined />, label: "财务中心" },
+            ]}
+          />
+        </Layout.Sider>
+        <Layout>
+          <Layout.Header style={{ display: "flex", alignItems: "center", gap: 16, padding: "0 20px", borderBottom: "1px solid #eef0f3" }}>
+            <span style={{ fontWeight: 600, fontSize: 15, color: "#111827" }}>AI 商品优化工作台</span>
+            <Badge status={system?.state === "normal" ? "success" : "default"} text={system?.state === "normal" ? "服务正常" : "连接中…"} />
+            <div style={{ flex: 1 }} />
+            <Space size={10}>
+              <Button type="primary" icon={<PlayCircleOutlined />} onClick={() => openBatchLauncher("")}>启动采集箱商品</Button>
+              <Button danger icon={<PoweroffOutlined />} loading={stopBusy} disabled={!Boolean(system?.batch_running || batches?.running_pid)} onClick={handleStopBatch}>安全停止</Button>
+            </Space>
+          </Layout.Header>
+          <Layout.Content style={{ padding: 14, overflow: "auto" }}>
+            <motion.main
+              className="command-center"
+              data-build-version={commandCenterConfig.buildVersion}
+              initial={{ opacity: 0 }}
+              animate={{ opacity: 1 }}
+              transition={{ duration: 0.5 }}
+            >
           <CommandBar
             system={system}
             onOpenBatchLauncher={() => openBatchLauncher("")}
@@ -1301,8 +1358,10 @@ export default function App() {
             onOpenChange={setFinanceCenterOpen}
             onResult={(message, tone) => setCommandResult({ message, tone })}
           />
-        </motion.main>
-      </div>
+            </motion.main>
+          </Layout.Content>
+        </Layout>
+      </Layout>
     </TooltipProvider>
   );
 }

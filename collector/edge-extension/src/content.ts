@@ -1,4 +1,4 @@
-const PLUGIN_VERSION = "0.4.29";
+const PLUGIN_VERSION = "0.4.30";
 const MAX_SELECTED_SKUS = 10;
 const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
 let latestDrawerCapture = null;
@@ -3170,7 +3170,8 @@ function cafFpStyles() {
 .caf-fp-btn { width: 56px; height: 56px; border-radius: 16px; border: 1px solid rgba(16,185,129,.5); background: linear-gradient(180deg,#10b981,#059669); color:#fff; box-shadow: 0 10px 26px rgba(16,185,129,.38); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; user-select:none; }
 .caf-fp-btn .t { font-weight:800; font-size:14px; letter-spacing:.02em; }
 .caf-fp-btn .s { font-size:9px; opacity:.92; }
-.caf-fp-card { width: 322px; max-height: 430px; display:flex; flex-direction:column; border-radius:14px; border:1px solid #e5e7eb; background:#fff; box-shadow:0 18px 50px rgba(15,23,42,.3); overflow:hidden; }
+.caf-fp-btn .badge { position:absolute; top:-6px; right:-6px; min-width:20px; height:20px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff; font-size:11px; font-weight:700; line-height:20px; text-align:center; display:none; }
+.caf-fp-card { width: 330px; max-height: 440px; display:flex; flex-direction:column; border-radius:14px; border:1px solid #e5e7eb; background:#fff; box-shadow:0 18px 50px rgba(15,23,42,.3); overflow:hidden; }
 .caf-fp-head { display:flex; align-items:center; gap:8px; padding:10px 12px; background:#0b1220; color:#e6edf3; cursor:move; user-select:none; }
 .caf-fp-head strong { font-size:13px; }
 .caf-fp-head .dot { width:8px; height:8px; border-radius:999px; background:#10b981; box-shadow:0 0 10px rgba(16,185,129,.8); }
@@ -3183,6 +3184,7 @@ function cafFpStyles() {
 .caf-fp-actions button { border:1px solid #cbd5e1; background:#f8fafc; border-radius:8px; padding:8px; cursor:pointer; font-weight:600; }
 .caf-fp-actions .primary { background:#10b981; border-color:#10b981; color:#fff; }
 .caf-fp-actions button:disabled { opacity:.5; cursor:not-allowed; }
+.caf-fp-auto { display:flex; align-items:center; gap:6px; font-size:11px; color:#475569; cursor:pointer; user-select:none; }
 .caf-fp-msg { font-size:11px; color:#475569; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:6px 8px; white-space:pre-wrap; word-break:break-word; max-height:112px; overflow:auto; }
 .caf-fp-msg.error { color:#b42318; background:#fef2f2; border-color:#fecaca; }
 .caf-fp-msg.ok { color:#047857; background:#ecfdf5; border-color:#a7f3d0; }
@@ -3191,6 +3193,12 @@ function cafFpStyles() {
 let cafFpExpanded = false;
 let cafFpBusy = false;
 let cafFpCapture = null;
+let cafFpLastDetectedUrl = "";
+let cafFpAutoCaptureEnabled = false;
+
+function cafFpIsDetailPage() {
+  return /1688\.com\/offer\/\d+/.test(location.href);
+}
 
 function cafFpEscapeHtml(value) {
   return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
@@ -3212,10 +3220,20 @@ function cafFpSetBusy(busy) {
   else if (capture) capture.disabled = true;
 }
 
-async function cafFpDetect() {
+function cafFpExpand(expanded) {
+  cafFpExpanded = expanded;
+  const card = document.querySelector('#caf-fp-root .caf-fp-card');
+  const btn = document.querySelector('#caf-fp-root .caf-fp-btn');
+  if (card) card.hidden = !expanded;
+  if (btn) btn.hidden = expanded;
+}
+
+async function cafFpDetect(options = {}) {
+  const auto = Boolean(options.auto);
   if (cafFpBusy) return;
   cafFpBusy = true;
   cafFpSetBusy(true);
+  cafFpLastDetectedUrl = location.href;
   const status = document.querySelector('#caf-fp-root .caf-fp-status');
   if (status) status.innerHTML = '<div class="big">正在读取页面…</div><div class="sub">正在滚动加载SKU图片，请稍候</div>';
   cafFpSetMsg('', '');
@@ -3230,9 +3248,15 @@ async function cafFpDetect() {
     }
     const warnings = (cafFpCapture.capture_warnings || []).slice(0, 3).join('；');
     cafFpSetMsg(warnings ? '⚠️ ' + warnings : '✅ 页面读取成功，可采集', warnings ? '' : 'ok');
+    if (auto) {
+      cafFpExpand(true);
+      if (cafFpAutoCaptureEnabled && skuTotal > 0) {
+        setTimeout(() => cafFpCaptureNow(false), 300);
+      }
+    }
   } catch (error) {
     cafFpCapture = null;
-    if (status) status.innerHTML = '<div class="big">读取失败</div><div class="sub">请刷新页面后重试</div>';
+    if (status) status.innerHTML = '<div class="big">读取失败</div><div class="sub">请刷新页面后重试，或点击「检测页面」</div>';
     cafFpSetMsg(String(error?.message || error), 'error');
   } finally {
     cafFpBusy = false;
@@ -3279,40 +3303,38 @@ function cafFpCreate() {
   root.innerHTML = cafFpStyles() + `
     <div class="caf-fp-card" hidden>
       <div class="caf-fp-head">
-        <span class="dot"></span><strong>JLC 采集</strong>
+        <span class="dot"></span><strong>JLC 详情页采集</strong>
         <button type="button" class="caf-fp-close" title="收起">−</button>
       </div>
       <div class="caf-fp-body">
-        <div class="caf-fp-status"><div class="big">尚未检测</div><div class="sub">点击「检测页面」读取当前商品</div></div>
+        <div class="caf-fp-status"><div class="big">正在自动检测商品…</div><div class="sub">请稍候</div></div>
         <div class="caf-fp-actions">
-          <button type="button" class="caf-fp-detect">检测页面</button>
+          <button type="button" class="caf-fp-detect">重新检测</button>
           <button type="button" class="caf-fp-capture primary" disabled>采集</button>
         </div>
+        <label class="caf-fp-auto"><input type="checkbox" class="caf-fp-autocap"> 自动采集（进入详情页后自动提交，无需点采集）</label>
         <div class="caf-fp-msg" hidden></div>
       </div>
     </div>
-    <div class="caf-fp-btn" title="JLC 采集">
-      <span class="t">JLC</span><span class="s">采集</span>
+    <div class="caf-fp-btn" title="JLC 详情页采集">
+      <span class="t">JLC</span><span class="s">采集</span><span class="badge"></span>
     </div>`;
   document.documentElement.appendChild(root);
-  const card = root.querySelector('.caf-fp-card');
   const btn = root.querySelector('.caf-fp-btn');
   const close = root.querySelector('.caf-fp-close');
   const detect = root.querySelector('.caf-fp-detect');
   const capture = root.querySelector('.caf-fp-capture');
+  const auto = root.querySelector('.caf-fp-autocap');
   btn.addEventListener('click', () => {
-    cafFpExpanded = !cafFpExpanded;
-    card.hidden = !cafFpExpanded;
-    btn.hidden = cafFpExpanded;
-    if (cafFpExpanded && !cafFpCapture && !cafFpBusy) cafFpDetect();
+    cafFpExpand(!cafFpExpanded);
+    if (cafFpExpanded && !cafFpCapture && !cafFpBusy) cafFpDetect({ auto: false });
   });
-  close.addEventListener('click', () => {
-    cafFpExpanded = false;
-    card.hidden = true;
-    btn.hidden = false;
-  });
-  detect.addEventListener('click', () => cafFpDetect());
+  close.addEventListener('click', () => cafFpExpand(false));
+  detect.addEventListener('click', () => cafFpDetect({ auto: false }));
   capture.addEventListener('click', () => cafFpCaptureNow(false));
+  auto.addEventListener('change', () => {
+    cafFpAutoCaptureEnabled = auto.checked;
+  });
   const head = root.querySelector('.caf-fp-head');
   let dragging = false;
   let offsetX = 0;
@@ -3339,10 +3361,25 @@ function cafFpCreate() {
   return root;
 }
 
+function cafFpAutoDetectLoop() {
+  if (!cafFpIsDetailPage()) {
+    const rootEl = document.getElementById('caf-fp-root');
+    if (rootEl) rootEl.style.display = 'none';
+    return;
+  }
+  const rootEl = document.getElementById('caf-fp-root');
+  if (rootEl) rootEl.style.display = '';
+  if (location.href !== cafFpLastDetectedUrl && !cafFpBusy && !cafFpCapture) {
+    cafFpDetect({ auto: true });
+  }
+}
+
 function injectFloatingPanel() {
-  if (!/1688\.com/.test(location.hostname)) return;
+  if (!cafFpIsDetailPage()) return;
   if (document.getElementById('caf-fp-root')) return;
   cafFpCreate();
+  setInterval(cafFpAutoDetectLoop, 2000);
+  setTimeout(() => cafFpDetect({ auto: true }), 2500);
 }
 
 injectFloatingPanel();

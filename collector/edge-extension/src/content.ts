@@ -1,6 +1,6 @@
-const PLUGIN_VERSION = "0.4.26";
+const PLUGIN_VERSION = "0.4.29";
 const MAX_SELECTED_SKUS = 10;
-const DEFAULT_FACTORY_URL = "http://192.168.3.13:8765";
+const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
 let latestDrawerCapture = null;
 let localCategoryTreeCachePromise = null;
 let localCategoryRulesCachePromise = null;
@@ -3161,3 +3161,189 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   return true;
 });
+
+/* ================= Floating capture panel (2026-08) ================= */
+function cafFpStyles() {
+  return `<style id="caf-fp-styles">
+#caf-fp-root * { box-sizing: border-box; }
+#caf-fp-root { position: fixed; z-index: 2147483647; right: 18px; bottom: 18px; font: 13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; color: #111827; }
+.caf-fp-btn { width: 56px; height: 56px; border-radius: 16px; border: 1px solid rgba(16,185,129,.5); background: linear-gradient(180deg,#10b981,#059669); color:#fff; box-shadow: 0 10px 26px rgba(16,185,129,.38); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; user-select:none; }
+.caf-fp-btn .t { font-weight:800; font-size:14px; letter-spacing:.02em; }
+.caf-fp-btn .s { font-size:9px; opacity:.92; }
+.caf-fp-card { width: 322px; max-height: 430px; display:flex; flex-direction:column; border-radius:14px; border:1px solid #e5e7eb; background:#fff; box-shadow:0 18px 50px rgba(15,23,42,.3); overflow:hidden; }
+.caf-fp-head { display:flex; align-items:center; gap:8px; padding:10px 12px; background:#0b1220; color:#e6edf3; cursor:move; user-select:none; }
+.caf-fp-head strong { font-size:13px; }
+.caf-fp-head .dot { width:8px; height:8px; border-radius:999px; background:#10b981; box-shadow:0 0 10px rgba(16,185,129,.8); }
+.caf-fp-close { margin-left:auto; border:0; background:transparent; color:#94a3b8; font-size:18px; cursor:pointer; padding:2px 8px; }
+.caf-fp-body { padding:10px 12px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
+.caf-fp-status { font-size:12px; color:#334155; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px; min-height:54px; }
+.caf-fp-status .big { font-weight:700; font-size:13px; color:#111827; }
+.caf-fp-status .sub { color:#64748b; margin-top:3px; }
+.caf-fp-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+.caf-fp-actions button { border:1px solid #cbd5e1; background:#f8fafc; border-radius:8px; padding:8px; cursor:pointer; font-weight:600; }
+.caf-fp-actions .primary { background:#10b981; border-color:#10b981; color:#fff; }
+.caf-fp-actions button:disabled { opacity:.5; cursor:not-allowed; }
+.caf-fp-msg { font-size:11px; color:#475569; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:6px 8px; white-space:pre-wrap; word-break:break-word; max-height:112px; overflow:auto; }
+.caf-fp-msg.error { color:#b42318; background:#fef2f2; border-color:#fecaca; }
+.caf-fp-msg.ok { color:#047857; background:#ecfdf5; border-color:#a7f3d0; }
+</style>`;
+}
+let cafFpExpanded = false;
+let cafFpBusy = false;
+let cafFpCapture = null;
+
+function cafFpEscapeHtml(value) {
+  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
+}
+
+function cafFpSetMsg(text, tone) {
+  const msg = document.querySelector('#caf-fp-root .caf-fp-msg');
+  if (!msg) return;
+  msg.hidden = !text;
+  msg.textContent = text || '';
+  msg.className = 'caf-fp-msg' + (tone ? ' ' + tone : '');
+}
+
+function cafFpSetBusy(busy) {
+  const detect = document.querySelector('#caf-fp-root .caf-fp-detect');
+  const capture = document.querySelector('#caf-fp-root .caf-fp-capture');
+  if (detect) detect.disabled = busy;
+  if (capture && !busy) capture.disabled = !cafFpCapture;
+  else if (capture) capture.disabled = true;
+}
+
+async function cafFpDetect() {
+  if (cafFpBusy) return;
+  cafFpBusy = true;
+  cafFpSetBusy(true);
+  const status = document.querySelector('#caf-fp-root .caf-fp-status');
+  if (status) status.innerHTML = '<div class="big">正在读取页面…</div><div class="sub">正在滚动加载SKU图片，请稍候</div>';
+  cafFpSetMsg('', '');
+  try {
+    cafFpCapture = await buildReadyCapture();
+    const skuTotal = (cafFpCapture.skus || []).length;
+    const mainImgs = (cafFpCapture.main_images || []).length;
+    const detailImgs = (cafFpCapture.detail_images || []).length;
+    if (status) {
+      status.innerHTML = `<div class="big">${cafFpEscapeHtml(cafFpCapture.title_cn || cafFpCapture.title || '（未识别标题）')}</div>
+        <div class="sub">SKU ${skuTotal} · 主图 ${mainImgs} · 详情图 ${detailImgs}</div>`;
+    }
+    const warnings = (cafFpCapture.capture_warnings || []).slice(0, 3).join('；');
+    cafFpSetMsg(warnings ? '⚠️ ' + warnings : '✅ 页面读取成功，可采集', warnings ? '' : 'ok');
+  } catch (error) {
+    cafFpCapture = null;
+    if (status) status.innerHTML = '<div class="big">读取失败</div><div class="sub">请刷新页面后重试</div>';
+    cafFpSetMsg(String(error?.message || error), 'error');
+  } finally {
+    cafFpBusy = false;
+    cafFpSetBusy(false);
+  }
+}
+
+async function cafFpCaptureNow(allowNewVersion = false) {
+  if (cafFpBusy || !cafFpCapture) {
+    if (!cafFpCapture) cafFpSetMsg('请先点击「检测页面」', 'error');
+    return;
+  }
+  cafFpBusy = true;
+  cafFpSetBusy(true);
+  cafFpSetMsg('正在采集…', '');
+  try {
+    if (!allowNewVersion) {
+      const dup = await factoryRequest(`/api/collector/duplicates?source_url=${encodeURIComponent(cafFpCapture.source_url || '')}`);
+      if (dup && dup.exists) {
+        cafFpSetMsg(`该商品已采集过：${dup.product_id}\n如需重新采集，请先在工作台删除旧商品`, 'error');
+        return;
+      }
+    }
+    const body = { ...cafFpCapture };
+    if (allowNewVersion) body.allow_new_version = true;
+    await factoryRequest('/api/collector/products', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(body),
+    });
+    cafFpSetMsg('✅ 采集成功，请在右侧选择SKU和类目', 'ok');
+    showSkuDrawer({ ...cafFpCapture, allow_new_version: allowNewVersion }, {});
+  } catch (error) {
+    cafFpSetMsg(String(error?.message || error), 'error');
+  } finally {
+    cafFpBusy = false;
+    cafFpSetBusy(false);
+  }
+}
+
+function cafFpCreate() {
+  const root = document.createElement('div');
+  root.id = 'caf-fp-root';
+  root.innerHTML = cafFpStyles() + `
+    <div class="caf-fp-card" hidden>
+      <div class="caf-fp-head">
+        <span class="dot"></span><strong>JLC 采集</strong>
+        <button type="button" class="caf-fp-close" title="收起">−</button>
+      </div>
+      <div class="caf-fp-body">
+        <div class="caf-fp-status"><div class="big">尚未检测</div><div class="sub">点击「检测页面」读取当前商品</div></div>
+        <div class="caf-fp-actions">
+          <button type="button" class="caf-fp-detect">检测页面</button>
+          <button type="button" class="caf-fp-capture primary" disabled>采集</button>
+        </div>
+        <div class="caf-fp-msg" hidden></div>
+      </div>
+    </div>
+    <div class="caf-fp-btn" title="JLC 采集">
+      <span class="t">JLC</span><span class="s">采集</span>
+    </div>`;
+  document.documentElement.appendChild(root);
+  const card = root.querySelector('.caf-fp-card');
+  const btn = root.querySelector('.caf-fp-btn');
+  const close = root.querySelector('.caf-fp-close');
+  const detect = root.querySelector('.caf-fp-detect');
+  const capture = root.querySelector('.caf-fp-capture');
+  btn.addEventListener('click', () => {
+    cafFpExpanded = !cafFpExpanded;
+    card.hidden = !cafFpExpanded;
+    btn.hidden = cafFpExpanded;
+    if (cafFpExpanded && !cafFpCapture && !cafFpBusy) cafFpDetect();
+  });
+  close.addEventListener('click', () => {
+    cafFpExpanded = false;
+    card.hidden = true;
+    btn.hidden = false;
+  });
+  detect.addEventListener('click', () => cafFpDetect());
+  capture.addEventListener('click', () => cafFpCaptureNow(false));
+  const head = root.querySelector('.caf-fp-head');
+  let dragging = false;
+  let offsetX = 0;
+  let offsetY = 0;
+  let startX = 0;
+  let startY = 0;
+  head.addEventListener('mousedown', (ev) => {
+    dragging = true;
+    offsetX = ev.clientX;
+    offsetY = ev.clientY;
+    const rect = root.getBoundingClientRect();
+    startX = rect.left;
+    startY = rect.top;
+    ev.preventDefault();
+  });
+  document.addEventListener('mousemove', (ev) => {
+    if (!dragging) return;
+    root.style.left = Math.max(0, Math.min(window.innerWidth - 60, startX + ev.clientX - offsetX)) + 'px';
+    root.style.top = Math.max(0, Math.min(window.innerHeight - 60, startY + ev.clientY - offsetY)) + 'px';
+    root.style.right = 'auto';
+    root.style.bottom = 'auto';
+  });
+  document.addEventListener('mouseup', () => { dragging = false; });
+  return root;
+}
+
+function injectFloatingPanel() {
+  if (!/1688\.com/.test(location.hostname)) return;
+  if (document.getElementById('caf-fp-root')) return;
+  cafFpCreate();
+}
+
+injectFloatingPanel();
+

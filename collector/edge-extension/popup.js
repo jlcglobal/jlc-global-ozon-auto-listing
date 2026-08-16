@@ -1,5 +1,6 @@
-const DEFAULT_FACTORY_URL = "http://192.168.3.13:8765";
-const COMMAND_CENTER_QUERY_VERSION = "2026-08-01-ui-state-v1";
+const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
+const STALE_DEFAULT_FACTORY_URL = "http://192.168.3.13:8765"; // old hardcoded LAN default, reset to localhost
+const COMMAND_CENTER_QUERY_VERSION = "2026-08-16-ui-v4-bento-light";
 const LEGACY_LOCAL_FACTORY_URLS = new Set([
     "http://127.0.0.1:8765",
     "http://localhost:8765"
@@ -42,14 +43,14 @@ function isLegacyLocalFactoryUrl(value) {
 }
 function factoryUrlOrDefault(value) {
     const text = cleanFactoryUrlText(value);
-    if (!text || isLegacyLocalFactoryUrl(text))
+    if (!text || text === STALE_DEFAULT_FACTORY_URL)
         return DEFAULT_FACTORY_URL;
     return text;
 }
 async function loadFactoryConfig() {
     const stored = await chrome.storage.local.get(["factoryBaseUrl"]);
     const baseUrl = normalizeFactoryUrl(factoryUrlOrDefault(stored.factoryBaseUrl));
-    if (!cleanFactoryUrlText(stored.factoryBaseUrl) || isLegacyLocalFactoryUrl(stored.factoryBaseUrl)) {
+    if (!cleanFactoryUrlText(stored.factoryBaseUrl) || cleanFactoryUrlText(stored.factoryBaseUrl) === STALE_DEFAULT_FACTORY_URL) {
         await chrome.storage.local.set({ factoryBaseUrl: baseUrl });
     }
     factoryConfig = {
@@ -137,6 +138,30 @@ function sendToTab(tabId, message) {
         });
     });
 }
+
+function ensureContentScriptInjected(tabId) {
+    return chrome.scripting.executeScript({ target: { tabId }, files: ["content.js"] })
+        .then(() => true)
+        .catch(() => false);
+}
+
+function sleep(ms) {
+    return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+async function readPreviewFromTab(tabId, type) {
+    try {
+        return await sendToTab(tabId, { type });
+    }
+    catch (error) {
+        const injected = await ensureContentScriptInjected(tabId);
+        if (!injected)
+            throw error;
+        await sleep(250);
+        return await sendToTab(tabId, { type });
+    }
+}
+
 async function waitForSkuSelection(tabId, capture, previousSelectedSkuIds = []) {
     await sendToTab(tabId, {
         type: "OPEN_SKU_SELECTOR",
@@ -157,7 +182,7 @@ async function loadPreview() {
             return;
         }
         activePageKind = isOzonPage ? "ozon" : "1688";
-        latestCapture = await sendToTab(tab.id, { type: isOzonPage ? "COLLECTOR_OZON_PREVIEW" : "COLLECTOR_PREVIEW" });
+        latestCapture = await readPreviewFromTab(tab.id, isOzonPage ? "COLLECTOR_OZON_PREVIEW" : "COLLECTOR_PREVIEW");
         if (!latestCapture || !latestCapture.is_collectable) {
             els.status.textContent = latestCapture?.reason || "当前页面不可采集";
             setResult(latestCapture || {});

@@ -1,4 +1,4 @@
-const PLUGIN_VERSION = "0.4.30";
+const PLUGIN_VERSION = "0.4.31";
 const MAX_SELECTED_SKUS = 10;
 const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
 let latestDrawerCapture = null;
@@ -640,7 +640,13 @@ function offerImgListDetailUrls(structured, mainUrls, skuUrls) {
     // 从 script_init_data 的 offerImgList 补回未被 main/sku 占用的图片。
     const urls = [];
     (structured || []).forEach((result) => {
-        (result.data || []).forEach((snippet) => deepFindArrayByKey(snippet.data, "offerImgList", urls));
+        if (!result || typeof result !== "object")
+            return;
+        const dataList = Array.isArray(result.data) ? result.data : (result.data == null ? [] : [result.data]);
+        dataList.forEach((snippet) => {
+            if (snippet && typeof snippet === "object")
+                deepFindArrayByKey(snippet.data, "offerImgList", urls);
+        });
     });
     const idOf = (u) => {
         const m = /ibank\/([A-Za-z0-9_]+)/.exec(String(u || ""));

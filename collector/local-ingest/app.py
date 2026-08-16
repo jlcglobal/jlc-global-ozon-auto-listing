@@ -38,7 +38,7 @@ PRODUCTS_DIR = ROOT / "products"
 TEMPLATES_DIR = ROOT / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 COMMAND_CENTER_DIST_DIR = ROOT / "collector" / "workbench-command-center" / "dist"
-COMMAND_CENTER_VERSION = "2026-08-01-ui-state-v1"
+COMMAND_CENTER_VERSION = "2026-08-16-ui-v2"
 
 
 def project_relative(path: Path) -> str:

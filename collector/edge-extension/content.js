@@ -1,4 +1,4 @@
-const PLUGIN_VERSION = "0.4.31";
+const PLUGIN_VERSION = "0.4.32";
 const MAX_SELECTED_SKUS = 10;
 const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
 let latestDrawerCapture = null;
@@ -3232,6 +3232,12 @@ function cafFpExpand(expanded) {
 async function cafFpDetect(options = {}) {
   const auto = Boolean(options.auto);
   if (cafFpBusy) return;
+  if (!cafFpIsDetailPage()) {
+    const status = document.querySelector('#caf-fp-root .caf-fp-status');
+    if (status) status.innerHTML = '<div class="big">请打开 1688 商品详情页</div><div class="sub">当前页面不是商品详情页；进入详情页后本面板会自动读取并采集</div>';
+    cafFpSetMsg('', '');
+    return;
+  }
   cafFpBusy = true;
   cafFpSetBusy(true);
   cafFpLastDetectedUrl = location.href;
@@ -3363,24 +3369,40 @@ function cafFpCreate() {
 }
 
 function cafFpAutoDetectLoop() {
+  const rootEl = document.getElementById('caf-fp-root');
+  if (!rootEl) return;
   if (!cafFpIsDetailPage()) {
-    const rootEl = document.getElementById('caf-fp-root');
-    if (rootEl) rootEl.style.display = 'none';
+    rootEl.style.display = '';
+    const btn = rootEl.querySelector('.caf-fp-btn');
+    if (btn) btn.hidden = false;
+    if (cafFpExpanded) cafFpExpand(false);
+    const status = rootEl.querySelector('.caf-fp-status');
+    if (status && !cafFpCapture && !cafFpBusy) {
+      status.innerHTML = '<div class="big">请在 1688 商品详情页使用</div><div class="sub">进入商品详情页后，本面板会自动读取并采集，无需点击插件图标</div>';
+    }
     return;
   }
-  const rootEl = document.getElementById('caf-fp-root');
-  if (rootEl) rootEl.style.display = '';
+  rootEl.style.display = '';
+  if (rootEl && !cafFpExpanded && !rootEl.dataset.autoExpanded) {
+    rootEl.dataset.autoExpanded = '1';
+    cafFpExpand(true);
+  }
   if (location.href !== cafFpLastDetectedUrl && !cafFpBusy && !cafFpCapture) {
     cafFpDetect({ auto: true });
   }
 }
 
 function injectFloatingPanel() {
-  if (!cafFpIsDetailPage()) return;
+  if (!/1688\.com/i.test(location.hostname)) return;
   if (document.getElementById('caf-fp-root')) return;
   cafFpCreate();
   setInterval(cafFpAutoDetectLoop, 2000);
-  setTimeout(() => cafFpDetect({ auto: true }), 2500);
+  if (cafFpIsDetailPage()) {
+    setTimeout(() => cafFpDetect({ auto: true }), 2500);
+  } else {
+    const status = document.querySelector('#caf-fp-root .caf-fp-status');
+    if (status) status.innerHTML = '<div class="big">请在 1688 商品详情页使用</div><div class="sub">进入商品详情页后，本面板会自动读取并采集，无需点击插件图标</div>';
+  }
 }
 
 injectFloatingPanel();

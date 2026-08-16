@@ -1,6 +1,6 @@
 const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
 const STALE_DEFAULT_FACTORY_URL = "http://192.168.3.13:8765"; // old hardcoded LAN default, reset to localhost
-const COMMAND_CENTER_QUERY_VERSION = "2026-08-16-ui-v2";
+const COMMAND_CENTER_QUERY_VERSION = "2026-08-16-ui-v4-bento-light";
 const LEGACY_LOCAL_FACTORY_URLS = new Set([
     "http://127.0.0.1:8765",
     "http://localhost:8765"

@@ -16,6 +16,9 @@ sys.path.insert(0, str(ROOT / "ozon-adapter"))
 from ozon_adapter import OzonConfig, OzonConfigurationError, OzonReadOnlyClient  # noqa: E402
 from ozon_adapter.service import (  # noqa: E402
     SCHEMAS,
+    _cached_response,
+    _shared_dictionary_response,
+    build_category_attributes,
     _canonical_allowed_value,
     _value_variants,
     build_live_metadata_package,
@@ -103,6 +106,77 @@ def client(transport):
 
 
 class Stage41OzonReadOnlyTest(unittest.TestCase):
+    def test_product_type_never_reuses_another_category_dictionary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_root = Path(temp_dir)
+            current = cache_root / "category-10-type-970799661"
+            current.mkdir()
+            (current / "attribute-8229-values.json").write_text(json.dumps({
+                "values": [{"id": 93762, "value": "Wrong category type"}],
+                "truncated": False,
+            }))
+            response = {"result": [{
+                "id": 8229,
+                "name": "Тип",
+                "is_required": True,
+                "dictionary_id": 1960,
+                "category_dependent": True,
+            }]}
+
+            result = build_category_attributes(
+                "PTEST",
+                {"category_id": 10, "type_id": 970799661, "category_name": "Рыбочистка"},
+                response,
+                client(lambda endpoint, payload: (_ for _ in ()).throw(AssertionError("network"))),
+                "2026-08-16T00:00:00+00:00",
+                cache_root,
+            )
+
+        type_attribute = result["attributes"][0]
+        self.assertEqual(type_attribute["allowed_values"], [{"id": 970799661, "value": "Рыбочистка"}])
+
+    def test_shared_dictionary_cache_requires_matching_dictionary_identity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            category = root / "category-1-type-2"
+            category.mkdir()
+            (category / "attributes.json").write_text(json.dumps({
+                "result": [{"id": 85, "dictionary_id": 28732849}],
+            }))
+            expected = {"values": [{"id": 1, "value": "Нет бренда"}], "truncated": False}
+            (category / "attribute-85-values.json").write_text(json.dumps(expected))
+
+            self.assertEqual(_shared_dictionary_response(root, 85, 28732849), expected)
+            self.assertIsNone(_shared_dictionary_response(root, 85, 999))
+
+    def test_stale_verified_metadata_cache_is_reused_without_network_wait(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "attribute-values.json"
+            cache_path.write_text(json.dumps({"values": [{"id": 1, "value": "Cached"}]}))
+            os.utime(cache_path, (1, 1))
+            calls = []
+
+            result = _cached_response(
+                cache_path,
+                lambda: calls.append("network") or {"values": []},
+                max_age_hours=24,
+            )
+
+        self.assertEqual(result["values"][0]["value"], "Cached")
+        self.assertEqual(calls, [])
+
+    def test_invalid_metadata_cache_is_replaced_from_network(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "attribute-values.json"
+            cache_path.write_text(json.dumps(["not", "an", "object"]))
+            result = _cached_response(
+                cache_path,
+                lambda: {"values": [{"id": 2, "value": "Fresh"}]},
+                max_age_hours=24,
+            )
+
+        self.assertEqual(result["values"][0]["value"], "Fresh")
+
     def test_camera_near_synonym_requires_compatible_live_attributes(self):
         offline = {"category_name": "Камера видеонаблюдения"}
         selected = {
@@ -196,19 +270,19 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
     def test_named_shop_uses_separate_environment_variables(self):
         registry_path = ROOT / "ozon-adapter/shops.json"
         registry = load_json(registry_path)
-        self.assertEqual(registry["default_read_shop"], "default")
+        shop_name = registry["default_read_shop"]
         shop = registry["shops"][0]
         self.assertNotIn("client_id", shop)
         self.assertNotIn("api_key", shop)
         config = OzonConfig.from_shop(
-            "default",
+            shop_name,
             registry_path,
             {
-                "OZON_DEFAULT_CLIENT_ID": "123",
-                "OZON_DEFAULT_API_KEY": "secret",
+                shop["client_id_env"]: "123",
+                shop["api_key_env"]: "secret",
             },
         )
-        self.assertEqual(config.shop_name, "default")
+        self.assertEqual(config.shop_name, shop_name)
         self.assertNotIn("secret", repr(config))
 
     def test_unknown_shop_is_rejected(self):

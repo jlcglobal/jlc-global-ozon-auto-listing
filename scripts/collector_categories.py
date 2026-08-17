@@ -7,7 +7,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
 import tempfile
 from datetime import datetime, timezone
 from functools import lru_cache
@@ -61,18 +60,6 @@ def translated_tree_cache_path(root: Path) -> Path:
     return root / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"
 
 
-def runtime_tree_cache_path(root: Path) -> Path:
-    return root / "ozon-adapter/metadata/live-category-cache/current/category-tree.zh-CN.json"
-
-
-def effective_tree_cache_path(root: Path) -> Path:
-    """Prefer a valid live read-only cache; always retain the bundled fallback."""
-    live = runtime_tree_cache_path(root)
-    if live.is_file() and _official_zh_cache(load_json(live, {})):
-        return live
-    return translated_tree_cache_path(root)
-
-
 def collector_rules_cache_path(root: Path) -> Path:
     return root / "collector/edge-extension/category-rules-cache.json"
 
@@ -97,7 +84,8 @@ def _load_catalog_cached(catalog_file: str, catalog_mtime_ns: int, cache_file: s
     if cache_file and Path(cache_file).is_file():
         cache = load_json(Path(cache_file), {})
         cached_items = cache.get("search_items") or []
-        if _official_zh_cache(cache):
+        catalog_hash = hashlib.sha256(Path(catalog_file).read_bytes()).hexdigest()
+        if _official_zh_cache(cache) and cache.get("catalog_sha256") == catalog_hash:
             return tuple({**item, "source": "official_ozon_seller_api_zh_hans"} for item in cached_items)
     result: List[Dict[str, Any]] = []
     seen = set()
@@ -128,7 +116,7 @@ def _load_catalog_cached(catalog_file: str, catalog_mtime_ns: int, cache_file: s
 
 def load_catalog(root: Path) -> List[Dict[str, Any]]:
     catalog_file = catalog_path(root)
-    cache_file = effective_tree_cache_path(root)
+    cache_file = translated_tree_cache_path(root)
     values = _load_catalog_cached(
         str(catalog_file),
         catalog_file.stat().st_mtime_ns if catalog_file.is_file() else 0,
@@ -256,6 +244,9 @@ def _load_tree_cache_cached(cache_file: str, cache_mtime_ns: int, catalog_file: 
     cache = load_json(Path(cache_file), {})
     if not _official_zh_cache(cache):
         return {}
+    current_catalog_hash = hashlib.sha256(Path(catalog_file).read_bytes()).hexdigest()
+    if cache.get("catalog_sha256") != current_catalog_hash:
+        return {}
     return cache
 
 
@@ -265,7 +256,7 @@ def load_translated_tree_cache(root: Path) -> Dict[str, Any]:
     The historical function name is kept for compatibility with existing
     callers; locally translated caches are deliberately rejected.
     """
-    cache_file = effective_tree_cache_path(root)
+    cache_file = translated_tree_cache_path(root)
     catalog_file = catalog_path(root)
     if not cache_file.is_file() or not catalog_file.is_file():
         return {}
@@ -287,39 +278,6 @@ def category_tree_children(root: Path, parent_id: str = "root") -> List[Dict[str
 
 def _cache_dir(root: Path, shop_id: str, category_id: int, type_id: int) -> Path:
     return root / "ozon-adapter/metadata/live-category-cache" / shop_id / f"category-{category_id}-type-{type_id}"
-
-
-def _readonly_client(root: Path, requested_shop_id: str) -> tuple[str, Any]:
-    """Create a read-only client from the workbench's local per-shop secret file."""
-    registry_path = root / "ozon-adapter/shops.json"
-    registry = load_json(registry_path, {"shops": []})
-    shops = registry.get("shops") or []
-    shop = next(
-        (item for item in shops if str(item.get("id") or item.get("name")) == requested_shop_id),
-        None,
-    )
-    if shop is None:
-        default_shop = str(registry.get("default_read_shop") or "default")
-        shop = next(
-            (item for item in shops if str(item.get("id") or item.get("name")) == default_shop),
-            None,
-        )
-    if shop is None:
-        raise FileNotFoundError("尚未配置可用于读取Ozon类目规则的店铺")
-    shop_id = str(shop.get("id") or shop.get("name"))
-    values = dict(os.environ)
-    secret_file = root / "ozon-adapter" / f".env.{shop_id}"
-    if secret_file.is_file():
-        for raw in secret_file.read_text(encoding="utf-8").splitlines():
-            line = raw.strip()
-            if not line or line.startswith("#") or "=" not in line:
-                continue
-            key, value = line.split("=", 1)
-            values.setdefault(key.strip(), value.strip().strip('"').strip("'"))
-    import sys
-    sys.path.insert(0, str(root / "ozon-adapter"))
-    from ozon_adapter import OzonConfig, OzonReadOnlyClient
-    return shop_id, OzonReadOnlyClient(OzonConfig.from_shop(shop_id, registry_path, environ=values))
 
 
 @lru_cache(maxsize=8)
@@ -395,11 +353,10 @@ def prepare_rules(
         if not allow_fetch:
             raise FileNotFoundError("该类目的官方属性规则尚未缓存，请先执行只读规则加载")
         if client is None:
-            resolved_shop_id, client = _readonly_client(root, shop_id)
-            if resolved_shop_id != shop_id:
-                shop_id = resolved_shop_id
-                cache_dir = _cache_dir(root, shop_id, category_id, type_id)
-                attributes_path = cache_dir / "attributes.json"
+            import sys
+            sys.path.insert(0, str(root / "ozon-adapter"))
+            from ozon_adapter import OzonConfig, OzonReadOnlyClient
+            client = OzonReadOnlyClient(OzonConfig.from_shop(shop_id, root / "ozon-adapter/shops.json"))
         response = client.get_category_attributes(category_id, type_id)
         read_calls += 1
         write_json(attributes_path, response)
@@ -420,7 +377,10 @@ def prepare_rules(
         # later stages must never need a second live metadata read to fill it.
         if dictionary_id and not values_path.is_file() and allow_fetch:
             if client is None:
-                _, client = _readonly_client(root, shop_id)
+                import sys
+                sys.path.insert(0, str(root / "ozon-adapter"))
+                from ozon_adapter import OzonConfig, OzonReadOnlyClient
+                client = OzonReadOnlyClient(OzonConfig.from_shop(shop_id, root / "ozon-adapter/shops.json"))
             page = client.get_attribute_values(category_id, type_id, attribute_id)
             read_calls += 1
             write_json(values_path, page)

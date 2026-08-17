@@ -57,7 +57,7 @@ export function BatchStatusPanel({
         {visible.length ? visible.map((batch) => (
           <article key={batch.batch_id} className="batch-row">
             <div className="batch-row-main">
-              <Boxes className="h-4 w-4 text-emerald-700/58" />
+              <Boxes className="h-4 w-4 text-emerald-200/58" />
               <div>
                 <strong>{batch.batch_id}</strong>
                 <span>{batch.product_count || 0} 个商品 · {(batch.target_store_ids || []).length || 0} 家店铺</span>

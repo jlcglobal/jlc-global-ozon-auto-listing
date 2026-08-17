@@ -70,7 +70,7 @@ export function CommandBar({
               <TooltipTrigger asChild>
                 <div className="service-chip">
                   <span className={cn("status-dot", service.ok ? "ok" : "warn")} />
-                  <Icon className="h-3.5 w-3.5 text-emerald-700" />
+                  <Icon className="h-3.5 w-3.5 text-emerald-200/70" />
                   <div>
                     <small>{service.label}</small>
                     <strong>{service.value}</strong>

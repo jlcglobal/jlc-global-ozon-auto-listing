@@ -1,0 +1,896 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P900001",
+  "source_refs": [
+    "products/P900001/input/source.json",
+    "products/P900001/output/product-analysis.json",
+    "products/P900001/output/product-positioning.json",
+    "products/P900001/output/ecommerce-creative-brief.json",
+    "products/P900001/output/title-ru.json",
+    "products/P900001/output/description-ru.json",
+    "products/P900001/output/ozon-tags.json",
+    "products/P900001/output/ozon-attributes-final.json",
+    "products/P900001/output/pricing-result.json",
+    "products/P900001/output/platform-grouping-result.json"
+  ],
+  "creative_brief_ref": "products/P900001/output/ecommerce-creative-brief.json",
+  "image_structure_rule_ref": "dynamic:product-specific-buyer-decision-sequence",
+  "image_set_structure": [
+    "main",
+    "benefit",
+    "problem_solution",
+    "scene",
+    "feature",
+    "detail",
+    "usage",
+    "size_spec",
+    "comparison"
+  ],
+  "variant_image_strategy": {
+    "mode": "sku_specific_main_shared_details",
+    "variant_kinds": [
+      "seller_specification"
+    ],
+    "variant_main_count": 3,
+    "shared_detail_count": 8,
+    "shared_disclaimer_count": 0
+  },
+  "buyer_objections": [
+    "accessories: 标题、有效结构化属性、所选SKU文字和已查看实物图未明确独立配件清单。"
+  ],
+  "listing_context": {
+    "ready": true,
+    "source_refs": [
+      "products/P900001/output/title-ru.json",
+      "products/P900001/output/description-ru.json",
+      "products/P900001/output/ozon-tags.json",
+      "products/P900001/output/ozon-attributes-final.json",
+      "products/P900001/output/pricing-result.json",
+      "products/P900001/output/platform-grouping-result.json"
+    ],
+    "title_ru": "Термоконтейнер для еды из нержавеющей стали с секциями",
+    "description_summary_ru": "Переносной термоконтейнер из нержавеющей стали для временной перевозки горячих и холодных продуктов. Варианты на 1, 2 или 3 секции помогают разделить блюда при доставке, выездном обеде или школьном питании.\n\nВыберите нужное количество секций, разместите продукты по отделениям и закройте передние защёлки. Точное время сохранения температуры, температурный диапазон и герметичность не заявляются без подтверждённых данных.",
+    "tags": [
+      "термоконтейнер для еды",
+      "контейнер для доставки еды",
+      "контейнер из нержавеющей стали",
+      "контейнер с секциями",
+      "контейнер для обеда",
+      "контейнер для школьного питания",
+      "термобокс для еды",
+      "переносной контейнер для еды",
+      "контейнер для горячей еды",
+      "контейнер для холодной еды",
+      "контейнер для кейтеринга",
+      "контейнер для доставки",
+      "контейнер 1 секция",
+      "контейнер 2 секции",
+      "контейнер 3 секции",
+      "разделитель для еды",
+      "бокс для обеда",
+      "контейнер для столовой",
+      "тара для еды",
+      "бокс из стали",
+      "пищевой термоконтейнер",
+      "контейнер с крышкой",
+      "контейнер с ручками",
+      "контейнер с защелками",
+      "бокс для перевозки блюд",
+      "доставка готовой еды",
+      "организация питания",
+      "выездной обед",
+      "раздельная перевозка еды",
+      "контейнер для кухни"
+    ],
+    "attributes": [
+      {
+        "name": "Бренд",
+        "value": "Нет бренда",
+        "source": "project_rule",
+        "confidence": null
+      },
+      {
+        "name": "Материал",
+        "value": "нержавеющая сталь",
+        "source": "source.json",
+        "confidence": null
+      }
+    ],
+    "sku_variants": [
+      {
+        "sku_id": "5477283792300",
+        "name": "单格",
+        "option_values": [
+          {
+            "name_cn": "规格1",
+            "value_cn": "单格",
+            "source": "script_init_data",
+            "source_text": "单格"
+          }
+        ],
+        "selling_price_rub": 499
+      },
+      {
+        "sku_id": "5477283792301",
+        "name": "双格",
+        "option_values": [
+          {
+            "name_cn": "规格1",
+            "value_cn": "双格",
+            "source": "script_init_data",
+            "source_text": "双格"
+          }
+        ],
+        "selling_price_rub": 599
+      },
+      {
+        "sku_id": "5477283792302",
+        "name": "三格",
+        "option_values": [
+          {
+            "name_cn": "规格1",
+            "value_cn": "三格",
+            "source": "script_init_data",
+            "source_text": "三格"
+          }
+        ],
+        "selling_price_rub": 699
+      }
+    ],
+    "variant_decision": "configuration",
+    "upload_strategy": "single_card_variants"
+  },
+  "generator_contract": {
+    "allowed_structure": [
+      "main",
+      "benefit",
+      "problem_solution",
+      "scene",
+      "feature",
+      "detail",
+      "usage",
+      "size_spec",
+      "comparison"
+    ],
+    "aspect_ratio": "3:4",
+    "deviation_requires_review": false,
+    "advisory_skills_required": [],
+    "advisory_scope": "none",
+    "project_rules_take_precedence": true,
+    "image_slot_concurrency": 3,
+    "image_qc_same_execution": true,
+    "product_pixel_lock_required": false,
+    "composition_tool": "deterministic_layout_for_comparison_and_measurement_only",
+    "source_preflight_ref": "products/P900001/output/image-source-preflight.json",
+    "generation_strategy": "product_specific_visual_story",
+    "deterministic_image_types": [
+      "comparison",
+      "size_spec"
+    ],
+    "ai_reference_edit_image_types": [
+      "main",
+      "benefit",
+      "scene",
+      "problem_solution",
+      "feature",
+      "detail",
+      "usage"
+    ],
+    "raw_1688_image_direct_upload_forbidden": true,
+    "final_chinese_text_forbidden": true,
+    "plain_white_background_forbidden": true,
+    "main_images_first": true,
+    "target_total_seconds": 300,
+    "quality_gate": "hard_failures_only",
+    "typography_strategy": "adaptive_exact_russian_without_fixed_box",
+    "prompt_first_required": true,
+    "empty_placeholder_panels_forbidden": true,
+    "exact_shared_detail_count": 8,
+    "creative_brief_required": true
+  },
+  "creative_direction": {
+    "product_visual_thesis": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。",
+    "target_buyer": "需要把不同菜品分开携带、并希望运输更整齐的家庭和小型餐饮用户。",
+    "click_hook": "不同分格，一箱分开装好",
+    "hero_scene": "明亮的餐饮配送台面与外带场景，保留真实金属质感",
+    "buyer_tension": "多种食物混在一起，运输时不易分开和整理",
+    "visual_mood": "清爽、可靠、专业但不冷硬",
+    "palette_logic": "银灰主体配深海军蓝信息色和少量暖橙强调，不套用食品储藏罐的米色厨房风格。",
+    "lighting": "明亮侧光和柔和反射，突出不锈钢边缘、锁扣和提手",
+    "composition": "主图先讲清商品与分格；详情图按使用、结构、参数和注意事项换场景",
+    "typography": "俄文短句，标题与信息层级清晰，禁止文字框占满画面",
+    "consistency_rule": "统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+    "anti_template_rule": "不复用厨房储物罐的暖米色、木台面或固定卡片模板"
+  },
+  "learned_image_preferences": [],
+  "reference_images": [
+    {
+      "id": "main-001",
+      "path": "products/P900001/input/main-images/main-001.webp",
+      "role": "main",
+      "usable": true,
+      "notes": "真实采集商品图；生成前仍需检查Logo、文字和SKU一致性。"
+    },
+    {
+      "id": "main-002",
+      "path": "products/P900001/input/main-images/main-002.webp",
+      "role": "main",
+      "usable": true,
+      "notes": "真实采集商品图；生成前仍需检查Logo、文字和SKU一致性。"
+    },
+    {
+      "id": "main-003",
+      "path": "products/P900001/input/main-images/main-003.webp",
+      "role": "main",
+      "usable": true,
+      "notes": "真实采集商品图；生成前仍需检查Logo、文字和SKU一致性。"
+    },
+    {
+      "id": "main-004",
+      "path": "products/P900001/input/main-images/main-004.webp",
+      "role": "main",
+      "usable": true,
+      "notes": "真实采集商品图；生成前仍需检查Logo、文字和SKU一致性。"
+    },
+    {
+      "id": "main-005",
+      "path": "products/P900001/input/main-images/main-005.webp",
+      "role": "main",
+      "usable": true,
+      "notes": "真实采集商品图；生成前仍需检查Logo、文字和SKU一致性。"
+    },
+    {
+      "id": "sku-001",
+      "path": "products/P900001/input/sku-images/sku-001.jpg",
+      "role": "sku",
+      "usable": true,
+      "notes": "仅关联真实SKU 5477283792300；生图前清晰度检查通过。"
+    },
+    {
+      "id": "sku-002",
+      "path": "products/P900001/input/sku-images/sku-002.jpg",
+      "role": "sku",
+      "usable": true,
+      "notes": "仅关联真实SKU 5477283792301；生图前清晰度检查通过。"
+    },
+    {
+      "id": "sku-003",
+      "path": "products/P900001/input/sku-images/sku-003.jpg",
+      "role": "sku",
+      "usable": true,
+      "notes": "仅关联真实SKU 5477283792302；生图前清晰度检查通过。"
+    }
+  ],
+  "buyer_analysis": {
+    "who_buys": [
+      "需要把不同菜品分开携带、并希望运输更整齐的家庭和小型餐饮用户。"
+    ],
+    "why_buy": [
+      "单格、双格和三格可按餐食组合选择，减少混装和取用混乱。"
+    ],
+    "main_pain_point": "多种食物混在一起，运输时不易分开和整理",
+    "strongest_selling_point": "按餐食组合选择分格数量，运输和分餐更清楚。",
+    "selling_points": [
+      "单格、双格和三格配置，适配不同分餐需求。",
+      "不锈钢箱体用于冷热食品的临时运输，具体保温时长不作承诺。",
+      "顶部和侧面提手便于短距离搬运，前部锁扣帮助合上箱盖。"
+    ],
+    "proof_strategy": [
+      "unknown",
+      "service_scene",
+      "organization",
+      "portability"
+    ]
+  },
+  "main_images": [
+    {
+      "type": "main",
+      "slot": "main-5477283792300",
+      "image_type": "main",
+      "requested_image_type": "main",
+      "fallback_reason": "unknown",
+      "purchase_reason": "单格、双格和三格可按餐食组合选择，减少混装和取用混乱。",
+      "visual_goal": "在3秒内说明产品、核心收益和使用场景；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "在3秒内说明产品、核心收益和使用场景",
+      "buyer_question": "这是什么，为什么值得看？",
+      "selling_goal": "在3秒内说明产品、核心收益和使用场景",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "1 СЕКЦИЯ",
+        "РАЗДЕЛЬНАЯ ПЕРЕВОЗКА ЕДЫ"
+      ],
+      "visual_direction": "不同分格，一箱分开装好；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg"
+      ],
+      "reference_image_ids": [
+        "sku-5477283792300"
+      ],
+      "variant_scope": "sku",
+      "shared_across_variants": false,
+      "source_sku_id": "5477283792300",
+      "variant_kind": "seller_specification",
+      "variant_value": "单格",
+      "operation": "edit_real_image",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce main visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 这是什么，为什么值得看？. Its single decision job is: 在3秒内说明产品、核心收益和使用场景. The exact Russian marketing message that the visual must prove is: 1 СЕКЦИЯ / РАЗДЕЛЬНАЯ ПЕРЕВОЗКА ЕДЫ. Verified listing facts available for visual evidence: Материал: нержавеющая сталь; Точный выбранный SKU: 单格. This exact SKU is 5477283792300 / 单格. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · main · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/variant-main/5477283792300.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "main",
+      "slot": "main-5477283792301",
+      "image_type": "main",
+      "requested_image_type": "main",
+      "fallback_reason": "unknown",
+      "purchase_reason": "单格、双格和三格可按餐食组合选择，减少混装和取用混乱。",
+      "visual_goal": "在3秒内说明产品、核心收益和使用场景；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "在3秒内说明产品、核心收益和使用场景",
+      "buyer_question": "这是什么，为什么值得看？",
+      "selling_goal": "在3秒内说明产品、核心收益和使用场景",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "2 СЕКЦИИ",
+        "УДОБНО ДЛЯ ОБЕДА"
+      ],
+      "visual_direction": "不同分格，一箱分开装好；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-002.jpg"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-002.jpg"
+      ],
+      "reference_image_ids": [
+        "sku-5477283792301"
+      ],
+      "variant_scope": "sku",
+      "shared_across_variants": false,
+      "source_sku_id": "5477283792301",
+      "variant_kind": "seller_specification",
+      "variant_value": "双格",
+      "operation": "edit_real_image",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce main visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 这是什么，为什么值得看？. Its single decision job is: 在3秒内说明产品、核心收益和使用场景. The exact Russian marketing message that the visual must prove is: 2 СЕКЦИИ / УДОБНО ДЛЯ ОБЕДА. Verified listing facts available for visual evidence: Материал: нержавеющая сталь; Точный выбранный SKU: 双格. This exact SKU is 5477283792301 / 双格. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · main · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/variant-main/5477283792301.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "main",
+      "slot": "main-5477283792302",
+      "image_type": "main",
+      "requested_image_type": "main",
+      "fallback_reason": "unknown",
+      "purchase_reason": "单格、双格和三格可按餐食组合选择，减少混装和取用混乱。",
+      "visual_goal": "在3秒内说明产品、核心收益和使用场景；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "在3秒内说明产品、核心收益和使用场景",
+      "buyer_question": "这是什么，为什么值得看？",
+      "selling_goal": "在3秒内说明产品、核心收益和使用场景",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "3 СЕКЦИИ",
+        "БОЛЬШЕ ПОРЯДКА В ДОСТАВКЕ"
+      ],
+      "visual_direction": "不同分格，一箱分开装好；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-003.jpg"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-003.jpg"
+      ],
+      "reference_image_ids": [
+        "sku-5477283792302"
+      ],
+      "variant_scope": "sku",
+      "shared_across_variants": false,
+      "source_sku_id": "5477283792302",
+      "variant_kind": "seller_specification",
+      "variant_value": "三格",
+      "operation": "edit_real_image",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce main visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 这是什么，为什么值得看？. Its single decision job is: 在3秒内说明产品、核心收益和使用场景. The exact Russian marketing message that the visual must prove is: 3 СЕКЦИИ / БОЛЬШЕ ПОРЯДКА В ДОСТАВКЕ. Verified listing facts available for visual evidence: Материал: нержавеющая сталь; Точный выбранный SKU: 三格. This exact SKU is 5477283792302 / 三格. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · main · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/variant-main/5477283792302.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    }
+  ],
+  "detail_images": [
+    {
+      "type": "detail",
+      "slot": "detail-001",
+      "image_type": "benefit",
+      "requested_image_type": "benefit",
+      "fallback_reason": "unknown",
+      "purchase_reason": "单格、双格和三格配置，适配不同分餐需求。",
+      "visual_goal": "把产品特点转化为用户收益；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "核心卖点",
+      "buyer_question": "买家为什么值得买？",
+      "selling_goal": "把产品特点转化为用户收益",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "1, 2 ИЛИ 3 СЕКЦИИ",
+        "РАЗДЕЛЯЙТЕ БЛЮДА"
+      ],
+      "visual_direction": "明亮的餐饮配送台面与外带场景，保留真实金属质感；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_image_ids": [
+        "sku-001",
+        "sku-002",
+        "sku-003",
+        "main-005",
+        "main-004"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "edit_real_image",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce benefit visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 买家为什么值得买？. Its single decision job is: 把产品特点转化为用户收益. The exact Russian marketing message that the visual must prove is: 1, 2 ИЛИ 3 СЕКЦИИ / РАЗДЕЛЯЙТЕ БЛЮДА. Verified listing facts available for visual evidence: Материал: нержавеющая сталь. This is shared across selected SKUs; show only facts and product features common to every selected SKU. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · core_benefit · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/detail/detail-001.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "detail",
+      "slot": "detail-002",
+      "image_type": "detail",
+      "requested_image_type": "detail",
+      "fallback_reason": "unknown",
+      "purchase_reason": "不锈钢箱体用于冷热食品的临时运输，具体保温时长不作承诺。",
+      "visual_goal": "用真实细节提升信任；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "结构与细节",
+      "buyer_question": "它的结构和做工是什么样？",
+      "selling_goal": "用真实细节提升信任",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "НЕРЖАВЕЮЩАЯ СТАЛЬ",
+        "РУЧКИ И ЗАЩЁЛКИ"
+      ],
+      "visual_direction": "明亮的餐饮配送台面与外带场景，保留真实金属质感；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_image_ids": [
+        "sku-001",
+        "sku-002",
+        "sku-003",
+        "main-005",
+        "main-004"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "compose_from_real_images",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce detail visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 它的结构和做工是什么样？. Its single decision job is: 用真实细节提升信任. The exact Russian marketing message that the visual must prove is: НЕРЖАВЕЮЩАЯ СТАЛЬ / РУЧКИ И ЗАЩЁЛКИ. Verified listing facts available for visual evidence: Материал: нержавеющая сталь. This is shared across selected SKUs; show only facts and product features common to every selected SKU. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Use deterministic crop, mask and layout from the real reference images; AI must not redraw any product. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · structure_detail · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/detail/detail-002.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "detail",
+      "slot": "detail-003",
+      "image_type": "scene",
+      "requested_image_type": "scene",
+      "fallback_reason": "unknown",
+      "purchase_reason": "顶部和侧面提手便于短距离搬运，前部锁扣帮助合上箱盖。",
+      "visual_goal": "用真实环境建立代入感；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "使用场景一",
+      "buyer_question": "我会在哪里使用？",
+      "selling_goal": "用真实环境建立代入感",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "ДЛЯ ДОСТАВКИ ЕДЫ",
+        "ДЛЯ ШКОЛЬНОГО ПИТАНИЯ"
+      ],
+      "visual_direction": "明亮的餐饮配送台面与外带场景，保留真实金属质感；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_image_ids": [
+        "sku-001",
+        "sku-002",
+        "sku-003",
+        "main-005",
+        "main-004"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "edit_real_image",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce scene visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 我会在哪里使用？. Its single decision job is: 用真实环境建立代入感. The exact Russian marketing message that the visual must prove is: ДЛЯ ДОСТАВКИ ЕДЫ / ДЛЯ ШКОЛЬНОГО ПИТАНИЯ. Verified listing facts available for visual evidence: Материал: нержавеющая сталь. This is shared across selected SKUs; show only facts and product features common to every selected SKU. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · usage_scene_1 · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/detail/detail-003.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "detail",
+      "slot": "detail-004",
+      "image_type": "usage",
+      "requested_image_type": "usage",
+      "fallback_reason": "unknown",
+      "purchase_reason": "1, 2 или 3 секции для раздельной перевозки блюд.",
+      "visual_goal": "降低操作理解成本；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "使用场景二",
+      "buyer_question": "实际怎么使用？",
+      "selling_goal": "降低操作理解成本",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "УДОБНО ПЕРЕНОСИТЬ",
+        "ЗАКРОЙТЕ ЗАЩЁЛКИ"
+      ],
+      "visual_direction": "明亮的餐饮配送台面与外带场景，保留真实金属质感；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_image_ids": [
+        "sku-001",
+        "sku-002",
+        "sku-003",
+        "main-005",
+        "main-004"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "edit_real_image",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce usage visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 实际怎么使用？. Its single decision job is: 降低操作理解成本. The exact Russian marketing message that the visual must prove is: УДОБНО ПЕРЕНОСИТЬ / ЗАКРОЙТЕ ЗАЩЁЛКИ. Verified listing facts available for visual evidence: Материал: нержавеющая сталь. This is shared across selected SKUs; show only facts and product features common to every selected SKU. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · usage_scene_2 · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/detail/detail-004.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "detail",
+      "slot": "detail-005",
+      "image_type": "size_spec",
+      "requested_image_type": "size_spec",
+      "fallback_reason": "unknown",
+      "purchase_reason": "Нержавеющая сталь и переносной формат для доставки еды.",
+      "visual_goal": "展示商品本体尺寸；估算尺寸必须用俄文明确标注为约数，禁止使用包装尺寸；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "参数尺寸",
+      "buyer_question": "规格是否适合我？",
+      "selling_goal": "展示商品本体尺寸；估算尺寸必须用俄文明确标注为约数，禁止使用包装尺寸",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "Примерные размеры (Д × Ш × В): 30 × 20 × 15 см"
+      ],
+      "visual_direction": "明亮的餐饮配送台面与外带场景，保留真实金属质感；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_image_ids": [
+        "sku-001",
+        "sku-002",
+        "sku-003",
+        "main-005",
+        "main-004"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "compose_from_real_images",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce size_spec visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 规格是否适合我？. Its single decision job is: 展示商品本体尺寸；估算尺寸必须用俄文明确标注为约数，禁止使用包装尺寸. The exact Russian marketing message that the visual must prove is: Примерные размеры (Д × Ш × В): 30 × 20 × 15 см. Verified listing facts available for visual evidence: Материал: нержавеющая сталь. This is shared across selected SKUs; show only facts and product features common to every selected SKU. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Use deterministic crop, mask and layout from the real reference images; AI must not redraw any product. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · parameters · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/detail/detail-005.png",
+      "status": "planned",
+      "failure_reason": "unknown",
+      "measurement_annotation": {
+        "length": 30.0,
+        "width": 20.0,
+        "height": 15.0,
+        "unit": "cm",
+        "estimated": true,
+        "confidence": 100,
+        "source": "estimated",
+        "source_ref": "manual sample",
+        "source_field": "cost-analysis.product_dimensions",
+        "label_ru": "Примерные размеры (Д × Ш × В): 30 × 20 × 15 см"
+      }
+    },
+    {
+      "type": "detail",
+      "slot": "detail-006",
+      "image_type": "comparison",
+      "requested_image_type": "comparison",
+      "fallback_reason": "unknown",
+      "purchase_reason": "Ручки и передние защёлки для понятного ежедневного использования.",
+      "visual_goal": "只比较有来源的SKU差异；没有事实依据时阻止生成；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "SKU或包装内容",
+      "buyer_question": "不同版本/包装里有什么？",
+      "selling_goal": "只比较有来源的SKU差异；没有事实依据时阻止生成",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "1 / 2 / 3 СЕКЦИИ",
+        "ВЫБЕРИТЕ НУЖНЫЙ ФОРМАТ"
+      ],
+      "visual_direction": "明亮的餐饮配送台面与外带场景，保留真实金属质感；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_image_ids": [
+        "sku-001",
+        "sku-002",
+        "sku-003",
+        "main-005",
+        "main-004"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "compose_from_real_images",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce comparison visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 不同版本/包装里有什么？. Its single decision job is: 只比较有来源的SKU差异；没有事实依据时阻止生成. The exact Russian marketing message that the visual must prove is: 1 / 2 / 3 СЕКЦИИ / ВЫБЕРИТЕ НУЖНЫЙ ФОРМАТ. Verified listing facts available for visual evidence: Материал: нержавеющая сталь. This is shared across selected SKUs; show only facts and product features common to every selected SKU. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Use deterministic crop, mask and layout from the real reference images; AI must not redraw any product. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · sku_or_package · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/detail/detail-006.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "detail",
+      "slot": "detail-007",
+      "image_type": "feature",
+      "requested_image_type": "feature",
+      "fallback_reason": "unknown",
+      "purchase_reason": "单格、双格和三格配置，适配不同分餐需求。",
+      "visual_goal": "用可验证功能建立理性购买理由；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "关键功能利益",
+      "buyer_question": "哪个功能解决我的问题？",
+      "selling_goal": "用可验证功能建立理性购买理由",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "БЛЮДА НЕ СМЕШИВАЮТСЯ",
+        "ПОНЯТНЫЙ ФОРМАТ ДЛЯ ДОСТАВКИ"
+      ],
+      "visual_direction": "明亮的餐饮配送台面与外带场景，保留真实金属质感；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_image_ids": [
+        "sku-001",
+        "sku-002",
+        "sku-003",
+        "main-005",
+        "main-004"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "edit_real_image",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce feature visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 哪个功能解决我的问题？. Its single decision job is: 用可验证功能建立理性购买理由. The exact Russian marketing message that the visual must prove is: БЛЮДА НЕ СМЕШИВАЮТСЯ / ПОНЯТНЫЙ ФОРМАТ ДЛЯ ДОСТАВКИ. Verified listing facts available for visual evidence: Материал: нержавеющая сталь. This is shared across selected SKUs; show only facts and product features common to every selected SKU. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · function_benefit · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/detail/detail-007.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    },
+    {
+      "type": "disclaimer",
+      "slot": "detail-008",
+      "image_type": "disclaimer",
+      "requested_image_type": "disclaimer",
+      "fallback_reason": "unknown",
+      "purchase_reason": "不锈钢箱体用于冷热食品的临时运输，具体保温时长不作承诺。",
+      "visual_goal": "说明适用范围与限制，降低退货；服务于核心销售角度：按餐食组合选择分格数量，运输和分餐更清楚。",
+      "scene_description": "unknown；外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。；统一银灰+海军蓝+橙色识别，但每张图回答不同购买问题",
+      "purpose": "购买前说明",
+      "buyer_question": "购买前需要注意什么？",
+      "selling_goal": "说明适用范围与限制，降低退货",
+      "scene": "外带午餐和家庭便当；餐饮配送与学校配餐；户外聚餐时的分区携带",
+      "russian_text": [
+        "ПРОВЕРЬТЕ РАЗМЕРЫ И КОМПЛЕКТАЦИЮ",
+        "ВРЕМЯ СОХРАНЕНИЯ ТЕМПЕРАТУРЫ НЕ УКАЗАНО"
+      ],
+      "visual_direction": "明亮的餐饮配送台面与外带场景，保留真实金属质感；俄文短句，标题与信息层级清晰，禁止文字框占满画面；不复用厨房储物罐的暖米色、木台面或固定卡片模板；",
+      "reference_product_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_images": [
+        "products/P900001/input/sku-images/sku-001.jpg",
+        "products/P900001/input/sku-images/sku-002.jpg",
+        "products/P900001/input/sku-images/sku-003.jpg",
+        "products/P900001/input/main-images/main-005.webp",
+        "products/P900001/input/main-images/main-004.webp"
+      ],
+      "reference_image_ids": [
+        "sku-001",
+        "sku-002",
+        "sku-003",
+        "main-005",
+        "main-004"
+      ],
+      "variant_scope": "shared",
+      "shared_across_variants": true,
+      "source_sku_id": "all",
+      "variant_kind": "not_applicable",
+      "variant_value": "shared",
+      "operation": "edit_real_image",
+      "source_text_policy": "generate_new_ozon_image_and_reject_all_chinese_text_or_seller_watermarks",
+      "prompt": "Create a polished, product-specific 3:4 Ozon ecommerce disclaimer visual from the final listing data. Final Russian listing title: Термоконтейнер для еды из нержавеющей стали с секциями. This image must answer one buyer question: 购买前需要注意什么？. Its single decision job is: 说明适用范围与限制，降低退货. The exact Russian marketing message that the visual must prove is: ПРОВЕРЬТЕ РАЗМЕРЫ И КОМПЛЕКТАЦИЮ / ВРЕМЯ СОХРАНЕНИЯ ТЕМПЕРАТУРЫ НЕ УКАЗАНО. Verified listing facts available for visual evidence: Материал: нержавеющая сталь. This is shared across selected SKUs; show only facts and product features common to every selected SKU. Visual thesis: 把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。. Edit the supplied real product reference into a distinctive buyer-facing atmosphere while preserving its identity, color, structure, proportions and accessories. Make the product visually dominant and use a different commercial composition for this slot. Generate the visual without lettering; exact Russian copy is added after generation. Reserve only natural negative space integrated into the scene. Never draw a blank rounded rectangle, empty text box, empty panel, placeholder card, bordered placeholder, or decorative empty frame. Do not use a plain white background, generic poster, or reusable category template. Shared images must not imply that multiple SKU variants are included together.",
+      "prompt_brief": "3:4 product-specific visual · notice · 不同分格，一箱分开装好",
+      "output_path": "products/P900001/output/generated-images/stage3.4/detail/detail-008.png",
+      "status": "planned",
+      "failure_reason": "unknown"
+    }
+  ],
+  "disclaimer_images": [],
+  "must_preserve": [
+    "vertical 3:4 ratio",
+    "product structure",
+    "product colors",
+    "SKU differences",
+    "accessory count"
+  ],
+  "must_not_change": [
+    "material",
+    "dimensions",
+    "weight",
+    "load capacity",
+    "certifications",
+    "brand",
+    "functions",
+    "package quantity",
+    "accessories"
+  ],
+  "forbidden_content": [
+    "普通白底目录图",
+    "空白文字框",
+    "改变分格数量",
+    "虚构保温时长",
+    "unverified claims",
+    "unverified brand logos",
+    "extra accessories",
+    "different product structure or color",
+    "blank rounded rectangles, empty text boxes, placeholder cards or decorative empty frames"
+  ],
+  "risks": [
+    {
+      "area": "style",
+      "level": "high",
+      "message": "只拦截错商品、错SKU、额外配件功能、明显变形、中文乱码和不可读俄文；其他视觉选择交给商品专属方案。"
+    },
+    {
+      "area": "russian_text",
+      "level": "medium",
+      "message": "俄文上图前必须由Codex生成并在生成后逐字检查。"
+    }
+  ],
+  "processing": {
+    "step": "image_plan",
+    "status": "completed",
+    "started_at": "2026-07-16T07:12:55+08:00",
+    "finished_at": "2026-07-16T07:12:55+08:00",
+    "error": null
+  }
+}

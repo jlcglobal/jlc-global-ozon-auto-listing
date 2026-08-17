@@ -76,6 +76,8 @@ class EdgeExtensionPackagingTest(unittest.TestCase):
         self.assertIn("optionNode = node.closest", source)
         self.assertIn("visibleSkuRowImageMap", source)
         self.assertIn("visible_sku_row", source)
+        self.assertIn("matchedOwners.size !== 1", source)
+        self.assertNotIn('sku_image_source: "visible_sku_row_order"', source)
 
     def test_seerfar_pipeline_jobs_can_return_product_scoped_keyword_evidence(self):
         source = (

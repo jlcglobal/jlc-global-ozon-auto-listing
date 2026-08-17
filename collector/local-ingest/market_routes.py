@@ -6,7 +6,6 @@ routes register on the existing FastAPI instance via `from app import *`.
 
 from __future__ import annotations
 
-import asyncio
 import copy as copy_module
 import json
 import math
@@ -344,9 +343,9 @@ async def workbench_search_visibility_sync(request: Request) -> Dict[str, Any]:
     shop, secrets = _default_search_shop(str(payload.get("store_id") or ""))
     shop_id = str(shop["id"])
     previous_plan = _load_search_visibility_plan(shop_id)
-    client = OzonAnalyticsReadOnlyClient(secrets["client_id"], secrets["api_key"], timeout_seconds=10)
+    client = OzonAnalyticsReadOnlyClient(secrets["client_id"], secrets["api_key"])
     try:
-        source = await asyncio.to_thread(collect_seller_search_visibility,
+        source = collect_seller_search_visibility(
             client,
             shop_id=shop_id,
             date_from=date_from,

@@ -38,7 +38,7 @@ PRODUCTS_DIR = ROOT / "products"
 TEMPLATES_DIR = ROOT / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
 COMMAND_CENTER_DIST_DIR = ROOT / "collector" / "workbench-command-center" / "dist"
-COMMAND_CENTER_VERSION = "2026-08-16-ui-v4-bento-light"
+COMMAND_CENTER_VERSION = "2026-08-01-ui-state-v1"
 
 
 def project_relative(path: Path) -> str:
@@ -128,7 +128,6 @@ from task_database import cutover_active, product_snapshot, product_snapshots  #
 from collector_categories import (  # noqa: E402
     build_selection,
     category_tree_children,
-    effective_tree_cache_path,
     get_category,
     load_translated_tree_cache,
     prepare_rules,
@@ -137,7 +136,6 @@ from collector_categories import (  # noqa: E402
     search_categories,
     set_favorite,
 )
-from ozon_metadata_prewarm import prewarm_category_tree  # noqa: E402
 from pricing_engine.dimension_estimator import (  # noqa: E402
     estimate_package_dimensions,
     estimate_product_dimensions,
@@ -164,7 +162,6 @@ from market_intelligence import (  # noqa: E402
     parse_ozon_product_query_text,
     parse_yandex_wordstat_text,
 )
-from ozon_adapter import OzonReadOnlyClient  # noqa: E402
 from ozon_adapter.config import OzonConfig  # noqa: E402
 from ozon_uploader.client import OzonUploadApiError, OzonWriteClient  # noqa: E402
 from finance_center import FinanceCenter  # noqa: E402
@@ -276,7 +273,6 @@ async def app_lifespan(_app: FastAPI):
         ensure_batch_dispatcher()
         ensure_ozon_reference_dispatcher()
         ensure_finance_scheduler()
-        start_category_tree_refresh()
     yield
 
 
@@ -287,49 +283,6 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "PATCH", "DELETE", "OPTIONS"],
     allow_headers=["*"]
 )
-
-
-def start_category_tree_refresh() -> threading.Thread | None:
-    """Refresh the official Ozon tree without delaying or blocking startup."""
-    settings_path = ROOT / "config/pipeline-settings.json"
-    settings = json.loads(settings_path.read_text(encoding="utf-8")) if settings_path.is_file() else {}
-    if not settings.get("ozon_metadata_prewarm_enabled", True):
-        return None
-    registry = load_registry(ROOT)
-    shop_id = str(settings.get("shop_name") or registry.get("default_read_shop") or "default")
-    shop = next(
-        (item for item in registry.get("shops") or [] if str(item.get("id") or item.get("name")) == shop_id),
-        None,
-    )
-    if shop is None:
-        return None
-    values = {**os.environ, **read_secret(ROOT, shop)}
-    if not values.get(str(shop.get("client_id_env"))) or not values.get(str(shop.get("api_key_env"))):
-        return None
-
-    def worker() -> None:
-        log_path = ROOT / "logs/ozon-category-refresh.log"
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-        try:
-            config = OzonConfig.from_shop(shop_id, ROOT / "ozon-adapter/shops.json", environ=values)
-            client = OzonReadOnlyClient(config)
-            result = prewarm_category_tree({**settings, "shop_name": shop_id}, root=ROOT, client=client)
-            message = json.dumps(result, ensure_ascii=False)
-        except Exception as exc:
-            # The checked-in official tree remains the safe offline fallback.
-            message = json.dumps({
-                "status": "bundled_fallback",
-                "shop": shop_id,
-                "reason": f"{type(exc).__name__}: {exc}",
-                "ozon_write_api_calls": 0,
-                "inventory_api_calls": 0,
-            }, ensure_ascii=False)
-        with log_path.open("a", encoding="utf-8") as log:
-            log.write(f"{now_iso()} {message}\n")
-
-    thread = threading.Thread(target=worker, name="ozon-category-refresh", daemon=True)
-    thread.start()
-    return thread
 
 
 def ensure_finance_scheduler() -> None:

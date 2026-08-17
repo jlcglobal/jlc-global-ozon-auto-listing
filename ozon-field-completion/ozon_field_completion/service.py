@@ -2206,6 +2206,22 @@ def build_package(
     result_path = output / "ozon-result.json"
     result = load_json(result_path) if result_path.is_file() else {}
     tags = build_tags(product_dir)
+    colors = build_color_variants(product_dir, source)
+    color_policy = build_color_variant_policy(product_dir.name, source, colors)
+    build_attribute_fill_input(product_dir)
+    attrs = compile_product_attributes(product_dir)
+    # Field completion is the single draft outlet.  A new product legitimately
+    # has no ozon-draft.json yet; create the deterministic base draft before
+    # Rich Content tries to synchronize its image slots.
+    if not draft_path.is_file() and write:
+        import sys
+        scripts_dir = ROOT / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from ozon_ecommerce_designer_contract import build_current_ozon_draft
+        build_current_ozon_draft(product_dir)
+    if write:
+        sync_draft_attributes_from_final_attributes(product_dir, attrs, write=True)
     rich = (
         {"serialized_json": "unknown"}
         if pre_image else build_rich_content(product_dir, result)
@@ -2215,12 +2231,6 @@ def build_package(
         if not rich_meta:
             rich["warnings"].append("The selected category has no live Rich Content attribute; it will not be sent.")
         rich["attribute_id"] = int(rich_meta["attribute_id"]) if rich_meta else 0
-    colors = build_color_variants(product_dir, source)
-    color_policy = build_color_variant_policy(product_dir.name, source, colors)
-    build_attribute_fill_input(product_dir)
-    attrs = compile_product_attributes(product_dir)
-    if write:
-        sync_draft_attributes_from_final_attributes(product_dir, attrs, write=True)
     coverage = build_attribute_coverage_report(attrs)
     package = {
         "ozon-tags.json": tags,

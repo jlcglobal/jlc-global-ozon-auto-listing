@@ -1,0 +1,20 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P000881",
+  "events": [
+    {
+      "at": "2026-07-18T22:32:01+08:00",
+      "reason": "workbench_sku_override_changed",
+      "downstream": [
+        "merged-product-facts",
+        "attribute-fill-input",
+        "ozon-ecommerce-design.attributes",
+        "ozon-attributes-final",
+        "image-plan.sku-copy",
+        "pricing-result.shipping",
+        "ozon-draft",
+        "ozon-upload-payload"
+      ]
+    }
+  ]
+}

@@ -1,5 +1,5 @@
 {
-  "app_mode": "development",
+  "app_mode": "production",
   "analysis_concurrency": 3,
   "category_concurrency": 3,
   "pricing_concurrency": 5,
@@ -54,6 +54,6 @@
     "ozon_api": 600,
     "ozon_status_total": 900
   },
-  "shop_name": "default",
-  "codex_command": "codex"
+  "shop_name": "zhonglian1",
+  "codex_command": "/Applications/ChatGPT.app/Contents/Resources/codex"
 }

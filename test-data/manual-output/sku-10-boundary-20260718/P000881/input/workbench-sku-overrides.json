@@ -1,0 +1,196 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P000881",
+  "collection_id": "C-LOCAL-10SKU-VALIDATION",
+  "source_kind": "workbench_collection",
+  "updated_at": "2026-07-18T22:32:01+08:00",
+  "overrides": [
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-01",
+      "field_name": "color",
+      "canonical_value": "бирюзовый",
+      "canonical_unit": "text",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-01",
+      "field_name": "product_height_mm",
+      "canonical_value": 101,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-01",
+      "field_name": "product_length_mm",
+      "canonical_value": 211,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-01",
+      "field_name": "product_weight_g",
+      "canonical_value": 901,
+      "canonical_unit": "g",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-01",
+      "field_name": "product_width_mm",
+      "canonical_value": 111,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-01",
+      "field_name": "specification_text",
+      "canonical_value": "первый изменен",
+      "canonical_unit": "text",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-06",
+      "field_name": "capacity_ml",
+      "canonical_value": 1660,
+      "canonical_unit": "ml",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-06",
+      "field_name": "package_height_mm",
+      "canonical_value": 146,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-06",
+      "field_name": "package_length_mm",
+      "canonical_value": 266,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-06",
+      "field_name": "package_weight_g",
+      "canonical_value": 1888,
+      "canonical_unit": "g",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-06",
+      "field_name": "package_width_mm",
+      "canonical_value": 166,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-06",
+      "field_name": "specification_text",
+      "canonical_value": "шестой изменен",
+      "canonical_unit": "text",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-10",
+      "field_name": "color",
+      "canonical_value": "малиновый",
+      "canonical_unit": "text",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-10",
+      "field_name": "product_height_mm",
+      "canonical_value": 179,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-10",
+      "field_name": "product_length_mm",
+      "canonical_value": 299,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-10",
+      "field_name": "product_width_mm",
+      "canonical_value": 199,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    },
+    {
+      "product_id": "P000881",
+      "collection_id": "C-LOCAL-10SKU-VALIDATION",
+      "sku_id": "SKU-10",
+      "field_name": "specification_text",
+      "canonical_value": "десятый изменен",
+      "canonical_unit": "text",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:32:01+08:00"
+    }
+  ]
+}

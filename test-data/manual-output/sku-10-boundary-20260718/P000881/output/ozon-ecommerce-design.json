@@ -1,0 +1,521 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P000881",
+  "attribute_decisions": {
+    "common_attributes": [
+      {
+        "attribute_id": 2001,
+        "attribute_name": "Материал",
+        "scope": "common",
+        "decision_status": "filled",
+        "raw_semantic_value": "нержавеющая сталь",
+        "ozon_value": "Нержавеющая сталь",
+        "dictionary_value_id": 77,
+        "source": "1688",
+        "mapping_method": "AI_semantic_match"
+      }
+    ],
+    "attributes_by_sku": {
+      "SKU-01": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "бирюзовый",
+          "canonical_value": "бирюзовый",
+          "canonical_unit": "text",
+          "ozon_value": "бирюзовый",
+          "source": "human_override",
+          "mapping_method": "manual_workbench_edit"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 500,
+          "canonical_value": 500,
+          "canonical_unit": "ml",
+          "ozon_value": 500,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "первый изменен",
+          "canonical_value": "первый изменен",
+          "canonical_unit": "text",
+          "ozon_value": "первый изменен",
+          "source": "human_override",
+          "mapping_method": "manual_workbench_edit"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 951,
+          "canonical_value": 951,
+          "canonical_unit": "g",
+          "ozon_value": 951,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ],
+      "SKU-02": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "черный",
+          "canonical_value": "черный",
+          "canonical_unit": "text",
+          "ozon_value": "черный",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 600,
+          "canonical_value": 600,
+          "canonical_unit": "ml",
+          "ozon_value": 600,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "модель 02",
+          "canonical_value": "модель 02",
+          "canonical_unit": "text",
+          "ozon_value": "модель 02",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 300,
+          "canonical_value": 300,
+          "canonical_unit": "g",
+          "ozon_value": 300,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ],
+      "SKU-03": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "синий",
+          "canonical_value": "синий",
+          "canonical_unit": "text",
+          "ozon_value": "синий",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 700,
+          "canonical_value": 700,
+          "canonical_unit": "ml",
+          "ozon_value": 700,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "модель 03",
+          "canonical_value": "модель 03",
+          "canonical_unit": "text",
+          "ozon_value": "модель 03",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 325,
+          "canonical_value": 325,
+          "canonical_unit": "g",
+          "ozon_value": 325,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ],
+      "SKU-04": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "зеленый",
+          "canonical_value": "зеленый",
+          "canonical_unit": "text",
+          "ozon_value": "зеленый",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 800,
+          "canonical_value": 800,
+          "canonical_unit": "ml",
+          "ozon_value": 800,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "модель 04",
+          "canonical_value": "модель 04",
+          "canonical_unit": "text",
+          "ozon_value": "модель 04",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 350,
+          "canonical_value": 350,
+          "canonical_unit": "g",
+          "ozon_value": 350,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ],
+      "SKU-05": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "белый",
+          "canonical_value": "белый",
+          "canonical_unit": "text",
+          "ozon_value": "белый",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 900,
+          "canonical_value": 900,
+          "canonical_unit": "ml",
+          "ozon_value": 900,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "модель 05",
+          "canonical_value": "модель 05",
+          "canonical_unit": "text",
+          "ozon_value": "модель 05",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 375,
+          "canonical_value": 375,
+          "canonical_unit": "g",
+          "ozon_value": 375,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ],
+      "SKU-06": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "серый",
+          "canonical_value": "серый",
+          "canonical_unit": "text",
+          "ozon_value": "серый",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 1660,
+          "canonical_value": 1660,
+          "canonical_unit": "ml",
+          "ozon_value": 1660,
+          "source": "human_override",
+          "mapping_method": "manual_workbench_edit"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "шестой изменен",
+          "canonical_value": "шестой изменен",
+          "canonical_unit": "text",
+          "ozon_value": "шестой изменен",
+          "source": "human_override",
+          "mapping_method": "manual_workbench_edit"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 1888,
+          "canonical_value": 1888,
+          "canonical_unit": "g",
+          "ozon_value": 1888,
+          "source": "human_override",
+          "mapping_method": "manual_workbench_edit"
+        }
+      ],
+      "SKU-07": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "желтый",
+          "canonical_value": "желтый",
+          "canonical_unit": "text",
+          "ozon_value": "желтый",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 1100,
+          "canonical_value": 1100,
+          "canonical_unit": "ml",
+          "ozon_value": 1100,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "модель 07",
+          "canonical_value": "модель 07",
+          "canonical_unit": "text",
+          "ozon_value": "модель 07",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 425,
+          "canonical_value": 425,
+          "canonical_unit": "g",
+          "ozon_value": 425,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ],
+      "SKU-08": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "фиолетовый",
+          "canonical_value": "фиолетовый",
+          "canonical_unit": "text",
+          "ozon_value": "фиолетовый",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 1200,
+          "canonical_value": 1200,
+          "canonical_unit": "ml",
+          "ozon_value": 1200,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "модель 08",
+          "canonical_value": "модель 08",
+          "canonical_unit": "text",
+          "ozon_value": "модель 08",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 450,
+          "canonical_value": 450,
+          "canonical_unit": "g",
+          "ozon_value": 450,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ],
+      "SKU-09": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "оранжевый",
+          "canonical_value": "оранжевый",
+          "canonical_unit": "text",
+          "ozon_value": "оранжевый",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 1300,
+          "canonical_value": 1300,
+          "canonical_unit": "ml",
+          "ozon_value": 1300,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "модель 09",
+          "canonical_value": "модель 09",
+          "canonical_unit": "text",
+          "ozon_value": "модель 09",
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 475,
+          "canonical_value": 475,
+          "canonical_unit": "g",
+          "ozon_value": 475,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ],
+      "SKU-10": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Название цвета",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "малиновый",
+          "canonical_value": "малиновый",
+          "canonical_unit": "text",
+          "ozon_value": "малиновый",
+          "source": "human_override",
+          "mapping_method": "manual_workbench_edit"
+        },
+        {
+          "attribute_id": 3001,
+          "attribute_name": "Объем, л",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 1400,
+          "canonical_value": 1400,
+          "canonical_unit": "ml",
+          "ozon_value": 1400,
+          "source": "input/source.json.sku_options",
+          "mapping_method": "direct"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": "десятый изменен",
+          "canonical_value": "десятый изменен",
+          "canonical_unit": "text",
+          "ozon_value": "десятый изменен",
+          "source": "human_override",
+          "mapping_method": "manual_workbench_edit"
+        },
+        {
+          "attribute_id": 5001,
+          "attribute_name": "Вес с упаковкой, г",
+          "scope": "sku",
+          "decision_status": "filled",
+          "raw_semantic_value": 500,
+          "canonical_value": 500,
+          "canonical_unit": "g",
+          "ozon_value": 500,
+          "source": "auto_corrected_package_hierarchy",
+          "mapping_method": "package_weight_gt_product_weight"
+        }
+      ]
+    }
+  }
+}

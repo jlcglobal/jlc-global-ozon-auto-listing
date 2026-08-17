@@ -405,7 +405,7 @@ export function PipelinePanel({
   }
 
   return (
-    <Card className="pipeline-panel workspace-panel floating-layer">
+    <Card className="pipeline-panel workspace-panel glass-panel floating-layer">
       <CardHeader className="workspace-head">
         <div className="pipeline-brand-row">
           <img src={jlcLogo} alt="JLC GLOBAL 嘉联创" />

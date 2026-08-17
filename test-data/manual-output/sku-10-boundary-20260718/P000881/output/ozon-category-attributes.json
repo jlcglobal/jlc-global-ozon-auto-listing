@@ -1,0 +1,45 @@
+{
+  "attributes": [
+    {
+      "attribute_id": 10097,
+      "name": "Название цвета",
+      "type": "String",
+      "is_aspect": true,
+      "required": true
+    },
+    {
+      "attribute_id": 3001,
+      "name": "Объем, л",
+      "type": "Decimal",
+      "is_aspect": true,
+      "required": true
+    },
+    {
+      "attribute_id": 3101,
+      "name": "Размер",
+      "type": "String",
+      "is_aspect": true,
+      "required": false
+    },
+    {
+      "attribute_id": 5001,
+      "name": "Вес с упаковкой, г",
+      "type": "Integer",
+      "is_aspect": true,
+      "required": false
+    },
+    {
+      "attribute_id": 2001,
+      "name": "Материал",
+      "type": "String",
+      "is_aspect": false,
+      "required": true,
+      "allowed_values": [
+        {
+          "value": "Нержавеющая сталь",
+          "dictionary_value_id": 77
+        }
+      ]
+    }
+  ]
+}

@@ -1,0 +1,847 @@
+{
+  "service_url": "http://127.0.0.1:8765",
+  "product_id": "P000880",
+  "initial_rows": [
+    {
+      "sku_id": "SKU-A",
+      "sku_name": "красный 500ml",
+      "color": {
+        "canonical_value": "синий",
+        "canonical_unit": "text",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "capacity": {
+        "canonical_value": 500,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "specification": {
+        "canonical_value": "ручной тест A",
+        "canonical_unit": "text",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "product_weight": {
+        "canonical_value": 777,
+        "canonical_unit": "g",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 155.0,
+          "width_mm": 88.0,
+          "height_mm": 66.0
+        },
+        "canonical_unit": "mm",
+        "source": "input/workbench-sku-overrides.json",
+        "precedence": 1,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "package_weight": {
+        "canonical_value": 827,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 165.0,
+          "width_mm": 98.0,
+          "height_mm": 76.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "dynamic_attributes_count": 5
+    },
+    {
+      "sku_id": "SKU-B",
+      "sku_name": "черный 1000ml",
+      "color": {
+        "canonical_value": "черный",
+        "canonical_unit": "text",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus.option_values"
+      },
+      "capacity": {
+        "canonical_value": 1000,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "specification": {
+        "canonical_value": "модель B",
+        "canonical_unit": "text",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus.option_values"
+      },
+      "product_weight": {
+        "canonical_value": 520,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 180.0,
+          "width_mm": 100.0,
+          "height_mm": 100.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_weight": {
+        "canonical_value": 570,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 190.0,
+          "width_mm": 110.0,
+          "height_mm": 110.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "dynamic_attributes_count": 5
+    }
+  ],
+  "refreshed_rows": [
+    {
+      "sku_id": "SKU-A",
+      "sku_name": "красный 500ml",
+      "color": {
+        "canonical_value": "синий",
+        "canonical_unit": "text",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "capacity": {
+        "canonical_value": 500,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "specification": {
+        "canonical_value": "ручной тест A",
+        "canonical_unit": "text",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "product_weight": {
+        "canonical_value": 777,
+        "canonical_unit": "g",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 155.0,
+          "width_mm": 88.0,
+          "height_mm": 66.0
+        },
+        "canonical_unit": "mm",
+        "source": "input/workbench-sku-overrides.json",
+        "precedence": 1,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "package_weight": {
+        "canonical_value": 827,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 165.0,
+          "width_mm": 98.0,
+          "height_mm": 76.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "dynamic_attributes_count": 2
+    },
+    {
+      "sku_id": "SKU-B",
+      "sku_name": "черный 1000ml",
+      "color": {
+        "canonical_value": "черный",
+        "canonical_unit": "text",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus.option_values"
+      },
+      "capacity": {
+        "canonical_value": 1000,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "specification": {
+        "canonical_value": "модель B",
+        "canonical_unit": "text",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus.option_values"
+      },
+      "product_weight": {
+        "canonical_value": 520,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 180.0,
+          "width_mm": 100.0,
+          "height_mm": 100.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_weight": {
+        "canonical_value": 570,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 190.0,
+          "width_mm": 110.0,
+          "height_mm": 110.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "dynamic_attributes_count": 2
+    }
+  ],
+  "overrides": {
+    "schema_version": "1.0.0",
+    "product_id": "P000880",
+    "collection_id": "C-LOCAL-SKU-VALIDATION",
+    "source_kind": "workbench_collection",
+    "updated_at": "2026-07-18T22:26:54+08:00",
+    "overrides": [
+      {
+        "product_id": "P000880",
+        "collection_id": "C-LOCAL-SKU-VALIDATION",
+        "sku_id": "SKU-A",
+        "field_name": "color",
+        "canonical_value": "синий",
+        "canonical_unit": "text",
+        "source_kind": "workbench_collection",
+        "mapping_method": "manual_workbench_edit",
+        "updated_at": "2026-07-18T22:26:54+08:00"
+      },
+      {
+        "product_id": "P000880",
+        "collection_id": "C-LOCAL-SKU-VALIDATION",
+        "sku_id": "SKU-A",
+        "field_name": "product_height_mm",
+        "canonical_value": 66,
+        "canonical_unit": "mm",
+        "source_kind": "workbench_collection",
+        "mapping_method": "manual_workbench_edit",
+        "updated_at": "2026-07-18T22:26:54+08:00"
+      },
+      {
+        "product_id": "P000880",
+        "collection_id": "C-LOCAL-SKU-VALIDATION",
+        "sku_id": "SKU-A",
+        "field_name": "product_length_mm",
+        "canonical_value": 155,
+        "canonical_unit": "mm",
+        "source_kind": "workbench_collection",
+        "mapping_method": "manual_workbench_edit",
+        "updated_at": "2026-07-18T22:26:54+08:00"
+      },
+      {
+        "product_id": "P000880",
+        "collection_id": "C-LOCAL-SKU-VALIDATION",
+        "sku_id": "SKU-A",
+        "field_name": "product_weight_g",
+        "canonical_value": 777,
+        "canonical_unit": "g",
+        "source_kind": "workbench_collection",
+        "mapping_method": "manual_workbench_edit",
+        "updated_at": "2026-07-18T22:26:54+08:00"
+      },
+      {
+        "product_id": "P000880",
+        "collection_id": "C-LOCAL-SKU-VALIDATION",
+        "sku_id": "SKU-A",
+        "field_name": "product_width_mm",
+        "canonical_value": 88,
+        "canonical_unit": "mm",
+        "source_kind": "workbench_collection",
+        "mapping_method": "manual_workbench_edit",
+        "updated_at": "2026-07-18T22:26:54+08:00"
+      },
+      {
+        "product_id": "P000880",
+        "collection_id": "C-LOCAL-SKU-VALIDATION",
+        "sku_id": "SKU-A",
+        "field_name": "specification_text",
+        "canonical_value": "ручной тест A",
+        "canonical_unit": "text",
+        "source_kind": "workbench_collection",
+        "mapping_method": "manual_workbench_edit",
+        "updated_at": "2026-07-18T22:26:54+08:00"
+      }
+    ]
+  },
+  "snapshot_selected_sku_count": 2,
+  "snapshot_rows": [
+    {
+      "sku_id": "SKU-A",
+      "sku_name": "красный 500ml",
+      "option_text": "颜色 красный / 容量 500ml / 规格 модель A",
+      "image_path": null,
+      "color": {
+        "canonical_value": "синий",
+        "canonical_unit": "text",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "capacity": {
+        "canonical_value": 500,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "specification": {
+        "canonical_value": "ручной тест A",
+        "canonical_unit": "text",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "product_weight": {
+        "canonical_value": 777,
+        "canonical_unit": "g",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 155.0,
+          "width_mm": 88.0,
+          "height_mm": 66.0
+        },
+        "canonical_unit": "mm",
+        "source": "input/workbench-sku-overrides.json",
+        "precedence": 1,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "package_weight": {
+        "canonical_value": 827,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 165.0,
+          "width_mm": 98.0,
+          "height_mm": 76.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      },
+      "dynamic_attributes": {}
+    },
+    {
+      "sku_id": "SKU-B",
+      "sku_name": "черный 1000ml",
+      "option_text": "颜色 черный / 容量 1000ml / 规格 модель B",
+      "image_path": null,
+      "color": {
+        "canonical_value": "черный",
+        "canonical_unit": "text",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus.option_values"
+      },
+      "capacity": {
+        "canonical_value": 1000,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "specification": {
+        "canonical_value": "модель B",
+        "canonical_unit": "text",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus.option_values"
+      },
+      "product_weight": {
+        "canonical_value": 520,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 180.0,
+          "width_mm": 100.0,
+          "height_mm": 100.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_weight": {
+        "canonical_value": 570,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 190.0,
+          "width_mm": 110.0,
+          "height_mm": 110.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      },
+      "dynamic_attributes": {}
+    }
+  ],
+  "attributes_by_sku": {
+    "SKU-A": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Цвет товара",
+        "target_value": "синий",
+        "ozon_value": "синий",
+        "scope": "sku",
+        "sku_id": "SKU-A"
+      },
+      {
+        "attribute_id": 1001,
+        "attribute_name": "Объем, мл",
+        "target_value": 500,
+        "ozon_value": 500,
+        "scope": "sku",
+        "sku_id": "SKU-A"
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "target_value": "ручной тест A",
+        "ozon_value": "ручной тест A",
+        "scope": "sku",
+        "sku_id": "SKU-A"
+      },
+      {
+        "attribute_id": 9070,
+        "attribute_name": "Вес товара, г",
+        "target_value": 777,
+        "ozon_value": 777,
+        "scope": "sku",
+        "sku_id": "SKU-A"
+      }
+    ],
+    "SKU-B": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Цвет товара",
+        "target_value": "черный",
+        "ozon_value": "черный",
+        "scope": "sku",
+        "sku_id": "SKU-B"
+      },
+      {
+        "attribute_id": 1001,
+        "attribute_name": "Объем, мл",
+        "target_value": 1000,
+        "ozon_value": 1000,
+        "scope": "sku",
+        "sku_id": "SKU-B"
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "target_value": "модель B",
+        "ozon_value": "модель B",
+        "scope": "sku",
+        "sku_id": "SKU-B"
+      },
+      {
+        "attribute_id": 9070,
+        "attribute_name": "Вес товара, г",
+        "target_value": 520,
+        "ozon_value": 520,
+        "scope": "sku",
+        "sku_id": "SKU-B"
+      }
+    ]
+  },
+  "payload_summary": [
+    {
+      "offer_id": "OFFER-SKU-B",
+      "color_attr_10097": "черный",
+      "capacity_attr_1001": "1000",
+      "spec_attr_3101": "модель B",
+      "product_weight_attr_9070": "520",
+      "package_weight": 570,
+      "package_length": 190,
+      "package_width": 110,
+      "package_height": 110,
+      "primary_image": "https://img.example/main-SKU-B.png",
+      "detail_count": 8
+    },
+    {
+      "offer_id": "OFFER-SKU-A",
+      "color_attr_10097": "синий",
+      "capacity_attr_1001": "500",
+      "spec_attr_3101": "ручной тест A",
+      "product_weight_attr_9070": "777",
+      "package_weight": 827,
+      "package_length": 165,
+      "package_width": 98,
+      "package_height": 76,
+      "primary_image": "https://img.example/main-SKU-A.png",
+      "detail_count": 8
+    }
+  ],
+  "ozon_calls": {
+    "create": 0,
+    "update": 0,
+    "readonly": 0,
+    "stock": 0
+  },
+  "final_attributes": {
+    "schema_version": "1.0.0",
+    "product_id": "P000880",
+    "collection_id": "C-LOCAL-SKU-VALIDATION",
+    "common_attributes": [
+      {
+        "attribute_id": 7001,
+        "attribute_name": "Материал",
+        "target_value": "Нержавеющая сталь",
+        "ozon_value": "Нержавеющая сталь",
+        "dictionary_value_id": 77,
+        "scope": "common"
+      }
+    ],
+    "attributes_by_sku": {
+      "SKU-A": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Цвет товара",
+          "target_value": "синий",
+          "ozon_value": "синий",
+          "scope": "sku",
+          "sku_id": "SKU-A"
+        },
+        {
+          "attribute_id": 1001,
+          "attribute_name": "Объем, мл",
+          "target_value": 500,
+          "ozon_value": 500,
+          "scope": "sku",
+          "sku_id": "SKU-A"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "target_value": "ручной тест A",
+          "ozon_value": "ручной тест A",
+          "scope": "sku",
+          "sku_id": "SKU-A"
+        },
+        {
+          "attribute_id": 9070,
+          "attribute_name": "Вес товара, г",
+          "target_value": 777,
+          "ozon_value": 777,
+          "scope": "sku",
+          "sku_id": "SKU-A"
+        }
+      ],
+      "SKU-B": [
+        {
+          "attribute_id": 10097,
+          "attribute_name": "Цвет товара",
+          "target_value": "черный",
+          "ozon_value": "черный",
+          "scope": "sku",
+          "sku_id": "SKU-B"
+        },
+        {
+          "attribute_id": 1001,
+          "attribute_name": "Объем, мл",
+          "target_value": 1000,
+          "ozon_value": 1000,
+          "scope": "sku",
+          "sku_id": "SKU-B"
+        },
+        {
+          "attribute_id": 3101,
+          "attribute_name": "Размер",
+          "target_value": "модель B",
+          "ozon_value": "модель B",
+          "scope": "sku",
+          "sku_id": "SKU-B"
+        },
+        {
+          "attribute_id": 9070,
+          "attribute_name": "Вес товара, г",
+          "target_value": 520,
+          "ozon_value": 520,
+          "scope": "sku",
+          "sku_id": "SKU-B"
+        }
+      ]
+    },
+    "sku_measurements": {
+      "SKU-A": {
+        "package_weight": {
+          "canonical_value": 827,
+          "canonical_unit": "g",
+          "source": "auto_corrected_package_hierarchy",
+          "precedence": 6,
+          "mapping_method": "package_weight_gt_product_weight",
+          "confidence": 0.8,
+          "source_ref": "merged-product-facts.package_hierarchy"
+        },
+        "package_dimensions": {
+          "canonical_value": {
+            "length_mm": 165.0,
+            "width_mm": 98.0,
+            "height_mm": 76.0
+          },
+          "canonical_unit": "mm",
+          "source": "auto_corrected_package_hierarchy",
+          "precedence": 6,
+          "mapping_method": "package_dimensions_gt_product_dimensions",
+          "confidence": 0.8,
+          "source_ref": "merged-product-facts.package_hierarchy"
+        },
+        "product_weight": {
+          "canonical_value": 777,
+          "canonical_unit": "g",
+          "source": "human_override",
+          "precedence": 1,
+          "mapping_method": "manual_workbench_edit",
+          "confidence": 1.0,
+          "source_ref": "input/workbench-sku-overrides.json"
+        },
+        "product_dimensions": {
+          "canonical_value": {
+            "length_mm": 155.0,
+            "width_mm": 88.0,
+            "height_mm": 66.0
+          },
+          "canonical_unit": "mm",
+          "source": "input/workbench-sku-overrides.json",
+          "precedence": 1,
+          "mapping_method": "direct",
+          "confidence": 1.0,
+          "source_ref": "input/workbench-sku-overrides.json"
+        }
+      },
+      "SKU-B": {
+        "package_weight": {
+          "canonical_value": 570,
+          "canonical_unit": "g",
+          "source": "auto_corrected_package_hierarchy",
+          "precedence": 6,
+          "mapping_method": "package_weight_gt_product_weight",
+          "confidence": 0.8,
+          "source_ref": "merged-product-facts.package_hierarchy"
+        },
+        "package_dimensions": {
+          "canonical_value": {
+            "length_mm": 190.0,
+            "width_mm": 110.0,
+            "height_mm": 110.0
+          },
+          "canonical_unit": "mm",
+          "source": "auto_corrected_package_hierarchy",
+          "precedence": 6,
+          "mapping_method": "package_dimensions_gt_product_dimensions",
+          "confidence": 0.8,
+          "source_ref": "merged-product-facts.package_hierarchy"
+        },
+        "product_weight": {
+          "canonical_value": 520,
+          "canonical_unit": "g",
+          "source": "source.product_attributes.sku_measurement_table",
+          "precedence": 2,
+          "mapping_method": "direct",
+          "confidence": 1.0,
+          "source_ref": "source.product_attributes.sku_measurement_table"
+        },
+        "product_dimensions": {
+          "canonical_value": {
+            "length_mm": 180.0,
+            "width_mm": 100.0,
+            "height_mm": 100.0
+          },
+          "canonical_unit": "mm",
+          "source": "source.product_attributes.sku_measurement_table",
+          "precedence": 2,
+          "mapping_method": "direct",
+          "confidence": 1.0,
+          "source_ref": "source.product_attributes.sku_measurement_table"
+        }
+      }
+    }
+  }
+}

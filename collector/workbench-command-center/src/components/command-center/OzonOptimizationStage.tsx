@@ -469,7 +469,7 @@ export function OzonOptimizationStage({
             </Button>
           </div>
         </div>
-        <section className="ozon-optimization-stage ozon-product-list-stage jlc-panel">
+        <section className="ozon-optimization-stage ozon-product-list-stage glass-panel hero-layer">
           <CardHeader className="ozon-opt-header ozon-list-header">
             <div>
               <div className="panel-kicker">所有商品</div>

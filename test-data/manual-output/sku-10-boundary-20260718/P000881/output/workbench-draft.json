@@ -1,0 +1,38 @@
+{
+  "sku_overrides": {
+    "SKU-01": {
+      "color": "бирюзовый",
+      "specification_text": "первый изменен",
+      "product_weight_g": 901,
+      "product_length_mm": 211,
+      "product_width_mm": 111,
+      "product_height_mm": 101
+    },
+    "SKU-06": {
+      "capacity_ml": 1660,
+      "specification_text": "шестой изменен",
+      "package_weight_g": 1888,
+      "package_length_mm": 266,
+      "package_width_mm": 166,
+      "package_height_mm": 146
+    },
+    "SKU-10": {
+      "color": "малиновый",
+      "specification_text": "десятый изменен",
+      "product_length_mm": 299,
+      "product_width_mm": 199,
+      "product_height_mm": 179
+    }
+  },
+  "schema_version": "1.0.0",
+  "product_id": "P000881",
+  "version": 1,
+  "saved_at": "2026-07-18T22:32:01+08:00",
+  "modified_by": "studio-owner",
+  "locked_fields": [
+    "sku_overrides"
+  ],
+  "dirty": true,
+  "sku_fact_dirty": true,
+  "sku_fact_invalidation_at": "2026-07-18T22:32:01+08:00"
+}

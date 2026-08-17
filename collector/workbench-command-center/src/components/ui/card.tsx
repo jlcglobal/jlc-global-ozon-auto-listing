@@ -6,7 +6,7 @@ const Card = React.forwardRef<HTMLDivElement, React.HTMLAttributes<HTMLDivElemen
     <div
       ref={ref}
       className={cn(
-        "jlc-card rounded-xl border border-gray-200 bg-white text-slate-700 shadow-[0_1px_2px_rgba(15,23,42,0.04),0_10px_30px_-18px_rgba(15,23,42,0.18)]",
+        "rounded-2xl border border-white/[0.08] bg-[rgba(13,33,28,0.75)] text-emerald-50 shadow-[inset_0_1px_0_rgba(255,255,255,0.08),0_0_30px_rgba(34,197,94,0.12)] backdrop-blur-xl",
         className,
       )}
       {...props}
@@ -19,10 +19,10 @@ const CardHeader = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement
   <div className={cn("flex flex-col space-y-1.5 p-5", className)} {...props} />
 );
 const CardTitle = ({ className, ...props }: React.HTMLAttributes<HTMLHeadingElement>) => (
-  <h3 className={cn("text-[15px] font-semibold tracking-tight text-slate-800", className)} {...props} />
+  <h3 className={cn("text-base font-semibold tracking-tight text-emerald-50", className)} {...props} />
 );
 const CardDescription = ({ className, ...props }: React.HTMLAttributes<HTMLParagraphElement>) => (
-  <p className={cn("text-[13px] text-slate-400", className)} {...props} />
+  <p className={cn("text-sm text-emerald-100/52", className)} {...props} />
 );
 const CardContent = ({ className, ...props }: React.HTMLAttributes<HTMLDivElement>) => (
   <div className={cn("p-5 pt-0", className)} {...props} />

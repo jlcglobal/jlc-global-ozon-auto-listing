@@ -1,0 +1,78 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P000880",
+  "collection_id": "C-LOCAL-SKU-VALIDATION",
+  "source_kind": "workbench_collection",
+  "title_cn": "本地双SKU工作台验证商品",
+  "source_url": "https://detail.1688.com/offer/local-validation.html",
+  "captured_at": "2026-07-18T14:21:08+00:00",
+  "product_attributes": [
+    {
+      "name_cn": "材质",
+      "value_cn": "нержавеющая сталь",
+      "source_text": "材质 нержавеющая сталь"
+    },
+    {
+      "name_cn": "SKU尺寸 - красный 500ml",
+      "value_cn": "12cm×8cm×8cm",
+      "source_text": "SKU尺寸 - красный 500ml 12cm×8cm×8cm"
+    },
+    {
+      "name_cn": "SKU重量 - красный 500ml",
+      "value_cn": "320g",
+      "source_text": "SKU重量 - красный 500ml 320g"
+    },
+    {
+      "name_cn": "SKU尺寸 - черный 1000ml",
+      "value_cn": "18cm×10cm×10cm",
+      "source_text": "SKU尺寸 - черный 1000ml 18cm×10cm×10cm"
+    },
+    {
+      "name_cn": "SKU重量 - черный 1000ml",
+      "value_cn": "520g",
+      "source_text": "SKU重量 - черный 1000ml 520g"
+    }
+  ],
+  "skus": [
+    {
+      "sku_id": "SKU-A",
+      "sku_name": "красный 500ml",
+      "selected": true,
+      "purchase_price": 10,
+      "option_values": [
+        {
+          "name_cn": "颜色",
+          "value_cn": "красный"
+        },
+        {
+          "name_cn": "容量",
+          "value_cn": "500ml"
+        },
+        {
+          "name_cn": "规格",
+          "value_cn": "модель A"
+        }
+      ]
+    },
+    {
+      "sku_id": "SKU-B",
+      "sku_name": "черный 1000ml",
+      "selected": true,
+      "purchase_price": 12,
+      "option_values": [
+        {
+          "name_cn": "颜色",
+          "value_cn": "черный"
+        },
+        {
+          "name_cn": "容量",
+          "value_cn": "1000ml"
+        },
+        {
+          "name_cn": "规格",
+          "value_cn": "модель B"
+        }
+      ]
+    }
+  ]
+}

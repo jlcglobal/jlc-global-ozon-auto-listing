@@ -295,13 +295,13 @@ export function ProductionStage({
         </Card>
       ) : loadingProducts && !detail && !card ? (
         <Card className="error-card">
-          <Clock3 className="h-8 w-8 text-emerald-700" />
+          <Clock3 className="h-8 w-8 text-emerald-200" />
           <strong>正在读取商品列表</strong>
           <p>本地商品较多时需要几十秒；读取期间不会调用 Ozon 或库存接口。</p>
         </Card>
       ) : (
         <motion.section
-          className="production-stage jlc-panel"
+          className="production-stage glass-panel hero-layer"
           initial={{ opacity: 0, y: 18, scale: 0.99 }}
           animate={{ opacity: 1, y: 0, scale: 1 }}
           transition={{ duration: 0.58, ease: [0.2, 0.8, 0.2, 1] }}
@@ -392,7 +392,7 @@ export function ProductionStage({
                 <div className="hud-image-zone">
                   {selectedImage?.url
                     ? <img src={selectedImage.url} alt="当前商品图片" />
-                    : <PackageCheck className="h-16 w-16 text-emerald-700/40" />}
+                    : <PackageCheck className="h-16 w-16 text-emerald-200/40" />}
                 </div>
                 <div className="stage-thumb-wall">
                   <div className="stage-thumb-head">

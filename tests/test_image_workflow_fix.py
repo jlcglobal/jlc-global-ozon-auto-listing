@@ -177,6 +177,7 @@ class ImageWorkflowFixTest(unittest.TestCase):
             self.assertNotIn('web_search="live"', command)
 
     def test_codex_worker_uses_project_python_for_image_helpers(self):
+        runner = (ROOT / "scripts/run_batch.py").read_text(encoding="utf-8")
         with patch.dict(os.environ, {"APP_MODE": "development"}):
             env = codex_worker_env({"app_mode": "development"})
         self.assertEqual(env["CAF_PYTHON_BIN"], str(ROOT / ".venv/bin/python"))
@@ -184,6 +185,9 @@ class ImageWorkflowFixTest(unittest.TestCase):
         # 2026-08-14：russian_copy 已收口为确定性本地步骤（run_local_step 直接以
         # 项目 python 运行子进程），run_batch 源码中不再出现 $CAF_PYTHON_BIN 引用；
         # 委托路径的 env 契约由上面两行直接验证。
+        self.assertIn("必须使用环境变量CAF_PYTHON_BIN", runner)
+        self.assertIn("目标350-700字符", runner)
+        self.assertNotIn("目标1200-1800字符", runner)
 
     def test_1688_thumbnail_prefers_original_resolution_url(self):
         thumbnail = "https://cbu01.alicdn.com/img/ibank/item.jpg_sum.jpg"

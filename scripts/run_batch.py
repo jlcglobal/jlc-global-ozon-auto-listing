@@ -117,7 +117,7 @@ def codex_worker_env(settings: Dict[str, Any]) -> Dict[str, str]:
         os.environ,
         UPLOAD_MODE="production" if app_mode(settings) == "production" else "dry-run",
     )
-    venv_python = ROOT / ".venv" / "bin" / "python"
+    venv_python = ROOT / ".venv" / ("Scripts/python.exe" if os.name == "nt" else "bin/python")
     python_bin = venv_python if venv_python.is_file() else Path(sys.executable)
     python_dir = str(python_bin.parent)
     current_path = env.get("PATH", "")
@@ -236,19 +236,28 @@ def terminate_process_group(process: subprocess.Popen, grace_seconds: float = 5.
     """Stop a registered worker and every subprocess it launched."""
     if process.poll() is not None:
         return
-    try:
-        os.killpg(process.pid, signal.SIGTERM)
-    except OSError:
+    if os.name == "nt":
         process.terminate()
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGTERM)
+        except OSError:
+            process.terminate()
     try:
         process.wait(timeout=grace_seconds)
         return
     except subprocess.TimeoutExpired:
         pass
-    try:
-        os.killpg(process.pid, signal.SIGKILL)
-    except OSError:
-        process.kill()
+    if os.name == "nt":
+        subprocess.run(
+            ["taskkill", "/PID", str(process.pid), "/T", "/F"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, check=False,
+        )
+    else:
+        try:
+            os.killpg(process.pid, signal.SIGKILL)
+        except OSError:
+            process.kill()
     process.wait(timeout=5)
 
 
@@ -272,9 +281,12 @@ def run_registered_process(
 ) -> subprocess.Popen:
     if product_deleted(product_dir):
         raise ProductDeletionRequested(product_dir.name)
+    popen_options: Dict[str, Any] = {"start_new_session": True}
+    if os.name == "nt":
+        popen_options = {"creationflags": subprocess.CREATE_NEW_PROCESS_GROUP}
     process = subprocess.Popen(
         command, cwd=ROOT, env=env or os.environ.copy(), stdout=output,
-        stderr=subprocess.STDOUT, text=True, start_new_session=True, close_fds=True,
+        stderr=subprocess.STDOUT, text=True, close_fds=True, **popen_options,
     )
     worker_path = worker_path_override or product_worker_path(product_dir.name)
     started_at = now()
@@ -3165,6 +3177,7 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                 "output/image-design-revision-request.json（若存在）和templates/ozon-ecommerce-design.schema.json；"
                 "不要读取完整attribute-fill-input.json、attribute-fill-input.compact.json、日志、其他商品、归档、test-data或项目脚本。"
                 "目标：按schema原子写入output/ozon-ecommerce-design.json，最终只输出DONE ecommerce_design。"
+                "如需运行Python校验或写文件，必须使用环境变量CAF_PYTHON_BIN指向的项目Python，禁止直接调用python/python3；"
                 "顶层必须包含listing、sku_plan、attribute_decisions、main_images、detail_images、processing；"
                 "attribute_decisions只做设计阶段必要的轻量语义占位：input_hash匹配ecommerce-design-context输入中的input_hash，common_attributes和attributes_by_sku可为空，"
                 "只写当前商品事实中非常明确且与SKU差异、颜色、材质或图片文案直接相关的少量属性；不要枚举全部Ozon属性。"
@@ -3187,7 +3200,8 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                 "body=机身整体渲染为该色并作palette首色；accent=机身保持中性本体色，该颜色只用于对应部件且要醒目。禁止一律当机身色，禁止把accent画成全机身、也禁止把body画成点缀。"
                 "文字视觉不固定背景、颜色或左右版式；根据商品主体和留白决定，必须像成熟Ozon信息图模块：层级少而清楚、强对比、间距克制、"
                 "对齐产品边缘/尺寸线/步骤区/SKU块/引线/自然留白；避免默认左上竖线标题块、孤立角落小字、装饰徽章条、大空文字板和临时字幕式规格堆。"
-                "提示词预算：每个图位prompt只写本图必要的事实、构图、参考图、俄文和禁止改变点，目标1200-1800字符，禁止把全局规则重复塞进每张图。"
+                "资料阶段优先快速完成可售资料；每个图位prompt只写本图必要的事实、构图、参考图、俄文和禁止改变点，目标350-700字符，"
+                "全局摄影、真实性和合规规则只写visual_system/forbidden，禁止在每张图重复扩写；后续image_generation可按图位补足执行细节。"
                 "source_references只能写image-source-preflight中可用的当前商品input/sku-images、input/main-images或input/detail-images图片；"
                 "JSON证据只能写到source_refs/evidence，不能写进图片source_references；若要引用source.json内部字段，写成input/source.json#/字段名。"
                 "SKU主图必须使用对应SKU预检推荐图作为第一参考，其他当前商品主图/详情图只做补充参考。"

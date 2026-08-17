@@ -672,7 +672,7 @@ class CollectionInboxTest(unittest.TestCase):
         self.assertEqual(settings["image_qc_concurrency"], 2)
         self.assertEqual(settings["ozon_write_concurrency"], 1)
         self.assertEqual(settings["max_selected_skus_per_product"], 10)
-        self.assertEqual(settings["app_mode"], "development")
+        self.assertEqual(settings["app_mode"], "production")
         self.assertEqual(settings["timeouts_seconds"]["image_generation"], 600)
         self.assertEqual(settings["timeouts_seconds"]["image_qc"], 600)
 

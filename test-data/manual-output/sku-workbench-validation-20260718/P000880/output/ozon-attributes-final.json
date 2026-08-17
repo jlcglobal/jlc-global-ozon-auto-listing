@@ -1,0 +1,87 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P000880",
+  "collection_id": "C-LOCAL-SKU-VALIDATION",
+  "category_id": 123,
+  "type_id": 456,
+  "common_attributes": [
+    {
+      "attribute_id": 7001,
+      "attribute_name": "Материал",
+      "target_value": "Нержавеющая сталь",
+      "ozon_value": "Нержавеющая сталь",
+      "dictionary_value_id": 77,
+      "scope": "common"
+    }
+  ],
+  "attributes_by_sku": {
+    "SKU-A": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Цвет товара",
+        "target_value": "синий",
+        "ozon_value": "синий",
+        "scope": "sku",
+        "sku_id": "SKU-A"
+      },
+      {
+        "attribute_id": 1001,
+        "attribute_name": "Объем, мл",
+        "target_value": 500,
+        "ozon_value": 500,
+        "scope": "sku",
+        "sku_id": "SKU-A"
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "target_value": "ручной тест A",
+        "ozon_value": "ручной тест A",
+        "scope": "sku",
+        "sku_id": "SKU-A"
+      },
+      {
+        "attribute_id": 9070,
+        "attribute_name": "Вес товара, г",
+        "target_value": 777,
+        "ozon_value": 777,
+        "scope": "sku",
+        "sku_id": "SKU-A"
+      }
+    ],
+    "SKU-B": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Цвет товара",
+        "target_value": "черный",
+        "ozon_value": "черный",
+        "scope": "sku",
+        "sku_id": "SKU-B"
+      },
+      {
+        "attribute_id": 1001,
+        "attribute_name": "Объем, мл",
+        "target_value": 1000,
+        "ozon_value": 1000,
+        "scope": "sku",
+        "sku_id": "SKU-B"
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "target_value": "модель B",
+        "ozon_value": "модель B",
+        "scope": "sku",
+        "sku_id": "SKU-B"
+      },
+      {
+        "attribute_id": 9070,
+        "attribute_name": "Вес товара, г",
+        "target_value": 520,
+        "ozon_value": 520,
+        "scope": "sku",
+        "sku_id": "SKU-B"
+      }
+    ]
+  }
+}

@@ -1,0 +1,23 @@
+{
+  "sku_overrides": {
+    "SKU-A": {
+      "color": "синий",
+      "specification_text": "ручной тест A",
+      "product_weight_g": 777,
+      "product_length_mm": 155,
+      "product_width_mm": 88,
+      "product_height_mm": 66
+    }
+  },
+  "schema_version": "1.0.0",
+  "product_id": "P000880",
+  "version": 3,
+  "saved_at": "2026-07-18T22:26:54+08:00",
+  "modified_by": "studio-owner",
+  "locked_fields": [
+    "sku_overrides"
+  ],
+  "dirty": true,
+  "sku_fact_dirty": true,
+  "sku_fact_invalidation_at": "2026-07-18T22:26:54+08:00"
+}

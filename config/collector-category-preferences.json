@@ -1,0 +1,107 @@
+{
+  "schema_version": "1.0.0",
+  "favorites": [],
+  "recent": [
+    {
+      "category_id": 17027905,
+      "type_id": 92011,
+      "selected_at": "2026-08-17T17:35:37+08:00"
+    },
+    {
+      "category_id": 17027937,
+      "type_id": 970588173,
+      "selected_at": "2026-08-17T17:04:24+08:00"
+    },
+    {
+      "category_id": 200001034,
+      "type_id": 91975,
+      "selected_at": "2026-08-17T17:02:40+08:00"
+    },
+    {
+      "category_id": 17027911,
+      "type_id": 970941701,
+      "selected_at": "2026-08-16T21:51:26+08:00"
+    },
+    {
+      "category_id": 17027907,
+      "type_id": 970799661,
+      "selected_at": "2026-08-16T21:37:02+08:00"
+    },
+    {
+      "category_id": 17028756,
+      "type_id": 970889769,
+      "selected_at": "2026-08-16T21:33:06+08:00"
+    },
+    {
+      "category_id": 17028756,
+      "type_id": 970799804,
+      "selected_at": "2026-08-16T20:38:34+08:00"
+    },
+    {
+      "category_id": 43443514,
+      "type_id": 65454042,
+      "selected_at": "2026-08-16T20:35:30+08:00"
+    },
+    {
+      "category_id": 17027907,
+      "type_id": 94462,
+      "selected_at": "2026-08-16T18:40:59+08:00"
+    },
+    {
+      "category_id": 17028756,
+      "type_id": 971006606,
+      "selected_at": "2026-08-16T17:54:21+08:00"
+    },
+    {
+      "category_id": 17028732,
+      "type_id": 92447,
+      "selected_at": "2026-08-16T17:20:35+08:00"
+    },
+    {
+      "category_id": 17027907,
+      "type_id": 92399,
+      "selected_at": "2026-08-16T16:20:51+08:00"
+    },
+    {
+      "category_id": 17028937,
+      "type_id": 971074008,
+      "selected_at": "2026-08-16T16:08:49+08:00"
+    },
+    {
+      "category_id": 17027904,
+      "type_id": 115945533,
+      "selected_at": "2026-08-16T15:12:54+08:00"
+    },
+    {
+      "category_id": 17028749,
+      "type_id": 115950474,
+      "selected_at": "2026-08-15T15:34:04+08:00"
+    },
+    {
+      "category_id": 17028973,
+      "type_id": 115944384,
+      "selected_at": "2026-08-14T16:53:31+08:00"
+    },
+    {
+      "category_id": 44082285,
+      "type_id": 98236,
+      "selected_at": "2026-08-14T04:56:20+08:00"
+    },
+    {
+      "category_id": 17028737,
+      "type_id": 94627,
+      "selected_at": "2026-08-14T02:52:01+08:00"
+    },
+    {
+      "category_id": 17027933,
+      "type_id": 92504,
+      "selected_at": "2026-08-14T02:17:15+08:00"
+    },
+    {
+      "category_id": 17027907,
+      "type_id": 92404,
+      "selected_at": "2026-08-14T00:17:04+08:00"
+    }
+  ],
+  "updated_at": "2026-08-17T17:35:37+08:00"
+}

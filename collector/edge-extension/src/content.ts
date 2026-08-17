@@ -1,6 +1,6 @@
-const PLUGIN_VERSION = "0.4.31";
+const PLUGIN_VERSION = "0.4.25";
 const MAX_SELECTED_SKUS = 10;
-const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
+const DEFAULT_FACTORY_URL = "http://192.168.3.13:8765";
 let latestDrawerCapture = null;
 let localCategoryTreeCachePromise = null;
 let localCategoryRulesCachePromise = null;
@@ -641,11 +641,7 @@ function offerImgListDetailUrls(structured: any[], mainUrls: string[], skuUrls: 
   // 从 script_init_data 的 offerImgList 补回未被 main/sku 占用的图片。
   const urls: string[] = [];
   (structured || []).forEach((result: any) => {
-    if (!result || typeof result !== "object") return;
-    const dataList = Array.isArray(result.data) ? result.data : (result.data == null ? [] : [result.data]);
-    dataList.forEach((snippet: any) => {
-      if (snippet && typeof snippet === "object") deepFindArrayByKey(snippet.data, "offerImgList", urls);
-    });
+    (result.data || []).forEach((snippet: any) => deepFindArrayByKey(snippet.data, "offerImgList", urls));
   });
   const idOf = (u: string) => {
     const m = /ibank\/([A-Za-z0-9_]+)/.exec(String(u || ""));
@@ -1867,12 +1863,19 @@ function extractDomComboSkus(fallbackPrice) {
 
 function visibleSkuRowImageMap(skus) {
   const knownValues = new Set();
-  (skus || []).forEach((sku) => {
+  const valueOwners = new Map();
+  (skus || []).forEach((sku, skuIndex) => {
+    const register = (value) => {
+      knownValues.add(value);
+      const owners = valueOwners.get(value) || new Set();
+      owners.add(skuIndex);
+      valueOwners.set(value, owners);
+    };
     (sku.option_values || []).forEach((option) => {
-      skuTextMatchKeys(option?.value_cn || option?.value || option?.name || "").forEach((value) => knownValues.add(value));
+      skuTextMatchKeys(option?.value_cn || option?.value || option?.name || "").forEach(register);
     });
-    skuTextMatchKeys(sku?.sku_name || "").forEach((name) => knownValues.add(name));
-    skuTextMatchKeys(sku?.source_data?.specAttrs || sku?.source_data?.spec || "").forEach((name) => knownValues.add(name));
+    skuTextMatchKeys(sku?.sku_name || "").forEach(register);
+    skuTextMatchKeys(sku?.source_data?.specAttrs || sku?.source_data?.spec || "").forEach(register);
   });
   const mapped = new Map();
   document.querySelectorAll("img, [data-image], [data-image-url], [data-img], [data-src], [style*='background']").forEach((node) => {
@@ -1888,6 +1891,10 @@ function visibleSkuRowImageMap(skus) {
         .filter((value) => haystacks.some((text) => text.includes(value)))
         .sort((left, right) => right.length - left.length);
       if (!matches.length) continue;
+      const matchedOwners = new Set(matches.flatMap((value) => [...(valueOwners.get(value) || [])]));
+      // A container mentioning multiple variants is a parameter/detail region, not a
+      // SKU row. Never let an arbitrary image inside it impersonate one variant.
+      if (matchedOwners.size !== 1) continue;
       const key = matches[0];
       const existing = mapped.get(key);
       if (!existing || depth < existing.depth) mapped.set(key, { url, depth });
@@ -1945,10 +1952,8 @@ function visibleSkuImageRows(skus = []) {
 
 function applyVisibleSkuRowImages(skus) {
   const imageMap = visibleSkuRowImageMap(skus);
-  const visibleRows = visibleSkuImageRows(skus);
-  if (!imageMap.size && !visibleRows.length) return skus;
-  const usedUrls = new Set();
-  const byText = (skus || []).map((sku) => {
+  if (!imageMap.size) return skus;
+  return (skus || []).map((sku) => {
     if (sku.image_url && sku.image_url !== "unknown") return sku;
     const keys = [
       ...(sku.option_values || []).flatMap((option) => skuTextMatchKeys(option?.value_cn || option?.value || option?.name || "")),
@@ -1957,7 +1962,6 @@ function applyVisibleSkuRowImages(skus) {
     ].filter(Boolean);
     const match = keys.map((key) => imageMap.get(key)).find(Boolean);
     if (!match?.url) return sku;
-    usedUrls.add(match.url);
     return {
       ...sku,
       image_url: match.url,
@@ -1965,27 +1969,6 @@ function applyVisibleSkuRowImages(skus) {
       source_data: {
         ...(sku.source_data || {}),
         sku_image_source: "visible_sku_row"
-      }
-    };
-  });
-  const missingCount = byText.filter((sku) => !(sku.image_url && sku.image_url !== "unknown")).length;
-  if (!missingCount) return byText;
-  const unusedRows = visibleRows.filter((row) => !usedUrls.has(row.url));
-  if (unusedRows.length < missingCount) return byText;
-  let rowIndex = 0;
-  return byText.map((sku) => {
-    if (sku.image_url && sku.image_url !== "unknown") return sku;
-    const row = unusedRows[rowIndex];
-    rowIndex += 1;
-    if (!row?.url) return sku;
-    return {
-      ...sku,
-      image_url: row.url,
-      sku_image_missing: false,
-      source_data: {
-        ...(sku.source_data || {}),
-        sku_image_source: "visible_sku_row_order",
-        sku_image_row_text: row.text.slice(0, 240)
       }
     };
   });
@@ -2616,10 +2599,10 @@ function showSkuDrawer(capture, options = {}) {
     try {
       categoryRules = await collectorApi("/api/collector/categories/rules", {
         method: "POST",
-        body: JSON.stringify({ category_id: item.category_id, type_id: item.type_id, allow_readonly_fetch: true })
+        body: JSON.stringify({ category_id: item.category_id, type_id: item.type_id, allow_readonly_fetch: false })
       });
       await rememberCategoryRules(item, categoryRules);
-      const sourceLabel = categoryRules.offline_fallback ? "本地离线规则" : "Ozon只读实时规则";
+      const sourceLabel = categoryRules.offline_fallback ? "本地离线规则" : "完整本地规则";
       categorySelected.textContent = `已选：${item.name_zh} · 必填 ${categoryRules.required_attribute_ids.length} · SKU维度 ${categoryRules.aspect_attribute_ids.length} · ${sourceLabel}`;
       setMessage("");
     } catch (error) {
@@ -3165,226 +3148,3 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   return true;
 });
-
-/* ================= Floating capture panel (2026-08) ================= */
-function cafFpStyles() {
-  return `<style id="caf-fp-styles">
-#caf-fp-root * { box-sizing: border-box; }
-#caf-fp-root { position: fixed; z-index: 2147483647; right: 18px; bottom: 18px; font: 13px/1.45 -apple-system,BlinkMacSystemFont,"Segoe UI","PingFang SC","Microsoft YaHei",sans-serif; color: #111827; }
-.caf-fp-btn { width: 56px; height: 56px; border-radius: 16px; border: 1px solid rgba(16,185,129,.5); background: linear-gradient(180deg,#10b981,#059669); color:#fff; box-shadow: 0 10px 26px rgba(16,185,129,.38); display:flex; flex-direction:column; align-items:center; justify-content:center; gap:2px; cursor:pointer; user-select:none; }
-.caf-fp-btn .t { font-weight:800; font-size:14px; letter-spacing:.02em; }
-.caf-fp-btn .s { font-size:9px; opacity:.92; }
-.caf-fp-btn .badge { position:absolute; top:-6px; right:-6px; min-width:20px; height:20px; padding:0 5px; border-radius:999px; background:#ef4444; color:#fff; font-size:11px; font-weight:700; line-height:20px; text-align:center; display:none; }
-.caf-fp-card { width: 330px; max-height: 440px; display:flex; flex-direction:column; border-radius:14px; border:1px solid #e5e7eb; background:#fff; box-shadow:0 18px 50px rgba(15,23,42,.3); overflow:hidden; }
-.caf-fp-head { display:flex; align-items:center; gap:8px; padding:10px 12px; background:#0b1220; color:#e6edf3; cursor:move; user-select:none; }
-.caf-fp-head strong { font-size:13px; }
-.caf-fp-head .dot { width:8px; height:8px; border-radius:999px; background:#10b981; box-shadow:0 0 10px rgba(16,185,129,.8); }
-.caf-fp-close { margin-left:auto; border:0; background:transparent; color:#94a3b8; font-size:18px; cursor:pointer; padding:2px 8px; }
-.caf-fp-body { padding:10px 12px; overflow:auto; display:flex; flex-direction:column; gap:8px; }
-.caf-fp-status { font-size:12px; color:#334155; background:#f8fafc; border:1px solid #e2e8f0; border-radius:8px; padding:8px; min-height:54px; }
-.caf-fp-status .big { font-weight:700; font-size:13px; color:#111827; }
-.caf-fp-status .sub { color:#64748b; margin-top:3px; }
-.caf-fp-actions { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
-.caf-fp-actions button { border:1px solid #cbd5e1; background:#f8fafc; border-radius:8px; padding:8px; cursor:pointer; font-weight:600; }
-.caf-fp-actions .primary { background:#10b981; border-color:#10b981; color:#fff; }
-.caf-fp-actions button:disabled { opacity:.5; cursor:not-allowed; }
-.caf-fp-auto { display:flex; align-items:center; gap:6px; font-size:11px; color:#475569; cursor:pointer; user-select:none; }
-.caf-fp-msg { font-size:11px; color:#475569; background:#fffbeb; border:1px solid #fde68a; border-radius:8px; padding:6px 8px; white-space:pre-wrap; word-break:break-word; max-height:112px; overflow:auto; }
-.caf-fp-msg.error { color:#b42318; background:#fef2f2; border-color:#fecaca; }
-.caf-fp-msg.ok { color:#047857; background:#ecfdf5; border-color:#a7f3d0; }
-</style>`;
-}
-let cafFpExpanded = false;
-let cafFpBusy = false;
-let cafFpCapture = null;
-let cafFpLastDetectedUrl = "";
-let cafFpAutoCaptureEnabled = false;
-
-function cafFpIsDetailPage() {
-  return /1688\.com\/offer\/\d+/.test(location.href);
-}
-
-function cafFpEscapeHtml(value) {
-  return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[ch]));
-}
-
-function cafFpSetMsg(text, tone) {
-  const msg = document.querySelector('#caf-fp-root .caf-fp-msg');
-  if (!msg) return;
-  msg.hidden = !text;
-  msg.textContent = text || '';
-  msg.className = 'caf-fp-msg' + (tone ? ' ' + tone : '');
-}
-
-function cafFpSetBusy(busy) {
-  const detect = document.querySelector('#caf-fp-root .caf-fp-detect');
-  const capture = document.querySelector('#caf-fp-root .caf-fp-capture');
-  if (detect) detect.disabled = busy;
-  if (capture && !busy) capture.disabled = !cafFpCapture;
-  else if (capture) capture.disabled = true;
-}
-
-function cafFpExpand(expanded) {
-  cafFpExpanded = expanded;
-  const card = document.querySelector('#caf-fp-root .caf-fp-card');
-  const btn = document.querySelector('#caf-fp-root .caf-fp-btn');
-  if (card) card.hidden = !expanded;
-  if (btn) btn.hidden = expanded;
-}
-
-async function cafFpDetect(options = {}) {
-  const auto = Boolean(options.auto);
-  if (cafFpBusy) return;
-  cafFpBusy = true;
-  cafFpSetBusy(true);
-  cafFpLastDetectedUrl = location.href;
-  const status = document.querySelector('#caf-fp-root .caf-fp-status');
-  if (status) status.innerHTML = '<div class="big">正在读取页面…</div><div class="sub">正在滚动加载SKU图片，请稍候</div>';
-  cafFpSetMsg('', '');
-  try {
-    cafFpCapture = await buildReadyCapture();
-    const skuTotal = (cafFpCapture.skus || []).length;
-    const mainImgs = (cafFpCapture.main_images || []).length;
-    const detailImgs = (cafFpCapture.detail_images || []).length;
-    if (status) {
-      status.innerHTML = `<div class="big">${cafFpEscapeHtml(cafFpCapture.title_cn || cafFpCapture.title || '（未识别标题）')}</div>
-        <div class="sub">SKU ${skuTotal} · 主图 ${mainImgs} · 详情图 ${detailImgs}</div>`;
-    }
-    const warnings = (cafFpCapture.capture_warnings || []).slice(0, 3).join('；');
-    cafFpSetMsg(warnings ? '⚠️ ' + warnings : '✅ 页面读取成功，可采集', warnings ? '' : 'ok');
-    if (auto) {
-      cafFpExpand(true);
-      if (cafFpAutoCaptureEnabled && skuTotal > 0) {
-        setTimeout(() => cafFpCaptureNow(false), 300);
-      }
-    }
-  } catch (error) {
-    cafFpCapture = null;
-    if (status) status.innerHTML = '<div class="big">读取失败</div><div class="sub">请刷新页面后重试，或点击「检测页面」</div>';
-    cafFpSetMsg(String(error?.message || error), 'error');
-  } finally {
-    cafFpBusy = false;
-    cafFpSetBusy(false);
-  }
-}
-
-async function cafFpCaptureNow(allowNewVersion = false) {
-  if (cafFpBusy || !cafFpCapture) {
-    if (!cafFpCapture) cafFpSetMsg('请先点击「检测页面」', 'error');
-    return;
-  }
-  cafFpBusy = true;
-  cafFpSetBusy(true);
-  cafFpSetMsg('正在采集…', '');
-  try {
-    if (!allowNewVersion) {
-      const dup = await factoryRequest(`/api/collector/duplicates?source_url=${encodeURIComponent(cafFpCapture.source_url || '')}`);
-      if (dup && dup.exists) {
-        cafFpSetMsg(`该商品已采集过：${dup.product_id}\n如需重新采集，请先在工作台删除旧商品`, 'error');
-        return;
-      }
-    }
-    const body = { ...cafFpCapture };
-    if (allowNewVersion) body.allow_new_version = true;
-    await factoryRequest('/api/collector/products', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(body),
-    });
-    cafFpSetMsg('✅ 采集成功，请在右侧选择SKU和类目', 'ok');
-    showSkuDrawer({ ...cafFpCapture, allow_new_version: allowNewVersion }, {});
-  } catch (error) {
-    cafFpSetMsg(String(error?.message || error), 'error');
-  } finally {
-    cafFpBusy = false;
-    cafFpSetBusy(false);
-  }
-}
-
-function cafFpCreate() {
-  const root = document.createElement('div');
-  root.id = 'caf-fp-root';
-  root.innerHTML = cafFpStyles() + `
-    <div class="caf-fp-card" hidden>
-      <div class="caf-fp-head">
-        <span class="dot"></span><strong>JLC 详情页采集</strong>
-        <button type="button" class="caf-fp-close" title="收起">−</button>
-      </div>
-      <div class="caf-fp-body">
-        <div class="caf-fp-status"><div class="big">正在自动检测商品…</div><div class="sub">请稍候</div></div>
-        <div class="caf-fp-actions">
-          <button type="button" class="caf-fp-detect">重新检测</button>
-          <button type="button" class="caf-fp-capture primary" disabled>采集</button>
-        </div>
-        <label class="caf-fp-auto"><input type="checkbox" class="caf-fp-autocap"> 自动采集（进入详情页后自动提交，无需点采集）</label>
-        <div class="caf-fp-msg" hidden></div>
-      </div>
-    </div>
-    <div class="caf-fp-btn" title="JLC 详情页采集">
-      <span class="t">JLC</span><span class="s">采集</span><span class="badge"></span>
-    </div>`;
-  document.documentElement.appendChild(root);
-  const btn = root.querySelector('.caf-fp-btn');
-  const close = root.querySelector('.caf-fp-close');
-  const detect = root.querySelector('.caf-fp-detect');
-  const capture = root.querySelector('.caf-fp-capture');
-  const auto = root.querySelector('.caf-fp-autocap');
-  btn.addEventListener('click', () => {
-    cafFpExpand(!cafFpExpanded);
-    if (cafFpExpanded && !cafFpCapture && !cafFpBusy) cafFpDetect({ auto: false });
-  });
-  close.addEventListener('click', () => cafFpExpand(false));
-  detect.addEventListener('click', () => cafFpDetect({ auto: false }));
-  capture.addEventListener('click', () => cafFpCaptureNow(false));
-  auto.addEventListener('change', () => {
-    cafFpAutoCaptureEnabled = auto.checked;
-  });
-  const head = root.querySelector('.caf-fp-head');
-  let dragging = false;
-  let offsetX = 0;
-  let offsetY = 0;
-  let startX = 0;
-  let startY = 0;
-  head.addEventListener('mousedown', (ev) => {
-    dragging = true;
-    offsetX = ev.clientX;
-    offsetY = ev.clientY;
-    const rect = root.getBoundingClientRect();
-    startX = rect.left;
-    startY = rect.top;
-    ev.preventDefault();
-  });
-  document.addEventListener('mousemove', (ev) => {
-    if (!dragging) return;
-    root.style.left = Math.max(0, Math.min(window.innerWidth - 60, startX + ev.clientX - offsetX)) + 'px';
-    root.style.top = Math.max(0, Math.min(window.innerHeight - 60, startY + ev.clientY - offsetY)) + 'px';
-    root.style.right = 'auto';
-    root.style.bottom = 'auto';
-  });
-  document.addEventListener('mouseup', () => { dragging = false; });
-  return root;
-}
-
-function cafFpAutoDetectLoop() {
-  if (!cafFpIsDetailPage()) {
-    const rootEl = document.getElementById('caf-fp-root');
-    if (rootEl) rootEl.style.display = 'none';
-    return;
-  }
-  const rootEl = document.getElementById('caf-fp-root');
-  if (rootEl) rootEl.style.display = '';
-  if (location.href !== cafFpLastDetectedUrl && !cafFpBusy && !cafFpCapture) {
-    cafFpDetect({ auto: true });
-  }
-}
-
-function injectFloatingPanel() {
-  if (!cafFpIsDetailPage()) return;
-  if (document.getElementById('caf-fp-root')) return;
-  cafFpCreate();
-  setInterval(cafFpAutoDetectLoop, 2000);
-  setTimeout(() => cafFpDetect({ auto: true }), 2500);
-}
-
-injectFloatingPanel();
-

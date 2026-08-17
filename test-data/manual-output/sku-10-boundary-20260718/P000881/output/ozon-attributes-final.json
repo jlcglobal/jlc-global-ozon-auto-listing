@@ -1,0 +1,1528 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P000881",
+  "category_id": 170000,
+  "type_id": 900000,
+  "schema_source": "ozon_seller_api",
+  "compiler": {
+    "attribute_fill_input_hash": "ten-sku-real-api-input",
+    "ecommerce_design_hash": "e25e8f86bf081a56092ccf08b58cb08b7c8faa3838076c484b8e6e7ecbfd265d",
+    "compiler_version": "ozon-attribute-compiler-v2-sku-scope"
+  },
+  "common_attributes": [
+    {
+      "attribute_id": 2001,
+      "attribute_name": "Материал",
+      "scope": "common",
+      "required": true,
+      "value": "Нержавеющая сталь",
+      "canonical_value": "нержавеющая сталь",
+      "canonical_unit": "text",
+      "target_value": "Нержавеющая сталь",
+      "target_unit": "dictionary",
+      "conversion_rule": "none",
+      "source": "1688",
+      "mapping_method": "AI_semantic_match",
+      "confidence": 0.95,
+      "dictionary_value_id": 77,
+      "evidence": [
+        "ozon-ecommerce-design.attribute_decisions"
+      ]
+    }
+  ],
+  "attributes_by_sku": {
+    "SKU-10": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-10",
+        "required": true,
+        "value": "малиновый",
+        "canonical_value": "малиновый",
+        "canonical_unit": "text",
+        "target_value": "малиновый",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "human_override",
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-10",
+        "required": true,
+        "value": 1.4,
+        "canonical_value": 1400,
+        "canonical_unit": "ml",
+        "target_value": 1.4,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-10",
+        "required": false,
+        "value": "десятый изменен",
+        "canonical_value": "десятый изменен",
+        "canonical_unit": "text",
+        "target_value": "десятый изменен",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "human_override",
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-10",
+        "required": false,
+        "value": 500,
+        "canonical_value": 500,
+        "canonical_unit": "g",
+        "target_value": 500,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-09": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-09",
+        "required": true,
+        "value": "оранжевый",
+        "canonical_value": "оранжевый",
+        "canonical_unit": "text",
+        "target_value": "оранжевый",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-09",
+        "required": true,
+        "value": 1.3,
+        "canonical_value": 1300,
+        "canonical_unit": "ml",
+        "target_value": 1.3,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-09",
+        "required": false,
+        "value": "модель 09",
+        "canonical_value": "модель 09",
+        "canonical_unit": "text",
+        "target_value": "модель 09",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-09",
+        "required": false,
+        "value": 475,
+        "canonical_value": 475,
+        "canonical_unit": "g",
+        "target_value": 475,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-08": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-08",
+        "required": true,
+        "value": "фиолетовый",
+        "canonical_value": "фиолетовый",
+        "canonical_unit": "text",
+        "target_value": "фиолетовый",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-08",
+        "required": true,
+        "value": 1.2,
+        "canonical_value": 1200,
+        "canonical_unit": "ml",
+        "target_value": 1.2,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-08",
+        "required": false,
+        "value": "модель 08",
+        "canonical_value": "модель 08",
+        "canonical_unit": "text",
+        "target_value": "модель 08",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-08",
+        "required": false,
+        "value": 450,
+        "canonical_value": 450,
+        "canonical_unit": "g",
+        "target_value": 450,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-07": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-07",
+        "required": true,
+        "value": "желтый",
+        "canonical_value": "желтый",
+        "canonical_unit": "text",
+        "target_value": "желтый",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-07",
+        "required": true,
+        "value": 1.1,
+        "canonical_value": 1100,
+        "canonical_unit": "ml",
+        "target_value": 1.1,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-07",
+        "required": false,
+        "value": "модель 07",
+        "canonical_value": "модель 07",
+        "canonical_unit": "text",
+        "target_value": "модель 07",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-07",
+        "required": false,
+        "value": 425,
+        "canonical_value": 425,
+        "canonical_unit": "g",
+        "target_value": 425,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-06": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-06",
+        "required": true,
+        "value": "серый",
+        "canonical_value": "серый",
+        "canonical_unit": "text",
+        "target_value": "серый",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-06",
+        "required": true,
+        "value": 1.66,
+        "canonical_value": 1660,
+        "canonical_unit": "ml",
+        "target_value": 1.66,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "human_override",
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-06",
+        "required": false,
+        "value": "шестой изменен",
+        "canonical_value": "шестой изменен",
+        "canonical_unit": "text",
+        "target_value": "шестой изменен",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "human_override",
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-06",
+        "required": false,
+        "value": 1888,
+        "canonical_value": 1888,
+        "canonical_unit": "g",
+        "target_value": 1888,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "human_override",
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-05": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-05",
+        "required": true,
+        "value": "белый",
+        "canonical_value": "белый",
+        "canonical_unit": "text",
+        "target_value": "белый",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-05",
+        "required": true,
+        "value": 0.9,
+        "canonical_value": 900,
+        "canonical_unit": "ml",
+        "target_value": 0.9,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-05",
+        "required": false,
+        "value": "модель 05",
+        "canonical_value": "модель 05",
+        "canonical_unit": "text",
+        "target_value": "модель 05",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-05",
+        "required": false,
+        "value": 375,
+        "canonical_value": 375,
+        "canonical_unit": "g",
+        "target_value": 375,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-04": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-04",
+        "required": true,
+        "value": "зеленый",
+        "canonical_value": "зеленый",
+        "canonical_unit": "text",
+        "target_value": "зеленый",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-04",
+        "required": true,
+        "value": 0.8,
+        "canonical_value": 800,
+        "canonical_unit": "ml",
+        "target_value": 0.8,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-04",
+        "required": false,
+        "value": "модель 04",
+        "canonical_value": "модель 04",
+        "canonical_unit": "text",
+        "target_value": "модель 04",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-04",
+        "required": false,
+        "value": 350,
+        "canonical_value": 350,
+        "canonical_unit": "g",
+        "target_value": 350,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-03": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-03",
+        "required": true,
+        "value": "синий",
+        "canonical_value": "синий",
+        "canonical_unit": "text",
+        "target_value": "синий",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-03",
+        "required": true,
+        "value": 0.7,
+        "canonical_value": 700,
+        "canonical_unit": "ml",
+        "target_value": 0.7,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-03",
+        "required": false,
+        "value": "модель 03",
+        "canonical_value": "модель 03",
+        "canonical_unit": "text",
+        "target_value": "модель 03",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-03",
+        "required": false,
+        "value": 325,
+        "canonical_value": 325,
+        "canonical_unit": "g",
+        "target_value": 325,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-02": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-02",
+        "required": true,
+        "value": "черный",
+        "canonical_value": "черный",
+        "canonical_unit": "text",
+        "target_value": "черный",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-02",
+        "required": true,
+        "value": 0.6,
+        "canonical_value": 600,
+        "canonical_unit": "ml",
+        "target_value": 0.6,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-02",
+        "required": false,
+        "value": "модель 02",
+        "canonical_value": "модель 02",
+        "canonical_unit": "text",
+        "target_value": "модель 02",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-02",
+        "required": false,
+        "value": 300,
+        "canonical_value": 300,
+        "canonical_unit": "g",
+        "target_value": 300,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ],
+    "SKU-01": [
+      {
+        "attribute_id": 10097,
+        "attribute_name": "Название цвета",
+        "scope": "sku",
+        "sku_id": "SKU-01",
+        "required": true,
+        "value": "бирюзовый",
+        "canonical_value": "бирюзовый",
+        "canonical_unit": "text",
+        "target_value": "бирюзовый",
+        "target_unit": "text",
+        "conversion_rule": "none",
+        "source": "human_override",
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3001,
+        "attribute_name": "Объем, л",
+        "scope": "sku",
+        "sku_id": "SKU-01",
+        "required": true,
+        "value": 0.5,
+        "canonical_value": 500,
+        "canonical_unit": "ml",
+        "target_value": 0.5,
+        "target_unit": "l",
+        "conversion_rule": "ml_to_l",
+        "source": "input/source.json.sku_options",
+        "mapping_method": "direct",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 3101,
+        "attribute_name": "Размер",
+        "scope": "sku",
+        "sku_id": "SKU-01",
+        "required": false,
+        "value": "первый изменен",
+        "canonical_value": "первый изменен",
+        "canonical_unit": "text",
+        "target_value": "первый изменен",
+        "target_unit": "mm",
+        "conversion_rule": "none",
+        "source": "human_override",
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      },
+      {
+        "attribute_id": 5001,
+        "attribute_name": "Вес с упаковкой, г",
+        "scope": "sku",
+        "sku_id": "SKU-01",
+        "required": false,
+        "value": 951,
+        "canonical_value": 951,
+        "canonical_unit": "g",
+        "target_value": 951,
+        "target_unit": "g",
+        "conversion_rule": "g_to_g",
+        "source": "auto_corrected_package_hierarchy",
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.95,
+        "dictionary_value_id": null,
+        "evidence": [
+          "ozon-ecommerce-design.attribute_decisions"
+        ]
+      }
+    ]
+  },
+  "sku_measurements": {
+    "SKU-01": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 211.0,
+          "width_mm": 111.0,
+          "height_mm": 101.0
+        },
+        "canonical_unit": "mm",
+        "source": "input/workbench-sku-overrides.json",
+        "precedence": 1,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "product_weight": {
+        "canonical_value": 901,
+        "canonical_unit": "g",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 221.0,
+          "width_mm": 121.0,
+          "height_mm": 111.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 951,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 500,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-02": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 120.0,
+          "width_mm": 80.0,
+          "height_mm": 100.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_weight": {
+        "canonical_value": 250,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 130.0,
+          "width_mm": 90.0,
+          "height_mm": 110.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 300,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 600,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-03": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 130.0,
+          "width_mm": 90.0,
+          "height_mm": 110.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_weight": {
+        "canonical_value": 275,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 140.0,
+          "width_mm": 100.0,
+          "height_mm": 120.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 325,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 700,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-04": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 140.0,
+          "width_mm": 100.0,
+          "height_mm": 120.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_weight": {
+        "canonical_value": 300,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 150.0,
+          "width_mm": 110.0,
+          "height_mm": 130.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 350,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 800,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-05": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 150.0,
+          "width_mm": 110.0,
+          "height_mm": 130.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_weight": {
+        "canonical_value": 325,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 160.0,
+          "width_mm": 120.0,
+          "height_mm": 140.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 375,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 900,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-06": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 160.0,
+          "width_mm": 120.0,
+          "height_mm": 140.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_weight": {
+        "canonical_value": 350,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 266.0,
+          "width_mm": 166.0,
+          "height_mm": 146.0
+        },
+        "canonical_unit": "mm",
+        "source": "input/workbench-sku-overrides.json",
+        "precedence": 1,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "package_weight": {
+        "canonical_value": 1888,
+        "canonical_unit": "g",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "capacity": {
+        "canonical_value": 1660,
+        "canonical_unit": "ml",
+        "source": "human_override",
+        "precedence": 1,
+        "mapping_method": "manual_workbench_edit",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-07": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 170.0,
+          "width_mm": 130.0,
+          "height_mm": 150.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_weight": {
+        "canonical_value": 375,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 180.0,
+          "width_mm": 140.0,
+          "height_mm": 160.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 425,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 1100,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-08": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 180.0,
+          "width_mm": 140.0,
+          "height_mm": 160.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_weight": {
+        "canonical_value": 400,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 190.0,
+          "width_mm": 150.0,
+          "height_mm": 170.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 450,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 1200,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-09": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 190.0,
+          "width_mm": 150.0,
+          "height_mm": 170.0
+        },
+        "canonical_unit": "mm",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "product_weight": {
+        "canonical_value": 425,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 200.0,
+          "width_mm": 160.0,
+          "height_mm": 180.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 475,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 1300,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    },
+    "SKU-10": {
+      "product_dimensions": {
+        "canonical_value": {
+          "length_mm": 299.0,
+          "width_mm": 199.0,
+          "height_mm": 179.0
+        },
+        "canonical_unit": "mm",
+        "source": "input/workbench-sku-overrides.json",
+        "precedence": 1,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/workbench-sku-overrides.json"
+      },
+      "product_weight": {
+        "canonical_value": 450,
+        "canonical_unit": "g",
+        "source": "source.product_attributes.sku_measurement_table",
+        "precedence": 2,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "source.product_attributes.sku_measurement_table"
+      },
+      "package_dimensions": {
+        "canonical_value": {
+          "length_mm": 309.0,
+          "width_mm": 209.0,
+          "height_mm": 189.0
+        },
+        "canonical_unit": "mm",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_dimensions_gt_product_dimensions",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "package_weight": {
+        "canonical_value": 500,
+        "canonical_unit": "g",
+        "source": "auto_corrected_package_hierarchy",
+        "precedence": 6,
+        "mapping_method": "package_weight_gt_product_weight",
+        "confidence": 0.8,
+        "source_ref": "merged-product-facts.package_hierarchy"
+      },
+      "capacity": {
+        "canonical_value": 1400,
+        "canonical_unit": "ml",
+        "source": "input/source.json.sku_options",
+        "precedence": 3,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "input/source.json.skus"
+      },
+      "quantity": {
+        "canonical_value": 1,
+        "canonical_unit": "pcs",
+        "source": "project_default",
+        "precedence": 7,
+        "mapping_method": "direct",
+        "confidence": 1.0,
+        "source_ref": "project_defaults.quantity"
+      }
+    }
+  },
+  "attributes": [
+    {
+      "attribute_id": 2001,
+      "attribute_name": "Материал",
+      "scope": "common",
+      "required": true,
+      "value": "Нержавеющая сталь",
+      "canonical_value": "нержавеющая сталь",
+      "canonical_unit": "text",
+      "target_value": "Нержавеющая сталь",
+      "target_unit": "dictionary",
+      "conversion_rule": "none",
+      "source": "1688",
+      "mapping_method": "AI_semantic_match",
+      "confidence": 0.95,
+      "dictionary_value_id": 77,
+      "evidence": [
+        "ozon-ecommerce-design.attribute_decisions"
+      ]
+    }
+  ],
+  "required_summary": {
+    "total": 21,
+    "filled": 21,
+    "missing": 0,
+    "missing_attribute_ids": []
+  },
+  "warnings": [
+    "Attributes were compiled from ozon-ecommerce-designer semantic decisions and current live allowed_values.",
+    "Unknown high-risk claims are omitted rather than invented; low-risk formatting issues are normalized automatically."
+  ]
+}

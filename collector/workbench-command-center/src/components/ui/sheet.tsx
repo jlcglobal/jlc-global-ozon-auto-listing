@@ -16,13 +16,13 @@ const SheetContent = ({ className, children, ...props }: React.ComponentPropsWit
     <SheetOverlay />
     <SheetPrimitive.Content
       className={cn(
-        "fixed right-4 top-4 z-50 h-[calc(100vh-32px)] w-[min(720px,calc(100vw-32px))] overflow-hidden rounded-3xl border border-gray-200 bg-white text-gray-800 shadow-xl backdrop-blur-2xl",
+        "fixed right-4 top-4 z-50 h-[calc(100vh-32px)] w-[min(720px,calc(100vw-32px))] overflow-hidden rounded-3xl border border-white/10 bg-[#071A16]/92 text-emerald-50 shadow-[0_0_70px_rgba(34,197,94,0.18)] backdrop-blur-2xl",
         className,
       )}
       {...props}
     >
       {children}
-      <SheetPrimitive.Close className="absolute right-5 top-5 rounded-md p-1 text-gray-400 hover:bg-gray-100 hover:text-gray-700">
+      <SheetPrimitive.Close className="absolute right-5 top-5 rounded-md p-1 text-emerald-100/50 hover:bg-white/10 hover:text-emerald-100">
         <X className="h-4 w-4" />
       </SheetPrimitive.Close>
     </SheetPrimitive.Content>
@@ -34,7 +34,7 @@ const SheetTitle = ({ className, ...props }: React.ComponentPropsWithoutRef<type
   <SheetPrimitive.Title className={cn("text-xl font-semibold tracking-tight", className)} {...props} />
 );
 const SheetDescription = ({ className, ...props }: React.ComponentPropsWithoutRef<typeof SheetPrimitive.Description>) => (
-  <SheetPrimitive.Description className={cn("text-sm text-gray-500", className)} {...props} />
+  <SheetPrimitive.Description className={cn("text-sm text-emerald-100/52", className)} {...props} />
 );
 
 export { Sheet, SheetTrigger, SheetClose, SheetContent, SheetHeader, SheetTitle, SheetDescription };

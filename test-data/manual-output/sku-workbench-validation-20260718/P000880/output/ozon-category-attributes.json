@@ -1,0 +1,27 @@
+{
+  "category_id": 10,
+  "type_id": 20,
+  "attributes": [
+    {
+      "attribute_id": 10097,
+      "attribute_name": "Название цвета",
+      "type": "String",
+      "required": true,
+      "is_aspect": true
+    },
+    {
+      "attribute_id": 3001,
+      "attribute_name": "Объем, л",
+      "type": "Decimal",
+      "required": true,
+      "is_aspect": true
+    },
+    {
+      "attribute_id": 3101,
+      "attribute_name": "Модель варианта",
+      "type": "String",
+      "required": false,
+      "is_aspect": true
+    }
+  ]
+}

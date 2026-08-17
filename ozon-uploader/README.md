@@ -6,15 +6,15 @@ Safety rules:
 
 - `UPLOAD_MODE` defaults to `dry-run`; this mode never creates an Ozon client or sends an API request.
 - API writes require the exact value `UPLOAD_MODE=production`.
-- Production requires `final-upload-check.json.status=PASS`; existing products enter the update path.
+- Production rebuilds the image completeness gate from the current `image-plan.json` and real files immediately before any remote call; existing products enter the update path.
 - Offer existence is checked before a write and saved to `product-exists-check.json`.
 - Missing offers use `create`; existing offer IDs use the import endpoint as `update`; unchanged uploaded hashes use `skip`.
 - Existing products are not an error and never receive a new offer ID.
 - Color images follow `SKU image -> visually verified main image -> QC-approved Codex image -> missing`; `missing` keeps production blocked.
 - Clicking `运行任务` records `task_authorized=true` for every product in that batch snapshot.
-- There is no per-product `WAITING_REVIEW` or `APPROVED` gate.
+- There is no per-product review/approval gate before the user-started batch continues.
 - The collection inbox has no product-count limit; each product has a hard maximum of 10 selected SKUs.
-- Final upload preflight and `ozon-draft.json.upload_allowed` must both be `true`.
+- Upload preflight, current image completeness, and `ozon-draft.json.upload_allowed` must all pass.
 - Images are served through a temporary Cloudflare HTTPS tunnel only while Ozon imports them.
 - The client allowlist contains only product import and import-status endpoints.
 - No stock, warehouse, activation, or inventory endpoint exists in this module.

@@ -4,14 +4,15 @@ const notice = document.getElementById("notice");
 const searchInput = document.getElementById("global-search");
 
 const viewMeta = {
-  review: ["预览检查", "直接修改商品资料和图片"],
+  review: ["商品详情", "看图、改资料、确认上传"],
   confirm: ["批量确认", "本批次只确认一次"],
-  inbox: ["工作室商品", "所有电脑共享商品与任务"],
+  inbox: ["采集箱", "本次采集、生成和上传入口"],
   market: ["选品与关键词", "近期热销商品、增长机会和搜索词"],
-  attention: ["需要我处理", "问题、失败和待上传商品集中在这里"],
-  listed: ["已上架商品", "查看已经通过Ozon审核的商品"],
+  waiting: ["等待上传", "资料和图片完成，点商品确认上传"],
+  attention: ["需要处理", "失败商品和可继续任务"],
+  listed: ["已提交商品", "查看本地已交接给 Ozon 的商品"],
   finance: ["财务中心", "全部店铺利润、覆盖率与待核对明细"],
-  batches: ["任务状态", "生成、上传和失败状态"],
+  batches: ["处理中", "正在生成、排队和上传的任务"],
   shops: ["店铺设置", "添加、验证和管理Ozon店铺"],
   settings: ["系统设置", "生产安全规则"],
 };
@@ -21,12 +22,41 @@ const STEP_LABELS = {
   category_match: "匹配Ozon类目", variant_rules: "判断SKU变体", measurements: "处理商品和包装尺寸",
   offer_exists_check: "检查Ozon是否已有商品", upload_feasibility: "检查上传条件",
   product_positioning: "确定商品定位", ecommerce_design: "设计完整上架与图片销售方案", russian_copy: "生成俄文标题和文案",
-  style_selector: "确定图片视觉风格", image_plan: "规划图片方案", image_generation: "生成商品图片",
-  image_qc: "进行图片质检", marketplace_content: "生成Ozon商品资料", field_completion: "填写Ozon属性",
-  final_upload_check: "上架前最终检查",
+  image_plan: "规划图片方案", image_generation: "生成商品图片",
+  image_qc: "进行图片质检", field_completion: "填写Ozon属性",
   ozon_upload: "提交Ozon",
-  manual_ozon_upload: "等待人工检查",
+  manual_ozon_upload: "等待手动上传",
 };
+
+function isNeedsAttentionStatus(value) {
+  return ["NEEDS_ATTENTION", "FAILED"].includes(String(value || "").toUpperCase());
+}
+
+function isTerminalStatus(value) {
+  return ["CREATED", "UPLOADED", "ACTIVE"].includes(String(value || "").toUpperCase());
+}
+
+function isPipelineRunningLike(product = {}) {
+  if (product && product.batch_running === false) return false;
+  const raw = String(product?.status?.status || product?.raw_status || "").toUpperCase();
+  if (isTerminalStatus(raw) || isNeedsAttentionStatus(raw) || ["COLLECTED", "STOPPED", "WAITING_MANUAL_REVIEW", "CATEGORY_MATCHED", "CONTENT_GENERATED", "IMAGES_GENERATED", "PRICED", "PARTIAL"].includes(raw)) return false;
+  if (["QUEUED", "PROCESSING", "UPLOADING"].includes(raw)) return true;
+  const status = product.status || {};
+  const failedStep = String(status.failed_step || "").toLowerCase();
+  const currentStep = String(status.current_step || product.current_step || "").toLowerCase();
+  const nextAction = String(status.next_action || product.next_action || "").toLowerCase();
+  const activeSteps = new Set(["product_analysis", "category_match", "variant_rules", "measurements", "offer_exists_check", "upload_feasibility", "product_positioning", "ecommerce_design", "russian_copy", "field_completion", "image_plan", "image_generation", "image_qc", "ozon_upload"]);
+  return failedStep !== "unknown" && failedStep !== "" ? false : (activeSteps.has(currentStep) || activeSteps.has(nextAction));
+}
+
+function continuationStatusTitle(product = {}) {
+  const raw = String(product?.status?.status || product?.raw_status || "").toUpperCase();
+  if (raw === "PARTIAL") return "部分店铺未提交";
+  if (raw === "STOPPED") return "已安全停止，可继续";
+  if (["CATEGORY_MATCHED", "CONTENT_GENERATED", "IMAGES_GENERATED", "PRICED"].includes(raw)) return "等待继续生成";
+  if (product.primary_action?.label) return product.primary_action.label;
+  return "等待下一步";
+}
 
 const state = {
   view: "inbox",
@@ -81,6 +111,12 @@ const state = {
   financeImportContent: null,
   financeImportPreview: null,
   pendingErrorFocus: null,
+  executionPlan: null,
+  queueSummary: null,
+  productsCache: {query:"", fetchedAt:0, data:null, promise:null},
+  inboxPollTimer: null,
+  inboxPollBusy: false,
+  inboxLastSyncedAt: null,
 };
 
 const escapeHtml = (value) => String(value ?? "").replace(/[&<>'"]/g, (char) => ({"&":"&amp;","<":"&lt;",">":"&gt;","'":"&#39;",'"':"&quot;"}[char]));
@@ -152,17 +188,108 @@ async function api(url, options = {}) {
     throw new Error(uiErrorMessage(error.message));
   }
   const data = await response.json().catch(() => ({}));
-  if (!response.ok) throw new Error(uiErrorMessage(typeof data.detail === "string" ? data.detail : data.detail?.message || JSON.stringify(data.detail || data)));
+  if (!response.ok) {
+    const detail = typeof data.detail === "string" ? data.detail : data.detail?.message;
+    const fallback = response.status >= 500
+      ? `主电脑处理出错（${response.status}），商品没有提交，请稍后重试。`
+      : `操作未完成（${response.status}），请检查商品状态后重试。`;
+    throw new Error(uiErrorMessage(detail || data.message || fallback));
+  }
   return data;
 }
 
+function selectedStoreIdsFromProduct(product) {
+  return Object.entries(product?.publications?.stores || {})
+    .filter(([, record]) => record?.selected)
+    .map(([storeId, record]) => String(record.store_id || storeId || "").trim())
+    .filter(Boolean);
+}
+
+function runAutoUploadForProduct(product) {
+  const rawProductStatus = String(product?.status?.status || product?.raw_status || "").toUpperCase();
+  const readyToUpload = rawProductStatus === "WAITING_MANUAL_REVIEW";
+  const resumeFailure = isNeedsAttentionStatus(rawProductStatus);
+  const failedStep = String(product?.status?.failed_step || product?.status?.current_step || product?.current_step || "");
+  const resumeUploadFailure = resumeFailure && ["ozon_upload", "manual_ozon_upload"].includes(failedStep);
+  return readyToUpload || resumeUploadFailure || Boolean(state.workbenchSettings.auto_mode_enabled);
+}
+
+async function startProductRun(productId, button = null) {
+  if (!productId) return toast("没有选中商品，无法继续", "error");
+  if (state.draftSaveFailed && state.currentProductId === productId) return toast("草稿保存失败，已阻止继续", "error");
+  const originalText = button?.textContent || "";
+  let buttonLocked = false;
+  try {
+    await loadWorkbenchSettings();
+    const currentDetail = state.currentProduct?.product_id === productId ? state.currentProduct : null;
+    const product = currentDetail || await api(`/api/workbench/products/${productId}`);
+    const missingSkuRefs = skusNeedingReferenceBinding(product).filter((sku) => sku.binding_required);
+    if (productSkuReferenceBlocked(product) && missingSkuRefs.length) {
+      if (state.view !== "review" || state.currentProductId !== productId) {
+        state.currentProductId = productId;
+        await navigate("review", {productId});
+      }
+      root.querySelector('[data-future-review-tab="sku"]')?.click();
+      root.querySelector("[data-sku-reference-binding-board]")?.scrollIntoView({block:"center", behavior:"smooth"});
+      toast(`先绑定 ${missingSkuRefs.length} 个SKU参考图，绑定完再继续生成。`, "info", 5200);
+      return;
+    }
+    if (button) {
+      button.disabled = true;
+      button.classList.add("uploading");
+      button.textContent = "正在启动";
+      buttonLocked = true;
+    }
+    const selectedStores = currentDetail && state.selectedStoreIds.size
+      ? [...state.selectedStoreIds]
+      : selectedStoreIdsFromProduct(product);
+    const overrides = currentDetail ? collectStoreOverrides() : {};
+    const autoUpload = runAutoUploadForProduct(product);
+    const result = await api(`/api/workbench/products/${productId}/run`, {
+      method: "POST",
+      body: JSON.stringify({store_ids: selectedStores, overrides, auto_upload: autoUpload}),
+    });
+    if (result.status === "awaiting_confirmation") {
+      toast("请先确认类目、SKU、店铺和价格", "success");
+      state.confirmationBatchId = result.batch_id;
+      state.confirmationData = null;
+      state.confirmationProductId = productId;
+      return navigate("confirm", {batchId: result.batch_id});
+    }
+    const message = result.status === "queued"
+      ? `任务已排队：${result.batch_id}，前面还有 ${Math.max((result.queue_position || 1) - 1, 0)} 个任务`
+      : result.status === "already_queued"
+      ? `该商品已在任务中：${result.batch_id}`
+      : result.priority_upload
+      ? result.message || `已设为优先上传：${result.batch_id}`
+      : result.resumed_from_checkpoint
+      ? `已继续当前商品：${result.batch_id}`
+      : `任务已启动：${result.batch_id}`;
+    toast(message, "success");
+    state.inboxFilter = ["already_queued", "queued", "started"].includes(result.status) ? "运行中" : "全部";
+    if (state.view === "review" && state.currentProductId === productId) {
+      await refreshCurrentProduct();
+      return;
+    }
+    await loadProducts(searchInput.value, {force:true});
+    return navigate("inbox");
+  } catch (error) {
+    toast(error.message, "error", 7000);
+    if (button && buttonLocked) {
+      button.disabled = false;
+      button.classList.remove("uploading");
+      button.textContent = originalText || "继续";
+    }
+  }
+}
+
 function riskPill(risk) {
-  const labels = {high: "高风险", medium: "中风险", low: "低风险"};
-  return `<span class="status-pill ${escapeHtml(risk?.level || "low")}">${labels[risk?.level] || "低风险"}</span>`;
+  const labels = {high: "严重问题", medium: "需注意", low: "已检查"};
+  return `<span class="status-pill ${escapeHtml(risk?.level || "low")}">${labels[risk?.level] || "已检查"}</span>`;
 }
 
 function statePill(value) {
-  const map = {"完成":"completed", "失败":"failed", "处理中":"processing", "待处理":""};
+  const map = {"完成":"completed", "失败":"failed", "处理中":"processing", "等待上传":"processing", "待处理":""};
   return `<span class="status-pill ${map[value] || ""}">${escapeHtml(value)}</span>`;
 }
 
@@ -173,27 +300,66 @@ function setHeading(view) {
   document.querySelectorAll(".nav-item").forEach((button) => button.classList.toggle("active", button.dataset.view === (view === "confirm" ? "batches" : view)));
 }
 
+function setViewSyncing(syncing) {
+  root.classList.toggle("view-syncing", Boolean(syncing));
+}
+
 async function navigate(view, options = {}) {
   state.view = view;
+  document.body.dataset.activeView = view;
+  if (view !== "inbox") clearTimeout(state.inboxPollTimer);
   setHeading(view);
-  root.innerHTML = `<div class="empty-state"><strong>正在读取真实数据</strong><span>请稍候</span></div>`;
-  const renderers = {home: renderHome, review: renderReview, confirm: renderBatchConfirmation, inbox: renderInbox, market: renderMarket, finance: renderFinance, attention: renderAttention, listed: renderListed, batches: renderBatches, images: renderImages, risks: renderRisks, shops: renderShops, skills: renderSkills, experience: renderExperience, logs: renderLogs, settings: renderSettings};
+  if (!root.children.length) {
+    root.innerHTML = `<div class="empty-state"><strong>正在读取真实数据</strong><span>请稍候</span></div>`;
+  }
+  setViewSyncing(true);
+  const renderers = {home: renderHome, review: renderReview, confirm: renderBatchConfirmation, inbox: renderInbox, waiting: renderWaitingUpload, market: renderMarket, finance: renderFinance, attention: renderAttention, listed: renderListed, batches: renderBatches, images: renderImages, risks: renderRisks, shops: renderShops, skills: renderSkills, experience: renderExperience, logs: renderLogs, settings: renderSettings};
   try {
     await (renderers[view] || renderHome)(options);
   } catch (error) {
-    root.innerHTML = `<div class="empty-state"><strong>页面读取失败</strong><span>${escapeHtml(error.message)}</span></div>`;
+    if (root.querySelector(".empty-state") && root.textContent.includes("正在读取真实数据")) {
+      root.innerHTML = `<div class="empty-state"><strong>页面读取失败</strong><span>${escapeHtml(error.message)}</span></div>`;
+    }
+    toast(error.message, "error", 7000);
+  } finally {
+    setViewSyncing(false);
   }
   if (window.innerWidth <= 700) shell.classList.remove("mobile-nav-open");
 }
 
-async function loadProducts(query = "") {
-  const data = await api(`/api/workbench/products?page_size=100&q=${encodeURIComponent(query)}`);
-  state.products = data.items;
-  state.products.forEach(maybeNotifyListingSuccess);
-  if (!state.currentProductId || !state.products.some((item) => item.product_id === state.currentProductId)) {
-    state.currentProductId = state.products[0]?.product_id || null;
+function invalidateProductsCache() {
+  state.productsCache = {query:"", fetchedAt:0, data:null, promise:null};
+}
+
+async function loadProducts(query = "", options = {}) {
+  const normalizedQuery = String(query || "");
+  const now = Date.now();
+  const cache = state.productsCache || {};
+  const cacheTtlMs = options.ttlMs ?? 12000;
+  const cacheFresh = cache.data && cache.query === normalizedQuery && now - cache.fetchedAt < cacheTtlMs;
+  if (!options.force && cacheFresh) {
+    state.products = cache.data.items || [];
+    state.executionPlan = cache.data.execution_plan || null;
+    state.queueSummary = cache.data.queue_summary || null;
+    return cache.data;
   }
-  return data;
+  if (!options.force && cache.promise && cache.query === normalizedQuery) return cache.promise;
+  const promise = api(`/api/workbench/products?page_size=100&q=${encodeURIComponent(normalizedQuery)}`).then((data) => {
+    state.productsCache = {query:normalizedQuery, fetchedAt:Date.now(), data, promise:null};
+    state.products = data.items;
+    state.executionPlan = data.execution_plan || null;
+    state.queueSummary = data.queue_summary || null;
+    state.products.forEach(maybeNotifyListingSuccess);
+    if (!state.currentProductId || !state.products.some((item) => item.product_id === state.currentProductId)) {
+      state.currentProductId = state.products[0]?.product_id || null;
+    }
+    return data;
+  }).catch((error) => {
+    state.productsCache = {...state.productsCache, promise:null};
+    throw error;
+  });
+  state.productsCache = {query:normalizedQuery, fetchedAt:cache.fetchedAt || 0, data:cache.data || null, promise};
+  return promise;
 }
 
 async function loadWorkbenchSettings() {
@@ -234,7 +400,12 @@ async function pollNotifications({showDesktop = true} = {}) {
         systemNotice.onclick = () => {
           window.focus();
           state.currentProductId = item.product_id;
-          navigate(item.type === "question" ? "attention" : "review", {productId:item.product_id});
+          if (item.type === "question") {
+            state.inboxFilter = "需处理";
+            navigate("inbox");
+          } else {
+            navigate("review", {productId:item.product_id});
+          }
           systemNotice.close();
         };
       }
@@ -254,6 +425,8 @@ async function enableDesktopNotifications() {
 async function pollSystemStatus({notify = true} = {}) {
   try {
     const previous = state.systemStatus?.state;
+    const previousSeerfarJobId = state.systemStatus?.seerfar_login?.job_id || "";
+    const previousSeerfarStalled = Boolean(state.systemStatus?.seerfar_worker?.stalled);
     const status = await api("/api/workbench/system-status");
     state.systemStatus = status;
     const host = document.getElementById("image-host-status");
@@ -269,7 +442,23 @@ async function pollSystemStatus({notify = true} = {}) {
       notify && previous && previous !== "needs_attention" && status.state === "needs_attention"
       && "Notification" in window && Notification.permission === "granted"
     ) {
-      new Notification("AI Factory 需要处理", {body:status.message, tag:"caf-image-host"});
+      new Notification("JLC Global 需要处理", {body:status.message, tag:"caf-image-host"});
+    }
+    const seerfarLogin = status.seerfar_login || {};
+    if (seerfarLogin.required && seerfarLogin.job_id && seerfarLogin.job_id !== previousSeerfarJobId) {
+      const message = "Seerfar 登录已失效，请在 Chrome 的 Seerfar 页面重新登录；登录后会自动继续关键词查询。";
+      toast(message, "error", 12000);
+      if (notify && "Notification" in window && Notification.permission === "granted") {
+        new Notification("JLC Global：Seerfar 需要重新登录", {body:message, tag:`caf-seerfar-login:${seerfarLogin.job_id}`});
+      }
+    }
+    const seerfarWorker = status.seerfar_worker || {};
+    if (seerfarWorker.stalled && !previousSeerfarStalled) {
+      const message = seerfarWorker.message || "Seerfar 关键词队列已停止，请重新加载插件并刷新 Seerfar 页面。";
+      toast(message, "error", 15000);
+      if (notify && "Notification" in window && Notification.permission === "granted") {
+        new Notification("JLC Global：Seerfar 已停止", {body:message, tag:"caf-seerfar-worker-stalled"});
+      }
     }
     return status;
   } catch (_) {
@@ -332,26 +521,66 @@ function aiServiceWaiting(product) {
   return String(product?.status?.ai_service_state || "normal") === "waiting_for_recovery";
 }
 
+function aiUsageLimitWaiting(product) {
+  return String(product?.status?.ai_service_reason || "unknown") === "codex_usage_limit";
+}
+
 function friendlyErrorInfo(product) {
   const status = product?.status || product || {};
   if (product?.error) return product.error;
   const raw = String(status.error_message || "任务没有完成");
   const text = raw.toLowerCase();
   const step = String(status.failed_step || status.current_step || "");
+  const issueSummary = status.ozon_issue_summary || status.ozon?.issue_summary || {};
+  const issueBucket = String(issueSummary.primary_bucket || "").toLowerCase();
   const result = {
     title: "商品处理没有完成",
     message: "这件商品在当前步骤没有完成，前面已经生成的内容会保留。点“立即修改”检查后再继续。",
     action: "检查并修改", tab: "risk", technical: raw, step,
   };
-  if (String(status.ai_service_state || "normal") === "waiting_for_recovery") {
-    result.title = "正在等待联网大模型恢复";
-    result.message = "任务已停在当前步骤，系统会自动重试。已完成内容和断点都已保留，不会使用本地备用分析，也不需要你手工操作。";
+  if (issueSummary.has_issues) {
+    result.title = issueSummary.primary_label || "Ozon 上传问题";
+    result.message = issueSummary.message || raw;
+    result.action = "查看上传问题";
+    result.tab = "store";
+    if (issueBucket === "image_link") {
+      result.action = "重传图片";
+      result.tab = "images";
+    } else if (issueBucket === "numeric_contract") {
+      result.action = "修正属性";
+      result.tab = "category";
+    } else if (issueBucket === "logistics_weight") {
+      result.action = "修正尺寸重量";
+      result.tab = "price";
+    } else if (issueBucket === "description_decline") {
+      result.action = "修正文案";
+      result.tab = "content";
+    } else if (issueBucket === "category_mismatch") {
+      result.action = "修改类目";
+      result.tab = "category";
+    } else if (issueBucket === "duplicate_spu") {
+      result.action = "处理重复";
+      result.tab = "store";
+    } else if (issueBucket === "store_auth") {
+      result.action = "检查店铺";
+      result.tab = "store";
+    }
+  } else if (String(status.ai_service_state || "normal") === "waiting_for_recovery") {
+    const usageLimit = String(status.ai_service_reason || "unknown") === "codex_usage_limit";
+    result.title = usageLimit ? "AI额度等待中" : "正在等待联网大模型恢复";
+    result.message = usageLimit
+      ? "AI额度暂时不可用，任务已停在当前步骤。商品断点和已完成结果都已保留，额度恢复后会自动继续。"
+      : "任务已停在当前步骤，系统会自动重试。已完成内容和断点都已保留，不会使用本地备用分析，也不需要你手工操作。";
     result.action = "查看当前进度";
   } else if (text.includes("failed to fetch") || text.includes("connection")) {
     result.title = "主电脑工作台没有回应";
     result.message = "连接主电脑失败。先确认工作台服务正在运行，再点“重试”；不会重复上传商品。";
     result.action = "重试任务";
-  } else if (text.includes("image") || ["image_generation", "image_qc", "image_plan", "style_selector"].includes(step)) {
+  } else if (productSkuReferenceBlocked({status})) {
+    result.title = "SKU缺少参考图";
+    result.message = "当前SKU没有可用于生图的真实参考图。请从本商品已采集图片中绑定一张，绑定完再继续生成。";
+    result.action = "绑定SKU图"; result.tab = "sku";
+  } else if (text.includes("image") || ["image_generation", "image_qc", "image_plan"].includes(step)) {
     result.title = "图片步骤没有完成";
     result.message = "部分图片没有生成或质检未通过，已完成图片会保留。进入“图片”页，只重做失败图片即可。";
     result.action = "修改图片"; result.tab = "images";
@@ -363,11 +592,11 @@ function friendlyErrorInfo(product) {
     result.title = "价格或尺寸需要修改";
     result.message = "售价、重量或尺寸资料不完整。进入“价格”或“SKU”，修改后再继续。";
     result.action = "修改价格或尺寸"; result.tab = "price";
-  } else if (["upload", "offer", "duplicate", "pending", "store"].some((token) => text.includes(token)) || ["ozon_upload", "final_upload_check", "offer_exists_check", "upload_feasibility"].includes(step)) {
-    result.title = "上架前检查没有通过";
-    result.message = "Ozon上架前检查没有通过。先查看店铺状态和失败原因，处理中或状态不明确时不会再次提交。";
-    result.action = "检查上架条件"; result.tab = "store";
-  } else if (["codex", "403", "429", "analysis"].some((token) => text.includes(token)) || ["product_analysis", "product_positioning", "russian_copy", "marketplace_content"].includes(step)) {
+  } else if (["upload", "offer", "duplicate", "pending", "store"].some((token) => text.includes(token)) || ["ozon_upload", "offer_exists_check", "upload_feasibility"].includes(step)) {
+    result.title = "上传前还差一步";
+    result.message = uploadErrorMessage(text, step);
+    result.action = "查看上传问题"; result.tab = uploadErrorTab(text, step);
+  } else if (["codex", "403", "429", "analysis"].some((token) => text.includes(token)) || ["product_analysis", "product_positioning", "russian_copy", "ecommerce_design"].includes(step)) {
     result.title = "商品资料生成没有完成";
     result.message = "商品资料生成遇到问题。已保留采集内容，进入“资料”页检查标题、卖点和简介后再继续。";
     result.action = "修改商品资料"; result.tab = "content";
@@ -375,9 +604,53 @@ function friendlyErrorInfo(product) {
   return result;
 }
 
-function errorFocusForProduct(product) {
-  const error = friendlyErrorInfo(product);
-  const raw = `${error.technical || ""} ${product?.status?.error_message || ""}`.toLowerCase();
+function productSkuReferenceBlocked(product) {
+  const status = product?.status || {};
+  const step = String(status.failed_step || status.current_step || "").toLowerCase();
+  const text = `${status.error_message || ""} ${status.human_message || ""}`.toLowerCase();
+  return step === "image_source_preflight"
+    || text.includes("sku参考图预检")
+    || text.includes("缺少真实参考图")
+    || text.includes("image_source_preflight")
+    || text.includes("missing_required_sku_reference")
+    || text.includes("has no registered sku reference")
+    || text.includes("no registered sku-bound real image");
+}
+
+function uploadErrorTab(text = "", step = "") {
+  if (["image", "detail", "main", "n+8", "缺图", "图片"].some((token) => text.includes(token))) return "images";
+  if (["store", "shop", "店铺", "credential", "connection", "config"].some((token) => text.includes(token))) return "store";
+  if (["price", "dimension", "weight", "尺寸", "重量", "价格"].some((token) => text.includes(token))) return "price";
+  if (["attribute", "field", "category", "类目", "属性"].some((token) => text.includes(token))) return "category";
+  return "store";
+}
+
+function uploadErrorMessage(text = "", step = "") {
+  const has = (tokens) => tokens.some((token) => text.includes(token));
+  if (has(["image", "detail image", "main image", "n+8", "缺图", "图片"])) {
+    return "图片没有齐：请先生成或替换缺失图片。图片齐了以后，再点上传。";
+  }
+  if (has(["store", "shop", "credential", "connection", "config", "店铺", "凭证", "连接"])) {
+    return "店铺没有准备好：请检查目标店铺是否已选择、已验证、仍然可用。";
+  }
+  if (has(["duplicate", "already", "task_id", "offer exists", "repeated", "重复", "已提交"])) {
+    return "这件商品可能已经提交过：系统先拦住重复上传，避免在 Ozon 创建第二份。";
+  }
+  if (has(["pending", "unclear", "unknown remote", "状态不明确", "处理中"])) {
+    return "上一次提交状态不清楚：先不要重复上传，查看诊断信息后再处理。";
+  }
+  if (has(["attribute", "field", "category", "类目", "属性", "required"])) {
+    return "平台必填资料没有齐：请先补类目属性或商品资料。";
+  }
+  if (has(["price", "dimension", "weight", "尺寸", "重量", "价格"])) {
+    return "价格、重量或尺寸不完整：请先补齐这些基础资料。";
+  }
+  return "上传没有完成。点商品进入诊断信息，查看具体原因和可修改位置。";
+}
+
+function errorFocusForProduct(product, preferredStep = "") {
+  const error = preferredStep ? friendlyErrorInfo({status:{...(product?.status || {}), current_step: preferredStep, failed_step: preferredStep, error_message: product?.status?.error_message}}) : friendlyErrorInfo(product);
+  const raw = `${error.technical || ""} ${product?.status?.error_message || ""} ${preferredStep}`.toLowerCase();
   let selector = null;
   if (error.tab === "content") selector = raw.includes("title") ? '[data-draft-field="title_ru"]' : '[data-draft-field="description_ru"]';
   if (error.tab === "price") selector = raw.includes("sku") || raw.includes("price") ? "[data-sku-price]" : '[data-future-review-pane="price"]';
@@ -408,20 +681,32 @@ function focusPendingError() {
   });
 }
 
-async function openProductErrorEditor(productId) {
-  const product = state.products.find((item) => item.product_id === productId) || await api(`/api/workbench/products/${encodeURIComponent(productId)}`);
+async function openProductErrorEditor(productId, preferredStep = "") {
+  const product = await api(`/api/workbench/products/${encodeURIComponent(productId)}`);
   state.currentProductId = productId;
   state.currentImageSlot = null;
-  state.pendingErrorFocus = errorFocusForProduct(product);
+  state.pendingErrorFocus = errorFocusForProduct(product, preferredStep);
+  toast("已刷新商品状态，正在定位需要修改的位置", "info", 2400);
   await navigate("review", {productId});
   focusPendingError();
 }
 
 function liveProgressText(product) {
-  const step = String(product.status?.current_step || "queue");
-  if (aiServiceWaiting(product)) return `等待联网大模型恢复 · ${stepLabel(step)}`;
+  if ((state.queueSummary?.priority_product_ids || []).includes(product.product_id)) {
+    return state.queueSummary.message || "已进入优先上传队列";
+  }
+  const snapshot = product.pipeline_progress || {};
+  const step = String(snapshot.step || product.status?.next_action || product.status?.current_step || "queue");
+  if (aiServiceWaiting(product)) {
+    return `${aiUsageLimitWaiting(product) ? "AI额度等待" : "等待联网大模型恢复"} · ${stepLabel(step)}`;
+  }
   const generated = (product.images || []).filter((item) => item.url).length;
   const total = (product.images || []).length;
+  if (step === "image_generation" && Number(snapshot.planned_image_slots || 0)) {
+    const active = (snapshot.active_image_slots || []).slice(0, 3).join("、");
+    const activeText = active ? ` · 正在跑 ${active}` : "";
+    return `${snapshot.step_label || stepLabel(step)} · 生成 ${snapshot.generated_image_slots || generated}/${snapshot.planned_image_slots} · 通过 ${snapshot.completed_image_slots || 0}/${snapshot.planned_image_slots}${activeText}`;
+  }
   if (step === "product_analysis" && product.analysis && Object.keys(product.analysis).length) {
     return "商品分析已生成 · 正在进入类目匹配";
   }
@@ -438,17 +723,147 @@ function liveProgressText(product) {
 
 function renderLiveProgress(product) {
   const progress = Math.max(0, Math.min(100, Number(product.progress) || 0));
+  const priorityUpload = (state.queueSummary?.priority_product_ids || []).includes(product.product_id);
   const rawError = product.status?.error_message && product.status.error_message !== "unknown";
-  const statusText = aiServiceWaiting(product)
+  const snapshot = product.pipeline_progress || {};
+  const extra = renderPipelineProgressMeta(snapshot);
+  const statusText = priorityUpload
+    ? "上传确认已记录；系统只会提交一次，并继续保留防重复与库存禁用门禁。"
+    : aiServiceWaiting(product)
     ? "已暂停当前步骤，系统会自动重试；不会使用本地备用分析。"
-    : rawError ? friendlyErrorInfo(product).message : "后台正在处理，页面会自动更新";
-  return `<div class="live-progress" id="live-progress"><div class="live-progress-head"><strong data-progress-step>${escapeHtml(liveProgressText(product))}</strong><span data-progress-value>${progress}%</span></div><div class="progress-track"><span data-progress-bar style="width:${progress}%"></span></div><small data-progress-status>${escapeHtml(statusText)}</small></div>`;
+    : rawError ? friendlyErrorInfo(product).message : (snapshot.status_note || "后台正在处理，页面会自动更新");
+  return `<div class="live-progress" id="live-progress"><div class="live-progress-head"><strong data-progress-step>${escapeHtml(liveProgressText(product))}</strong><span data-progress-value>${progress}%</span></div><div class="progress-track"><span data-progress-bar style="width:${progress}%"></span></div><small data-progress-status>${escapeHtml(statusText)}</small><div class="live-progress-meta" data-progress-meta>${extra}</div></div>`;
+}
+
+function renderPipelineProgressMeta(snapshot = {}) {
+  const items = [];
+  const prefix = snapshot.is_running === false ? "下一步" : "当前";
+  if (snapshot.step_label) items.push(`${prefix}：${snapshot.step_label}`);
+  if (Number(snapshot.planned_image_slots || 0)) {
+    items.push(`图片 ${snapshot.generated_image_slots || 0}/${snapshot.planned_image_slots}`);
+    items.push(`通过 ${snapshot.completed_image_slots || 0}/${snapshot.planned_image_slots}`);
+  }
+  if ((snapshot.active_image_slots || []).length) {
+    items.push(`进行中：${snapshot.active_image_slots.slice(0, 3).join("、")}`);
+  }
+  const activeElapsed = snapshot.is_running === false ? "" : elapsedDuration(snapshot.active_step?.started_at);
+  if (activeElapsed) items.push(`已运行 ${activeElapsed}`);
+  if (typeof snapshot.latest_step_duration_seconds === "number") {
+    items.push(`本步 ${formatDuration(snapshot.latest_step_duration_seconds)}`);
+  } else if (typeof snapshot.last_recorded_duration_seconds === "number") {
+    items.push(`上步 ${formatDuration(snapshot.last_recorded_duration_seconds)}`);
+  }
+  return items.map((item) => `<span>${escapeHtml(item)}</span>`).join("");
+}
+
+function elapsedDuration(value) {
+  const timestamp = Date.parse(value || "");
+  if (!Number.isFinite(timestamp)) return "";
+  return formatDuration(Math.max(0, Math.floor((Date.now() - timestamp) / 1000)));
+}
+
+function pipelineFailureEvents(product) {
+  const status = product?.status || {};
+  const seen = new Set();
+  const events = [];
+  const push = (event) => {
+    const step = event.step || event.name || "unknown";
+    const reason = String(event.reason || event.message || event.error_message || event.technical || "").trim();
+    if (!reason || reason === "unknown") return;
+    const key = `${step}|${reason}|${event.occurred_at || event.at || ""}`;
+    if (seen.has(key)) return;
+    seen.add(key);
+    events.push({
+      step,
+      title: event.title || stepLabel(step),
+      reason,
+      occurred_at: event.occurred_at || event.finished_at || event.at || "",
+      retryable: event.retryable !== false,
+      technical: event.technical || reason,
+      level: event.level || "high",
+    });
+  };
+  (status.steps || []).forEach((step) => {
+    const failed = String(step.status || "").toLowerCase().includes("fail") || step.error;
+    if (!failed) return;
+    const error = typeof step.error === "string" ? {reason: step.error} : (step.error || {});
+    push({
+      step: error.step || step.name,
+      title: stepLabel(error.step || step.name),
+      reason: error.reason || step.reason || step.message || status.error_message,
+      occurred_at: error.occurred_at || step.finished_at || step.started_at,
+      retryable: step.retryable,
+      technical: error.reason || step.error || status.error_message,
+    });
+  });
+  if (status.error_message && status.error_message !== "unknown") {
+    push({
+      step: status.failed_step !== "unknown" ? status.failed_step : status.current_step,
+      reason: status.error_message,
+      occurred_at: status.updated_at || status.completed_at,
+      retryable: true,
+    });
+  }
+  (status.warning_history || []).forEach((entry) => {
+    (entry.warnings || []).forEach((warning) => push({
+      step: entry.batch_id || "warning",
+      title: "历史异常",
+      reason: warning,
+      occurred_at: entry.archived_at,
+      retryable: true,
+      level: "medium",
+    }));
+  });
+  (status.warnings || []).forEach((warning) => push({
+    step: status.current_step || "warning",
+    title: "当前异常",
+    reason: warning,
+    occurred_at: status.updated_at || status.started_at,
+    retryable: true,
+    level: "medium",
+  }));
+  (status.ozon?.errors || []).forEach((error) => push({
+    step: "ozon_upload",
+    title: "Ozon上传错误",
+    reason: typeof error === "string" ? error : (error.message || error.reason || JSON.stringify(error)),
+    occurred_at: error.occurred_at || error.at,
+    retryable: true,
+  }));
+  if (product?.production_readiness?.blocking) {
+    push({
+      step: "formal_input",
+      title: "输入资料不符合当前流程",
+      reason: product.production_readiness.message || "当前商品不是本次工作台采集的正式输入",
+      retryable: false,
+    });
+  }
+  return events;
+}
+
+function renderFailureReasonList(product, options = {}) {
+  const events = pipelineFailureEvents(product);
+  if (!events.length) return "";
+  const title = options.title || "步骤失败原因";
+  const subtitle = options.subtitle || "每条都来自本商品状态、步骤记录或上传返回；点击修改会先刷新状态再定位到对应面板。";
+  const rowMarkup = events.map((event) => `<article class="failure-reason-row ${escapeHtml(event.level)}">
+      <span class="failure-step">${escapeHtml(event.title)}</span>
+      <div><strong>${escapeHtml(event.reason)}</strong><small>${escapeHtml(event.occurred_at ? dateText(event.occurred_at) : "时间未记录")} · ${event.retryable ? "可修复后继续" : "不可跳过"}</small></div>
+      <button type="button" class="secondary-button" data-error-edit="${escapeHtml(product.product_id)}" data-error-step="${escapeHtml(event.step)}">修改</button>
+    </article>`).join("");
+  if (options.collapsed) {
+    return `<section class="failure-reason-board compact collapsed">
+    <header><div><span>历史异常</span><h3>${escapeHtml(title)}</h3><p>${escapeHtml(subtitle)}</p></div><strong>${events.length}</strong></header>
+    <details class="failure-reason-details"><summary>展开查看历史异常，不影响当前看图和上传</summary><div class="failure-reason-list">${rowMarkup}</div></details>
+  </section>`;
+  }
+  return `<section class="failure-reason-board ${options.compact ? "compact" : ""}">
+    <header><div><span>当前诊断</span><h3>${escapeHtml(title)}</h3><p>${escapeHtml(subtitle)}</p></div><strong>${events.length}</strong></header>
+    <div class="failure-reason-list">${rowMarkup}</div>
+  </section>`;
 }
 
 function isTerminalProduct(product = state.currentProduct) {
-  return ["CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON"].includes(
-    String(product?.status?.status || "").toUpperCase()
-  );
+  return isTerminalStatus(product?.status?.status);
 }
 
 function blockTerminalProductMutation() {
@@ -458,7 +873,7 @@ function blockTerminalProductMutation() {
 }
 
 async function renderReview(options = {}) {
-  await loadProducts(options.query || "");
+  await loadProducts(options.query || "", {force:Boolean(options.force)});
   if (options.productId) state.currentProductId = options.productId;
   if (!state.currentProductId) {
     root.innerHTML = empty("没有可审核商品");
@@ -476,27 +891,36 @@ async function renderReview(options = {}) {
     (product.stores || []).filter((shop) => shop.enabled && shop.connection_status === "connected").forEach((shop) => state.selectedStoreIds.add(shop.id));
   }
   const rawStatus = String(product.status?.status || "").toUpperCase();
-  const terminalPublication = ["CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON"].includes(rawStatus);
-  const contractBlocker = Boolean(product.production_contract?.blocking);
+  const priorityUpload = (state.queueSummary?.priority_product_ids || []).includes(product.product_id);
+  const terminalPublication = isTerminalStatus(rawStatus);
+  const formalInputBlocker = Boolean(product.production_readiness?.blocking);
   // 断点状态不是运行状态。只有真实 worker/队列状态才锁定按钮；否则
   // CONTENT_GENERATED 等状态会把“继续生成”误判为正在运行。
   // 只有真实排队/处理/上传状态才锁定按钮；类目修改会把旧 active_step 清掉，
   // 即使历史状态残留，也不能把 COLLECTED 商品误显示成“正在运行”。
-  const running = ["QUEUED", "PROCESSING", "UPLOADING"].includes(rawStatus);
-  const readyToUpload = ["OZON_READY", "WAITING_MANUAL_REVIEW"].includes(rawStatus);
-  const failed = rawStatus === "FAILED_HARD_BLOCKER";
+  const activeProductRunning = isPipelineRunningLike(product);
+  const running = activeProductRunning || priorityUpload;
+  const readyToUpload = rawStatus === "WAITING_MANUAL_REVIEW";
+  const failed = isNeedsAttentionStatus(rawStatus);
   const failure = failed ? friendlyErrorInfo(product) : null;
+  const skuReferenceBlocked = failed && productSkuReferenceBlocked(product);
+  const missingSkuReferenceCount = skusNeedingReferenceBinding(product).filter((sku) => sku.binding_required).length;
+  const needsContinuation = ["PARTIAL", "CATEGORY_MATCHED", "CONTENT_GENERATED", "IMAGES_GENERATED", "PRICED", "STOPPED"].includes(rawStatus);
   const blockedSelectedStores = (product.stores || []).filter((shop) =>
     state.selectedStoreIds.has(shop.id) && (!shop.enabled || shop.connection_status !== "connected")
   );
   const selectedStoreBlocker = !terminalPublication && blockedSelectedStores.length > 0;
-  const canRunProduct = !terminalPublication && !contractBlocker && ["run", "fix", "review_upload"].includes(product.primary_action?.key);
+  const canRunProduct = !terminalPublication && !formalInputBlocker && ["run", "fix", "review_upload"].includes(product.primary_action?.key);
   const needsStoreSelection = true;
   state.currentImageSlot = state.currentImageSlot && product.images.some((item) => item.slot === state.currentImageSlot) ? state.currentImageSlot : product.images[0]?.slot || null;
   const primaryText = terminalPublication
-    ? "已提交Ozon"
+    ? "已上架"
     : readyToUpload
     ? `确认修改并立即上传（${state.selectedStoreIds.size} 家店铺）`
+    : running
+      ? `后台生成中 · ${product.progress}%`
+    : skuReferenceBlocked && missingSkuReferenceCount
+      ? `绑定 ${missingSkuReferenceCount} 个SKU图`
     : failed
       ? `从${stepLabel(product.status?.failed_step || product.status?.current_step)}继续`
       : product.primary_action?.key === "run" || product.primary_action?.key === "fix"
@@ -508,26 +932,29 @@ async function renderReview(options = {}) {
       <div class="preview-status">${riskPill(product.risk)} ${statePill(product.public_state)}<span>${escapeHtml(product.product_id)}</span></div>
       <span class="preview-toolbar-spacer"></span>
       ${renderReviewStoreSelector(product)}
-      ${running ? `<button class="safe-stop-button" data-batch-action="stop"><span class="ph ph-stop-circle" aria-hidden="true"></span>安全停止</button>` : ""}
+      ${activeProductRunning ? `<button class="safe-stop-button" data-batch-action="stop" data-batch-action-source="manual_toolbar_v2"><span class="ph ph-stop-circle" aria-hidden="true"></span>手动停止</button>` : ""}
       <button class="preview-delete" data-delete-product="${product.product_id}"><span class="ph ph-trash" aria-hidden="true"></span>彻底删除</button>
     </header>
     <div class="future-review-alerts">
-      ${product.handoff_message ? `<section class="task-summary task-handoff-summary"><div><span class="success-kicker">提交完成</span><h2>已提交Ozon</h2><p>${escapeHtml(product.handoff_message)}</p></div></section>` : ""}
-      ${contractBlocker ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">生产合同已阻断</span><h2>这件商品不能继续运行或上传</h2><p>${escapeHtml(product.production_contract?.message || "请重新从工作台采集为新商品")}</p></div></section>` : ""}
+      ${product.handoff_message ? `<section class="task-summary task-handoff-summary"><div><span class="success-kicker">等待Ozon处理</span><h2>正在生成商品卡</h2><p>${escapeHtml(product.handoff_message)}</p></div></section>` : ""}
+      ${priorityUpload && !product.handoff_message ? `<section class="task-summary task-upload-priority"><div><span class="priority-kicker">优先上传</span><h2>${escapeHtml(state.queueSummary?.message || "上传任务已置顶")}</h2><p>当前生成任务完成后再处理本商品；不会中断正在上架的任务，也不会重复提交已完成内容。</p></div></section>` : ""}
+      ${formalInputBlocker ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">输入资料不符合当前流程</span><h2>这件商品不能继续运行或上传</h2><p>${escapeHtml(product.production_readiness?.message || "请重新从工作台采集为新商品")}</p></div></section>` : ""}
       ${product.pending_question?.question ? `<section class="task-summary"><div><h2>需要你确认一个关键问题</h2><p>${escapeHtml(product.pending_question.question)}</p></div><button class="primary-button" data-primary-action="answer" data-product-id="${product.product_id}">回答问题</button></section>` : ""}
-      ${failed ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">${escapeHtml(failure.title)}</span><h2>停在${escapeHtml(stepLabel(product.status?.failed_step || product.status?.current_step))} · ${product.progress}%</h2><p>${escapeHtml(failure.message)}</p><details class="error-technical"><summary>查看技术详情</summary><code>${escapeHtml(failure.technical)}</code></details></div><div class="error-actions"><button class="secondary-button" data-action="edit-error">立即修改</button><button class="primary-button" data-action="run-product">从失败步骤继续</button></div></section>` : ""}
-      ${selectedStoreBlocker ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">店铺连接已阻断</span><h2>${blockedSelectedStores.length} 家已选店铺暂时不能上传</h2><p>${escapeHtml(blockedSelectedStores.map((shop) => `${shop.display_name}：${storeConnectionIssue(shop)}`).join("；"))}</p></div><div class="error-actions"><button class="secondary-button" data-future-review-tab="store">查看店铺状态</button></div></section>` : ""}
+      ${failed ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">${escapeHtml(failure.title)}</span><h2>${skuReferenceBlocked ? "先绑定SKU参考图" : `停在${escapeHtml(stepLabel(product.status?.failed_step || product.status?.current_step))} · ${product.progress}%`}</h2><p>${escapeHtml(failure.message)}</p><details class="error-technical"><summary>查看诊断信息</summary><code>${escapeHtml(failure.technical)}</code></details></div><div class="error-actions"><button class="${skuReferenceBlocked ? "primary-button" : "secondary-button"}" data-action="edit-error">${skuReferenceBlocked ? "立即绑定SKU图" : "立即修改"}</button>${skuReferenceBlocked && missingSkuReferenceCount ? "" : `<button class="primary-button" data-action="run-product">继续生成</button>`}</div></section>` : ""}
+      ${renderSkuReferenceBindingPanel(product, {compact:false, onlyMissing:true})}
+      ${selectedStoreBlocker ? `<section class="task-summary task-failure-summary"><div><span class="error-kicker">店铺连接需要处理</span><h2>${blockedSelectedStores.length} 家已选店铺暂时不能上传</h2><p>${escapeHtml(blockedSelectedStores.map((shop) => `${shop.display_name}：${storeConnectionIssue(shop)}`).join("；"))}</p></div><div class="error-actions"><button class="secondary-button" data-future-review-tab="store">查看店铺状态</button></div></section>` : ""}
       ${running ? renderLiveProgress(product) : ""}
     </div>
-    <div class="future-review-grid">
-      ${renderFutureFlow(product)}
+    <div class="future-review-grid simplified-review-grid">
       ${renderFutureImageStage(product)}
       ${renderFutureInspector(product)}
     </div>
     <footer class="preview-submit-bar future-command-dock">
-      <div class="future-dock-status"><span class="future-dock-check ph ${selectedStoreBlocker || contractBlocker ? "ph-warning" : "ph-check"}" aria-hidden="true"></span><div><strong>${product.handoff_message ? "已提交Ozon" : waitingForAi ? "等待联网大模型恢复" : running ? "商品正在制作" : contractBlocker ? "当前商品已阻断" : failed ? "商品需要修复" : selectedStoreBlocker ? "先修复店铺连接" : readyToUpload ? "等待确认上传" : "全部步骤完成"}</strong><small>${product.handoff_message ? "任务号已保存 · 不再自动回查 · 禁止重复提交" : `${escapeHtml(stepLabel(product.status?.current_step))} · ${product.progress}% · 库存不会提交`}</small></div></div>
+      <div class="future-dock-status"><span class="future-dock-check ph ${selectedStoreBlocker || formalInputBlocker || failed || needsContinuation ? "ph-warning" : "ph-check"}" aria-hidden="true"></span><div><strong>${product.handoff_message ? "等待Ozon生成商品卡" : priorityUpload ? "优先上传已接受" : waitingForAi ? "等待联网大模型恢复" : running ? "商品正在制作" : formalInputBlocker ? "输入资料需重新采集" : failed ? "商品需要修复" : selectedStoreBlocker ? "先修复店铺连接" : readyToUpload ? "等待确认上传" : continuationStatusTitle(product)}</strong><small>${product.handoff_message ? "任务号已保存 · 可只读查询结果 · 禁止重复提交" : priorityUpload ? "等待安全切换 · 上传同时1件 · 库存不会提交" : `${escapeHtml(stepLabel(product.status?.current_step))} · ${product.progress}% · 库存不会提交`}</small></div></div>
       <span id="save-state" class="preview-save-state">${product.draft.saved_at ? `修改已自动保存 v${product.draft.version}` : "当前为AI初稿"}</span>
-      <button class="preview-primary" data-action="run-product" ${running || !canRunProduct || selectedStoreBlocker || (needsStoreSelection && !state.selectedStoreIds.size) || state.draftSaveFailed ? "disabled" : ""}><span class="ph ${readyToUpload ? "ph-storefront" : "ph-play"}" aria-hidden="true"></span>${escapeHtml(primaryText)}</button>
+      ${running
+        ? `<div class="future-running-indicator" role="status" aria-live="polite"><span class="ph ph-spinner-gap" aria-hidden="true"></span><span><strong>${escapeHtml(primaryText)}</strong><small>正在${escapeHtml(stepLabel(product.status?.current_step))}，页面会自动更新</small></span></div>`
+        : `<button class="preview-primary" data-action="${skuReferenceBlocked && missingSkuReferenceCount ? "edit-error" : "run-product"}" ${!canRunProduct || selectedStoreBlocker || (needsStoreSelection && !state.selectedStoreIds.size) || state.draftSaveFailed ? "disabled" : ""}><span class="ph ${skuReferenceBlocked && missingSkuReferenceCount ? "ph-image" : readyToUpload ? "ph-storefront" : "ph-play"}" aria-hidden="true"></span>${escapeHtml(primaryText)}</button>`}
     </footer>
   </article>`;
   state.lastImageSignature = imageSignature(product);
@@ -536,16 +963,17 @@ async function renderReview(options = {}) {
 
 function renderFutureFlow(product) {
   const completed = new Set(product.status?.completed_steps || []);
+  const failedSteps = new Set(pipelineFailureEvents(product).map((item) => item.step));
   const current = String(product.status?.current_step || "queue");
   const rawStatus = String(product.status?.status || "").toUpperCase();
-  const running = ["QUEUED", "PROCESSING", "UPLOADING"].includes(rawStatus);
-  const visualCurrent = ["OZON_READY", "WAITING_MANUAL_REVIEW"].includes(rawStatus) ? "manual_ozon_upload" : current;
+  const running = isPipelineRunningLike(product);
+  const visualCurrent = rawStatus === "WAITING_MANUAL_REVIEW" ? "manual_ozon_upload" : current;
   const groups = [
     ["01", "采集与确认", "1688资料与SKU", ["collect_source", "validate_source"]],
-    ["02", "商品资料", "分析、俄文、属性", ["product_analysis", "category_match", "variant_rules", "marketplace_content", "field_completion"]],
+    ["02", "商品资料", "分析、俄文、属性", ["product_analysis", "category_match", "variant_rules", "ecommerce_design", "russian_copy", "field_completion"]],
     ["03", "定价计算", `${product.skus?.length || 0} 个独立售价`, ["measurements", "product_positioning"]],
-    ["04", "图片制作", `${product.images?.length || 0} 个图片槽位`, ["style_selector", "image_plan", "image_generation"]],
-    ["05", "质检与快照", "真实性与上传检查", ["image_qc", "final_upload_check"]],
+    ["04", "图片制作", `${product.images?.length || 0} 个图片槽位`, ["image_plan", "image_generation"]],
+    ["05", "图片质检", "图片技术检查", ["image_qc"]],
     ["06", "Ozon上架", `${product.publication_summary?.selected || 0} 家目标店铺`, ["ozon_upload", "manual_ozon_upload"]],
   ];
   const thumbnailUrl = product.images?.find((item) => item.url)?.url || "";
@@ -556,10 +984,11 @@ function renderFutureFlow(product) {
     <nav class="future-flow-steps" aria-label="商品制作步骤">${groups.map(([index, title, meta, stepNames]) => {
       const done = stepNames.some((step) => completed.has(step)) || Number(product.progress) === 100;
       const active = stepNames.includes(visualCurrent);
+      const failed = stepNames.some((step) => failedSteps.has(step));
       const spinning = running && active;
-      return `<button type="button" class="${done ? "done" : ""} ${active ? "active" : ""}" data-future-flow-step="${escapeHtml(stepNames[0])}"><span class="future-flow-index">${index}</span><span><strong>${title}</strong><small>${escapeHtml(meta)}</small></span><i class="ph ${done ? "ph-check" : spinning ? "ph-spinner-gap" : active ? "ph-hand" : "ph-circle"}" aria-hidden="true"></i></button>`;
+      return `<button type="button" class="${done ? "done" : ""} ${active ? "active" : ""} ${failed ? "failed" : ""}" data-future-flow-step="${escapeHtml(failed ? [...failedSteps].find((step) => stepNames.includes(step)) : stepNames[0])}"><span class="future-flow-index">${index}</span><span><strong>${title}</strong><small>${failed ? "有失败记录，点这里查看" : escapeHtml(meta)}</small></span><i class="ph ${failed ? "ph-warning-circle" : done ? "ph-check" : spinning ? "ph-spinner-gap" : active ? "ph-hand" : "ph-circle"}" aria-hidden="true"></i></button>`;
     }).join("")}</nav>
-    <button type="button" class="future-timeline-button" data-future-review-tab="risk"><span class="ph ph-clock-counter-clockwise" aria-hidden="true"></span>查看风险与时间线<span class="ph ph-arrow-right" aria-hidden="true"></span></button>
+    <button type="button" class="future-timeline-button" data-future-review-tab="risk"><span class="ph ph-clock-counter-clockwise" aria-hidden="true"></span>查看问题与时间线<span class="ph ph-arrow-right" aria-hidden="true"></span></button>
   </aside>`;
 }
 
@@ -580,28 +1009,35 @@ function renderFutureImageStage(product) {
       <input type="file" accept="image/*" data-replace-file hidden ${readOnly ? "disabled" : ""}>
       <div class="prompt-editor"><textarea data-prompt-input placeholder="${readOnly ? "已提交 Ozon，本地只读" : "输入本张图片的修改意见"}" ${readOnly ? "disabled" : ""}>${escapeHtml(image?.prompt || "")}</textarea><button type="button" data-image-action="queue-prompt" ${readOnly ? "disabled" : ""}>应用意见并重生成</button></div>
     </article>
-    <div class="future-image-filmstrip">${images.map((item, index) => `<button type="button" class="${item.slot === image?.slot ? "active" : ""}" data-image-select="${escapeHtml(item.slot)}" aria-label="查看${escapeHtml(item.slot)}">${item.url ? `<img src="${escapeHtml(item.url)}" alt="">` : `<span class="ph ph-image" aria-hidden="true"></span>`}<small>${index < 2 ? "主" : String(index - 1).padStart(2, "0")}</small></button>`).join("") || `<span class="future-filmstrip-empty">图片生成后显示在这里</span>`}</div>
+    <div class="future-image-filmstrip">${images.map((item, index) => `<button type="button" class="${item.slot === image?.slot ? "active" : ""}" data-image-select="${escapeHtml(item.slot)}" aria-label="查看${escapeHtml(item.slot)}">${item.url ? `<img src="${escapeHtml(item.url)}" alt="">` : `<span class="ph ph-image" aria-hidden="true"></span>`}<small>${escapeHtml(imageStripLabel(item, index))}</small></button>`).join("") || `<span class="future-filmstrip-empty">图片生成后显示在这里</span>`}</div>
     <div class="future-image-commands">
-      <button type="button" data-image-action="prompt" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-sparkle"></span>提示词</button>
-      <button type="button" data-image-action="regenerate" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-arrow-clockwise"></span>单图重做</button>
-      <button type="button" data-image-action="replace" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-upload-simple"></span>替换</button>
-      <button type="button" data-image-action="move-up" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-arrow-line-up"></span>前移</button>
-      <button type="button" data-image-action="keep" ${image?.url && !readOnly ? "" : "disabled"}><span class="ph ph-check-circle"></span>确认使用</button>
-      <button type="button" data-image-action="copy-url" ${image?.url ? "" : "disabled"}><span class="ph ph-copy"></span>复制URL</button>
-      <button type="button" class="danger-mini" data-image-action="delete" ${image?.url && !readOnly ? "" : "disabled"}><span class="ph ph-x-circle"></span>拒绝此图</button>
+      <button type="button" data-image-action="regenerate" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-arrow-clockwise"></span>重新生成图片</button>
+      <button type="button" data-image-action="replace" ${image && !readOnly ? "" : "disabled"}><span class="ph ph-upload-simple"></span>替换图片</button>
+      <button type="button" data-open-image="${escapeHtml(image?.url || "")}" ${image?.url ? "" : "disabled"}><span class="ph ph-eye"></span>查看大图</button>
     </div>
   </section>`;
 }
 
+function imageStripLabel(item, index) {
+  const slot = String(item?.slot || "").toLowerCase();
+  const type = String(item?.type || "").toLowerCase();
+  if (type.includes("main") || type.includes("主") || slot.startsWith("main") || slot.includes("variant-main")) return "主";
+  const detailNumber = slot.match(/detail[-_]?0*([0-9]+)/);
+  if (detailNumber) return String(Number(detailNumber[1])).padStart(2, "0");
+  return String(index + 1).padStart(2, "0");
+}
+
 function renderImageAssetBuckets(product) {
   const assets = product.image_assets || {};
-  const legacySubmitted = product.production_contract?.state === "legacy_submitted_read_only";
+  const legacySubmitted = product.production_readiness?.state === "legacy_submitted_read_only";
   const groups = [
     ["original", "原始素材", legacySubmitted ? "历史商品原始资料，仅供查看" : "只来自本商品本次工作台采集，AI不会覆盖"],
-    ["candidate", "生成候选", legacySubmitted ? "旧流程生成结果，仅供查看，不会再次提交" : "尚未确认，手动模式不能上传"],
+    ["candidate", "生成候选", legacySubmitted ? "旧流程生成结果，仅供查看，不会再次提交" : "技术质检通过后自动用于上传；不需要逐张确认"],
     ["rejected", "已拒绝", "不会回流为输入或当前有效图片"],
-    ["accepted", "已确认", legacySubmitted ? "旧流程已经提交，不需要补做新版确认" : "仅这里的完整图片包允许手动上传"],
   ];
+  if (legacySubmitted || (assets.accepted || []).length) {
+    groups.push(["accepted", "历史确认副本", legacySubmitted ? "旧流程已经提交，不需要补做新版确认" : "旧流程人工确认记录；新流程不再要求逐张确认"]);
+  }
   return `<div class="asset-bucket-grid">${groups.map(([key, title, note]) => {
     const items = assets[key] || [];
     return `<section class="asset-bucket asset-bucket-${key}"><header><div><strong>${title}</strong><small>${note}</small></div><span>${items.length}</span></header><div class="asset-bucket-images">${items.map((item) => `<button type="button" data-open-image="${escapeHtml(item.url)}" title="${escapeHtml(item.path)}"><img src="${escapeHtml(item.url)}" alt="${escapeHtml(item.name)}"><small>${escapeHtml(item.name)}</small></button>`).join("") || `<p>暂无图片</p>`}</div></section>`;
@@ -614,11 +1050,12 @@ function renderFutureInspector(product) {
   const pricing = product.pricing?.sku_pricing || [];
   const score = product.prelisting_assessment || {};
   const riskItems = product.risk?.items || [];
+  const failureBoard = renderFailureReasonList(product, {compact:true, title:"步骤失败原因", subtitle:"按步骤列出失败、异常和上传返回。"});
   const readOnly = isTerminalProduct(product);
   const disabled = readOnly ? "disabled" : "";
   return `<aside class="future-inspector">
     <nav class="future-inspector-tabs" role="tablist" aria-label="商品资料面板">
-      ${[["content","资料"],["images","图片"],["sku","SKU"],["price","价格"],["category","类目"],["store","店铺"],["risk","风险"]].map(([key,label], index) => `<button type="button" role="tab" aria-selected="${index === 0 ? "true" : "false"}" class="${index === 0 ? "active" : ""}" data-future-review-tab="${key}">${label}</button>`).join("")}
+      ${[["content","资料"],["images","图片"],["sku","SKU"],["price","价格"],["category","类目"],["store","店铺"],["risk","诊断"]].map(([key,label], index) => `<button type="button" role="tab" aria-selected="${index === 0 ? "true" : "false"}" class="${index === 0 ? "active" : ""}" data-future-review-tab="${key}">${label}</button>`).join("")}
     </nav>
     <div class="future-inspector-scroll">
       <section class="future-inspector-pane active" data-future-review-pane="content">
@@ -637,11 +1074,11 @@ function renderFutureInspector(product) {
         <div class="future-safety-note"><span class="ph ph-shield-check"></span><div><strong>保持商品真实性</strong><p>单图重做只生成新版本，不改变结构、颜色、SKU差异或配件数量。</p></div></div>
         ${renderImageAssetBuckets(product)}
       </section>
-      <section class="future-inspector-pane hidden" data-future-review-pane="sku"><div class="future-pane-heading"><div><span>Variants</span><h2>SKU与售价</h2></div><span class="future-count-badge">${product.skus?.length || 0} 个</span></div>${renderPreviewSkus(product, readOnly)}${renderPerStorePrices(product, readOnly)}</section>
+      <section class="future-inspector-pane hidden" data-future-review-pane="sku"><div class="future-pane-heading"><div><span>Variants</span><h2>SKU与售价</h2></div><span class="future-count-badge">${product.skus?.length || 0} 个</span></div>${renderSkuReferenceBindingPanel(product, {compact:true})}${renderPreviewSkus(product, readOnly)}${renderPerStorePrices(product, readOnly)}</section>
       <section class="future-inspector-pane hidden" data-future-review-pane="price"><div class="future-pane-heading"><div><span>Pricing</span><h2>定价与评分</h2></div><span class="future-count-badge">${pricing.length} 个SKU</span></div><div class="future-score-card">${renderPrelistingScore(score)}</div><div class="future-pricing-list">${pricing.map(pricingRows).join("") || `<p class="form-help">尚未生成定价结果</p>`}</div></section>
-      <section class="future-inspector-pane hidden" data-future-review-pane="category"><div class="future-pane-heading"><div><span>Category</span><h2>类目与属性</h2></div><button class="secondary-button" data-action="change-category" ${!readOnly && ["COLLECTED", "FAILED_HARD_BLOCKER"].includes(product.status?.status) && Number(product.status?.api_write_count || 0) === 0 ? "" : "disabled"}>修改类目</button></div>${renderPreviewAttributes(product, readOnly)}</section>
+      <section class="future-inspector-pane hidden" data-future-review-pane="category"><div class="future-pane-heading"><div><span>Category</span><h2>类目与属性</h2></div><button class="secondary-button" data-action="change-category" ${!readOnly && (product.status?.status === "COLLECTED" || isNeedsAttentionStatus(product.status?.status)) && Number(product.status?.api_write_count || 0) === 0 ? "" : "disabled"}>修改类目</button></div>${renderPreviewAttributes(product, readOnly)}</section>
       <section class="future-inspector-pane hidden" data-future-review-pane="store"><div class="future-pane-heading"><div><span>Publication</span><h2>店铺发布状态</h2></div><span class="future-count-badge">${product.publication_summary?.selected || 0} 家</span></div>${renderPublicationMatrix(product)}</section>
-      <section class="future-inspector-pane hidden" data-future-review-pane="risk"><div class="future-pane-heading"><div><span>Truth guard</span><h2>风险与时间线</h2></div><span class="future-count-badge">${riskItems.length} 项</span></div>${renderAnalysisSummary(product.analysis || {})}<div class="future-risk-list">${riskItems.map((item) => `<article class="future-risk-row ${escapeHtml(item.level || "low")}"><span class="ph ${item.level === "high" ? "ph-warning-circle" : "ph-shield-check"}"></span><div><strong>${escapeHtml(item.title || (item.level === "high" ? "高风险" : "检查项"))}</strong><p>${escapeHtml(item.message)}</p>${item.technical ? `<details class="error-technical"><summary>查看技术详情</summary><code>${escapeHtml(item.technical)}</code></details>` : ""}</div>${item.code === "pipeline_failed" ? `<button class="secondary-button" data-action="edit-error">立即修改</button>` : ""}</article>`).join("") || `<div class="future-safety-note"><span class="ph ph-shield-check"></span><div><strong>没有阻断风险</strong><p>真实性规则、包装关系和库存禁用规则检查通过。</p></div></div>`}</div></section>
+      <section class="future-inspector-pane hidden" data-future-review-pane="risk"><div class="future-pane-heading"><div><span>Diagnostics</span><h2>诊断信息</h2></div><span class="future-count-badge">${riskItems.length} 项</span></div>${failureBoard}${renderAnalysisSummary(product.analysis || {})}<div class="future-risk-list">${riskItems.map((item) => `<article class="future-risk-row ${escapeHtml(item.level || "low")}"><span class="ph ${item.level === "high" ? "ph-warning-circle" : "ph-shield-check"}"></span><div><strong>${escapeHtml(item.title || (item.level === "high" ? "严重问题" : "检查项"))}</strong><p>${escapeHtml(item.message)}</p>${item.technical ? `<details class="error-technical"><summary>查看诊断信息</summary><code>${escapeHtml(item.technical)}</code></details>` : ""}</div>${item.code === "pipeline_failed" ? `<button class="secondary-button" data-action="edit-error">立即修改</button>` : ""}</article>`).join("") || `<div class="future-safety-note"><span class="ph ph-shield-check"></span><div><strong>没有需要处理的问题</strong><p>真实性、包装关系和库存禁用规则检查通过。</p></div></div>`}</div></section>
     </div>
   </aside>`;
 }
@@ -653,7 +1090,7 @@ function renderPreviewGallery(product) {
       : `<div class="preview-image-empty"><strong>${escapeHtml(image.slot)}</strong><span>${image.state === "WAITING" ? "等待生成" : "正在生成"}</span></div>`;
     return `<article class="preview-image-card ${index === 0 ? "preview-main-image" : ""}" draggable="true" data-image-slot="${escapeHtml(image.slot)}">
       ${src}<span class="preview-image-state">${escapeHtml(image.state)}</span>
-      <div class="preview-image-actions"><button data-image-action="keep">确认使用</button><button data-image-action="regenerate">重做</button><button data-image-action="replace">替换</button><button data-image-action="move-up">前移</button><button class="danger-mini" data-image-action="delete">拒绝此图</button></div>
+      <div class="preview-image-actions"><button data-image-action="regenerate">重做</button><button data-image-action="replace">替换</button><button data-image-action="move-up">前移</button><button class="danger-mini" data-image-action="delete">拒绝此图</button></div>
       <input type="file" accept="image/*" data-replace-file hidden>
     </article>`;
   }).join("") || `<div class="preview-gallery-empty">图片生成后会在这里完整预览</div>`;
@@ -733,8 +1170,74 @@ function previewAttributeRow(item, readOnly = false) {
   return `<label class="preview-attribute-row"><span><strong>${escapeHtml(item.attribute_name_zh || item.attribute_name || item.attribute_id)}${item.required ? " *" : ""}</strong><small>${escapeHtml(item.attribute_name || "Ozon字段")}</small></span>${control}<em>${value ? escapeHtml(attributeSourceLabel(item)) : item.required ? "必须填写" : "未提供"}</em></label>`;
 }
 
+function skuReferenceBindingCandidates(product) {
+  return product?.sku_image_binding_candidates || state.currentProduct?.sku_image_binding_candidates || [];
+}
+
+function skuReferenceCandidateCards(product, skuId, selectedPath = "", {disabled = false, compact = false} = {}) {
+  const candidates = skuReferenceBindingCandidates(product);
+  if (!candidates.length) return `<div class="sku-reference-candidate-empty">当前商品没有可绑定图片</div>`;
+  return `<div class="sku-reference-candidate-grid ${compact ? "compact" : ""}" role="list" aria-label="可绑定SKU参考图">${candidates.map((item, index) => {
+    const label = item.label || item.display_source || item.path || `采集图 ${index + 1}`;
+    const source = item.display_source || (item.image_type === "main" ? "1688主图" : item.image_type === "detail" ? "1688详情图" : "SKU图");
+    const selected = item.path === selectedPath;
+    const image = item.url
+      ? `<img src="${escapeHtml(item.url)}" alt="${escapeHtml(label)}" loading="lazy">`
+      : `<span class="sku-reference-candidate-placeholder">无图</span>`;
+    return `<button type="button" class="sku-reference-candidate ${selected ? "selected" : ""}" data-sku-image-binding-choice="${escapeHtml(skuId)}" data-selected-image-path="${escapeHtml(item.path || "")}" aria-pressed="${selected ? "true" : "false"}" title="${escapeHtml(label)}" ${disabled || !item.path ? "disabled" : ""}>${image}<span>${escapeHtml(label)}</span><small>${escapeHtml(source)}</small></button>`;
+  }).join("")}</div>`;
+}
+
+function skusNeedingReferenceBinding(product) {
+  return (product?.skus || []).filter((sku) => sku.binding_required || sku.image_binding);
+}
+
+function renderSkuReferenceBindingPanel(product, {compact = false, onlyMissing = false} = {}) {
+  const rows = skusNeedingReferenceBinding(product).filter((sku) => !onlyMissing || sku.binding_required);
+  if (!rows.length) return "";
+  const missingCount = rows.filter((sku) => sku.binding_required).length;
+  const candidates = skuReferenceBindingCandidates(product);
+  const candidateHint = candidates.length
+    ? `可从 ${candidates.length} 张本商品已采集图片中选择`
+    : "当前商品没有可绑定的采集图片";
+  return `<section class="sku-reference-binding-board ${compact ? "compact" : ""}" data-sku-reference-binding-board>
+    <header>
+      <div><span>SKU参考图</span><h3>${missingCount ? `${missingCount} 个SKU缺少参考图` : "SKU参考图已绑定"}</h3><p>从本商品本次采集的主图、详情图或SKU图里选一张。绑定后你再点“继续生成”，系统从当前断点恢复。</p></div>
+      <div class="sku-reference-binding-actions"><strong>${escapeHtml(candidateHint)}</strong><button type="button" class="secondary-button" data-future-review-tab="sku">去绑定SKU图</button></div>
+    </header>
+    <div class="sku-reference-binding-list">${rows.map((sku) => {
+      const binding = sku.image_binding || null;
+      const selectedPath = binding?.selected_image_path || "";
+      return `<article class="sku-reference-binding-row">
+        <div class="sku-reference-product">
+          ${sku.image_url ? `<img src="${escapeHtml(sku.image_url)}" alt="">` : `<span>缺图</span>`}
+          <div><strong>${escapeHtml(display(sku.option_text || sku.name || sku.sku_id))}</strong><small>SKU ${escapeHtml(display(sku.sku_id))}${binding ? " · 已绑定参考图" : " · 缺SKU图"}</small></div>
+        </div>
+        ${skuReferenceCandidateCards(product, sku.sku_id, selectedPath, {compact})}
+      </article>`;
+    }).join("")}</div>
+  </section>`;
+}
+
+function previewSkuReferenceCell(product, sku, readOnly = false) {
+  const binding = sku.image_binding || null;
+  const candidates = skuReferenceBindingCandidates(product);
+  const selectedPath = binding?.selected_image_path || "";
+  const imageUrl = sku.image_url || "";
+  const status = sku.binding_required
+    ? "缺SKU图"
+    : binding
+      ? "已绑定参考图"
+      : "SKU原图";
+  return `<div class="preview-sku-reference-cell">
+    ${imageUrl ? `<img src="${escapeHtml(imageUrl)}" alt="">` : `<span>缺图</span>`}
+    <small class="${sku.binding_required ? "missing" : binding ? "bound" : "ok"}">${status}</small>
+    ${(sku.binding_required || binding) ? skuReferenceCandidateCards(product, sku.sku_id, selectedPath, {disabled: readOnly || !candidates.length, compact: true}) : ""}
+  </div>`;
+}
+
 function renderPreviewSkus(product, readOnly = false) {
-  return `<div class="preview-sku-table"><div class="preview-sku-head"><span>SKU</span><span>规格</span><span>采购价</span><span>人民币售价${readOnly ? "" : "（可修改）"}</span><span>约合卢布</span></div>${(product.skus || []).map((sku) => `<div class="preview-sku-row"><strong>${escapeHtml(display(sku.sku_id))}</strong><span>${escapeHtml(display(sku.option_text || sku.name))}</span><span>¥${number(sku.purchase_price_cny, 2)}</span><label>¥<input type="number" min="0.01" step="0.01" data-sku-price="${escapeHtml(sku.sku_id)}" value="${typeof sku.selling_price_cny === "number" ? sku.selling_price_cny : ""}" ${readOnly ? "disabled" : ""}></label><span>₽${number(sku.selling_price_rub, 0)}</span></div>`).join("")}</div>`;
+  return `<div class="preview-sku-table"><div class="preview-sku-head"><span>参考图</span><span>SKU</span><span>规格</span><span>采购价</span><span>人民币售价${readOnly ? "" : "（可修改）"}</span><span>约合卢布</span></div>${(product.skus || []).map((sku) => `<div class="preview-sku-row">${previewSkuReferenceCell(product, sku, readOnly)}<strong>${escapeHtml(display(sku.sku_id))}</strong><span>${escapeHtml(display(sku.option_text || sku.name))}</span><span>¥${number(sku.purchase_price_cny, 2)}</span><label>¥<input type="number" min="0.01" step="0.01" data-sku-price="${escapeHtml(sku.sku_id)}" value="${typeof sku.selling_price_cny === "number" ? sku.selling_price_cny : ""}" ${readOnly ? "disabled" : ""}></label><span>₽${number(sku.selling_price_rub, 0)}</span></div>`).join("")}</div>`;
 }
 
 function renderPerStorePrices(product, readOnly = false) {
@@ -771,7 +1274,7 @@ function collectStoreOverrides() {
 function renderReviewStoreSelector(product) {
   const stores = product.stores || [];
   const rawStatus = String(product.status?.status || "").toUpperCase();
-  if (["CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON"].includes(rawStatus)) {
+  if (isTerminalStatus(rawStatus)) {
     return `<div class="store-selector store-selector-readonly"><span>已提交至 ${product.publication_summary?.selected || state.selectedStoreIds.size} 家店铺</span><small>只保留记录，不会再次提交</small></div>`;
   }
   const options = stores.map((shop) => {
@@ -800,7 +1303,7 @@ function storeConnectionIssue(shop) {
 
 function renderImageWorkspace(product) {
   const passed = product.images.filter((item) => ["PASS", "COMPLETED"].includes(item.state)).length;
-  const contract = product.image_contract || {};
+  const imageRules = product.image_contract || {};
   const groups = product.image_groups?.length ? product.image_groups : [{
     sku_id: product.skus?.[0]?.sku_id || product.product_id,
     option_text: product.skus?.[0]?.option_text || product.skus?.[0]?.name || "当前商品",
@@ -809,8 +1312,8 @@ function renderImageWorkspace(product) {
     main_image_missing: !product.images.some((item) => item.type === "main"),
   }];
   const sharedCount = Math.max(0, ...(groups.map((group) => group.detail_images?.length || 0)));
-  const expectedMain = Number(contract.expected_main_count ?? groups.length);
-  const expectedDetails = Number(contract.expected_shared_detail_count ?? 8);
+  const expectedMain = Number(imageRules.expected_main_count ?? groups.length);
+  const expectedDetails = Number(imageRules.expected_shared_detail_count ?? 8);
   const expectedTotal = Number(contract.expected_total_count ?? (expectedMain + expectedDetails));
   return `<div class="image-header"><div><h2>${escapeHtml(product.source.title_cn)}</h2><span>${groups.length} 个SKU图片组 · 契约 ${expectedMain} 张SKU主图 + ${expectedDetails} 张共享详情图 = ${expectedTotal} 张 · 当前 ${product.images.length} 张 · ${passed} 张可用 · 3:4</span></div><span>${product.image_qc?.score ? `质检 ${product.image_qc.score} 分` : "等待质检"}</span></div>
     <div class="image-group-guide">每个已选SKU必须且只能有1张自己的主图；固定 ${expectedDetails} 张详情图为商品组共享内容，界面按SKU重复展示但只生成一套文件。</div>
@@ -832,7 +1335,7 @@ function imageTile(image) {
     <div class="image-frame ${image.state === "GENERATING" || image.state === "RETRYING" ? "generating" : image.state === "WAITING" ? "waiting" : ""}">${src}<span class="image-badge ${stateClass}">${escapeHtml(image.state)}</span></div>
     <div class="image-info"><h3>${escapeHtml(image.slot)} · ${escapeHtml(image.type)}</h3><p>${escapeHtml(issue)}</p>
       <div class="image-actions"><button data-image-action="prompt">单图意见</button><button data-image-action="regenerate">重生成</button>${image.download_url ? `<a href="${image.download_url}">下载</a>` : ""}</div>
-      <div class="image-actions-more">${image.url ? `<button data-image-action="keep">确认使用</button><button data-image-action="copy-url">复制URL</button><button data-image-action="set-main">设为主图</button><button data-image-action="set-detail">设为详情图</button><button data-image-action="move-up">前移</button><button data-image-action="replace">替换</button><button class="danger-mini" data-image-action="delete">拒绝此图</button>` : ""}</div>
+      <div class="image-actions-more">${image.url ? `<button data-image-action="copy-url">复制URL</button><button data-image-action="set-main">设为主图</button><button data-image-action="set-detail">设为详情图</button><button data-image-action="move-up">前移</button><button data-image-action="replace">替换</button><button class="danger-mini" data-image-action="delete">拒绝此图</button>` : ""}</div>
       <input type="file" accept="image/*" data-replace-file hidden>
       <div class="prompt-editor"><textarea data-prompt-input placeholder="例如：背景更明亮、产品再大一点">${escapeHtml(image.prompt)}</textarea><div class="image-actions"><button data-image-action="queue-prompt">应用意见并重生成</button></div></div>
     </div>
@@ -855,7 +1358,7 @@ function renderDataWorkspace(product) {
   const ozon = product.ozon || {};
   const fullClass = state.reviewDepth === "full" ? "" : "review-hidden";
   const score = product.prelisting_assessment || {};
-  const canChangeCategory = ["COLLECTED", "FAILED_HARD_BLOCKER"].includes(product.status?.status) && Number(product.status?.api_write_count || 0) === 0;
+  const canChangeCategory = (product.status?.status === "COLLECTED" || isNeedsAttentionStatus(product.status?.status)) && Number(product.status?.api_write_count || 0) === 0;
   return `<div class="data-sticky"><strong>Ozon商品资料</strong><span class="save-state" id="save-state">${product.draft.saved_at ? `已保存 v${product.draft.version}` : "AI原始版本"}</span></div>
     ${renderAnalysisSummary(analysis)}
     <details class="data-section" open><summary>俄文资料 ${locked.has("title_ru") || locked.has("description_ru") ? `<span class="locked">人工锁定</span>` : ""}</summary><div class="data-content">
@@ -873,13 +1376,13 @@ function renderDataWorkspace(product) {
       <div class="category-change-row"><button class="secondary-button" data-action="change-category" ${canChangeCategory ? "" : "disabled"}>修改最终类目</button><small>${canChangeCategory ? "修改后旧属性、图片策略和上传数据会失效，需重新运行" : "已进入批次、远端处理中或已有Ozon写入，不能直接改类目"}</small></div>
       <div class="table-wrap"><table class="attribute-table"><thead><tr><th>字段</th><th>值</th><th>来源</th><th>状态</th></tr></thead><tbody>${attrs.map(attributeRow).join("")}</tbody></table></div>
     </div></details>
-    <details class="data-section full-review-only ${fullClass}" ${skuHasDifferences(product.skus) ? "open" : ""}><summary>SKU与变体 <span>${product.skus.length} 个${skuHasDifferences(product.skus) ? " · 存在差异" : ""}</span></summary><div class="data-content"><div class="table-wrap"><table class="sku-table"><thead><tr><th>SKU</th><th>规格</th><th>采购价</th><th>售价/利润</th><th>变体依据</th></tr></thead><tbody>${product.skus.map(skuRow).join("")}</tbody></table></div></div></details>
+    <details class="data-section full-review-only ${fullClass}" ${skuHasDifferences(product.skus) ? "open" : ""}><summary>SKU资料 <span>${product.skus.length} 行 · 单位已统一</span></summary><div class="data-content"><p class="form-help">AI已自动填好；你可以不改直接运行。这里只改当前SKU，不会覆盖其他SKU。</p><div class="table-wrap sku-fact-table-wrap"><table class="sku-table sku-fact-table"><thead><tr><th>图</th><th>1688 SKU</th><th>颜色</th><th>容量（ml）</th><th>SKU规格</th><th>商品重量（g）</th><th>商品长宽高（mm）</th><th>包装重量（g）</th><th>包装长宽高（mm）</th><th>装量（件）</th><th>SKU动态属性</th><th>售价</th><th>变体依据</th></tr></thead><tbody>${product.skus.map(skuRow).join("")}</tbody></table></div></div></details>
     <details class="data-section" open><summary>初始定价 <span>${pricing.length} 个SKU</span></summary><div class="data-content">${pricing.map(pricingRows).join("") || `<div class="summary-row"><span>定价</span><strong>尚未生成</strong></div>`}</div></details>
     <details class="data-section full-review-only ${fullClass}"><summary>Rich Content</summary><div class="data-content"><pre>${escapeHtml(JSON.stringify(product.rich_content || {}, null, 2))}</pre></div></details>
-    <details class="data-section" open><summary>上架前评分与价格建议 <span>${score.overall_score || 0}分</span></summary><div class="data-content">${renderPrelistingScore(score)}</div></details>
+    <details class="data-section" open><summary>评分与价格建议 <span>${score.overall_score || 0}分</span></summary><div class="data-content">${renderPrelistingScore(score)}</div></details>
     <details class="data-section full-review-only ${fullClass}" open><summary>店铺发布状态 <span>${product.publication_summary?.selected || 0} 家</span></summary><div class="data-content">${renderPublicationMatrix(product)}</div></details>
-    <details class="data-section"><summary>AI建议 <span>${product.ai_suggestions?.filter((item) => item.status === "pending").length || 0}</span></summary><div class="data-content">${renderSuggestions(product.ai_suggestions || [])}</div></details>
-    <details class="data-section" open><summary>风险与时间线 <span>${product.risk.items.length}</span></summary><div class="data-content">${product.risk.items.map((item) => `<div class="summary-row"><span>${item.level === "high" ? "高风险" : "中风险"}</span><strong>${escapeHtml(item.message)}</strong></div>`).join("") || `<div class="summary-row"><span>风险</span><strong>未发现阻断风险</strong></div>`}${product.timeline.slice(0, 8).map((item) => `<div class="summary-row"><span>${dateText(item.at)}</span><strong>${escapeHtml(item.message)}</strong></div>`).join("")}</div></details>`;
+    <details class="data-section"><summary>AI建议 <span>自动采纳</span></summary><div class="data-content">${renderSuggestions(product.ai_suggestions || [])}</div></details>
+    <details class="data-section" open><summary>问题与时间线 <span>${product.risk.items.length}</span></summary><div class="data-content">${product.risk.items.map((item) => `<div class="summary-row"><span>${item.level === "high" ? "严重问题" : "普通问题"}</span><strong>${escapeHtml(item.message)}</strong></div>`).join("") || `<div class="summary-row"><span>问题</span><strong>未发现需要处理的问题</strong></div>`}${product.timeline.slice(0, 8).map((item) => `<div class="summary-row"><span>${dateText(item.at)}</span><strong>${escapeHtml(item.message)}</strong></div>`).join("")}</div></details>`;
 }
 
 function renderAnalysisSummary(analysis) {
@@ -916,11 +1419,13 @@ function renderPrelistingScore(score) {
 function renderPublicationMatrix(product) {
   const failedStoreIds = (product.stores || []).filter((shop) => product.publications?.stores?.[shop.id]?.status === "FAILED").map((shop) => shop.id);
   const retryAll = failedStoreIds.length > 1 ? `<button class="secondary-button retry-failed-stores-button" data-retry-failed-stores="${escapeHtml(failedStoreIds.join(","))}">并行重试全部失败店铺（${failedStoreIds.length}家）</button>` : "";
-  return `${retryAll}<div class="publication-matrix">${(product.stores || []).map((shop) => { const publication = product.publications?.stores?.[shop.id] || {}; const sku = publication.sku_publications?.[0] || {}; const failed = publication.status === "FAILED"; const failureReason = publication.last_error && !["unknown", "UNKNOWN"].includes(publication.last_error) ? publication.last_error : "失败原因未记录，请先查看本地日志后再重试"; return `<article class="publication-row"><div class="publication-row-head"><strong>${escapeHtml(shop.display_name)}</strong><span class="status-pill ${failed ? "failed" : publication.status === "NOT_SELECTED" ? "" : "processing"}">${escapeHtml(display(publication.status, "未选择"))}</span></div><p>${escapeHtml(sku.action || "UNKNOWN")} · task ${escapeHtml(display(sku.task_id))} · product ${escapeHtml(display(sku.ozon_product_id))}</p>${failed ? `<p class="publication-error"><strong>失败原因：</strong>${escapeHtml(failureReason)}</p>` : ""}${publication.has_store_overrides ? `<p class="locked">该店铺存在专属修改</p>` : ""}${failed ? `<button class="secondary-button retry-store-button" data-retry-store="${escapeHtml(shop.id)}">只重试这家店</button>` : ""}</article>`; }).join("") || `<p class="form-help">尚未配置店铺</p>`}</div>`;
+  const statusLabels = {HANDED_OFF_TO_OZON:"等待Ozon处理", SUCCESS:"已上架", IMPORTED:"已上架", ACTIVE:"已上架", CREATED:"已上架", PENDING_REMOTE:"等待Ozon处理", OZON_MODERATION:"Ozon审核中", UPLOADING:"上传中", QUEUED:"等待上传", FAILED:"上传失败", NOT_SELECTED:"未选择"};
+  const terminalStates = new Set(["SUCCESS", "IMPORTED", "ACTIVE", "CREATED"]);
+  return `${retryAll}<div class="publication-matrix">${(product.stores || []).map((shop) => { const publication = product.publications?.stores?.[shop.id] || {}; const sku = publication.sku_publications?.[0] || {}; const failed = publication.status === "FAILED"; const statusClass = failed ? "failed" : terminalStates.has(publication.status) ? "completed" : publication.status === "NOT_SELECTED" ? "" : "processing"; const failureReason = publication.last_error && !["unknown", "UNKNOWN"].includes(publication.last_error) ? publication.last_error : "失败原因未记录，请先查看本地日志后再重试"; return `<article class="publication-row"><div class="publication-row-head"><strong>${escapeHtml(shop.display_name)}</strong><span class="status-pill ${statusClass}">${escapeHtml(statusLabels[publication.status] || display(publication.status, "未选择"))}</span></div><p>${escapeHtml(sku.action || publication.action || "UNKNOWN")} · task ${escapeHtml(display(sku.task_id))} · product ${escapeHtml(display(sku.ozon_product_id))}</p>${failed ? `<p class="publication-error"><strong>失败原因：</strong>${escapeHtml(failureReason)}</p>` : ""}${publication.has_store_overrides ? `<p class="locked">该店铺存在专属修改</p>` : ""}${failed ? `<button class="secondary-button retry-store-button" data-retry-store="${escapeHtml(shop.id)}">只重试这家店</button>` : ""}</article>`; }).join("") || `<p class="form-help">尚未配置店铺</p>`}</div>`;
 }
 
 function renderSuggestions(items, readOnly = false) {
-  return items.filter((item) => item.status === "pending").map((item) => `<article class="suggestion-card"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p>${readOnly ? `<small>已提交 Ozon，仅保留历史建议</small>` : `<div class="suggestion-actions"><button class="primary-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="accept">采纳</button><button class="secondary-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="ignore">忽略</button><button class="ghost-button" data-suggestion="${escapeHtml(item.id)}" data-suggestion-action="mute_similar">以后不提醒</button></div>`}</article>`).join("") || `<p class="form-help">当前没有待处理建议</p>`;
+  return items.map((item) => `<article class="suggestion-card"><strong>${escapeHtml(item.title)}</strong><p>${escapeHtml(item.detail)}</p><small>${readOnly ? "已提交 Ozon，仅保留处理记录" : "系统已自动采纳，无需操作"}</small></article>`).join("") || `<p class="form-help">当前没有需要处理的建议；后续AI建议将自动采用</p>`;
 }
 
 function editField(label, name, value, locked, textarea = false) {
@@ -933,8 +1438,74 @@ function attributeRow(item) {
   return `<tr><td>${escapeHtml(item.attribute_name || item.attribute_id)}${item.required ? " *" : ""}</td><td><input data-attribute-id="${item.attribute_id}" value="${escapeHtml(item.value === "unknown" ? "" : item.value)}" placeholder="unknown"></td><td>${escapeHtml(display(item.source, "未知"))}</td><td>${status}</td></tr>`;
 }
 
+function skuImageCell(sku) {
+  const binding = sku.image_binding || null;
+  const selectedPath = binding?.selected_image_path || "";
+  const showBindingSelect = sku.binding_required || binding;
+  const badge = sku.binding_required
+    ? `<small class="sku-image-warning">缺SKU图，请绑定</small>`
+    : binding
+      ? `<small class="sku-image-bound">已绑定参考图</small>`
+      : `<small class="sku-image-ok">SKU原图</small>`;
+  return `<div class="sku-image-cell">
+    ${sku.image_url ? `<img class="sku-fact-image" src="${escapeHtml(sku.image_url)}" alt="">` : `<div class="sku-image-placeholder">缺SKU图</div>`}
+    ${badge}
+    ${showBindingSelect ? skuReferenceCandidateCards(state.currentProduct, sku.sku_id, selectedPath, {compact: true}) : ""}
+  </div>`;
+}
+
 function skuRow(sku) {
-  return `<tr><td>${escapeHtml(display(sku.sku_id))}</td><td>${escapeHtml(display(sku.option_text || sku.name))}</td><td>¥${number(sku.purchase_price_cny, 2)}<br>${number(sku.weight_g, 0)}g</td><td>₽${number(sku.selling_price_rub, 0)}<br>¥${number(sku.profit_cny, 2)}</td><td>${escapeHtml(display(sku.variant_decision))}<br><small>${escapeHtml(display(sku.aspect_basis))}</small></td></tr>`;
+  const row = sku.sku_row || {};
+  return `<tr>
+    <td>${skuImageCell(sku)}</td>
+    <td><strong>${escapeHtml(display(sku.option_text || sku.name))}</strong><br><small>${escapeHtml(display(sku.sku_id))}</small></td>
+    <td>${skuFactInput(sku, "color", skuFactValue(row.color), "颜色")}</td>
+    <td>${skuFactInput(sku, "capacity_ml", skuFactValue(row.capacity), "ml", "number")}</td>
+    <td>${skuFactInput(sku, "specification_text", skuFactValue(row.specification), "规格")}</td>
+    <td>${skuFactInput(sku, "product_weight_g", skuFactValue(row.product_weight), "g", "number")}</td>
+    <td>${dimensionInputs(sku, row.product_dimensions, "product")}</td>
+    <td>${skuFactInput(sku, "package_weight_g", skuFactValue(row.package_weight), "g", "number")}</td>
+    <td>${dimensionInputs(sku, row.package_dimensions, "package")}</td>
+    <td>${skuFactInput(sku, "quantity_pcs", skuFactValue(row.quantity), "件", "number")}</td>
+    <td>${dynamicAttributeInputs(sku, row.dynamic_attributes)}</td>
+    <td><label class="sku-mini-field">¥<input type="number" min="0.01" step="0.01" data-sku-price="${escapeHtml(sku.sku_id)}" value="${typeof sku.selling_price_cny === "number" ? sku.selling_price_cny : ""}"></label><small>₽${number(sku.selling_price_rub, 0)}</small></td>
+    <td>${escapeHtml(display(sku.variant_decision))}<br><small>${escapeHtml(display(sku.aspect_basis))}</small></td>
+  </tr>`;
+}
+
+function skuFactValue(field) {
+  if (!field || typeof field !== "object") return "";
+  const value = field.canonical_value ?? field.target_value ?? field.value;
+  if (value && typeof value === "object") return "";
+  return value ?? "";
+}
+
+function skuFactDimensionValue(field, key) {
+  const value = field?.canonical_value || field?.target_value || field?.value || {};
+  return value && typeof value === "object" ? (value[key] ?? "") : "";
+}
+
+function skuFactInput(sku, field, value, unit, type = "text") {
+  const step = type === "number" ? ` step="0.001" min="0"` : "";
+  return `<label class="sku-mini-field"><input type="${type}" data-sku-fact-sku="${escapeHtml(sku.sku_id)}" data-sku-field="${field}" value="${escapeHtml(value)}"${step}><small>${escapeHtml(unit)}</small></label>`;
+}
+
+function dimensionInputs(sku, field, prefix) {
+  return `<div class="sku-dims">
+    ${skuFactInput(sku, `${prefix}_length_mm`, skuFactDimensionValue(field, "length_mm"), "长mm", "number")}
+    ${skuFactInput(sku, `${prefix}_width_mm`, skuFactDimensionValue(field, "width_mm"), "宽mm", "number")}
+    ${skuFactInput(sku, `${prefix}_height_mm`, skuFactDimensionValue(field, "height_mm"), "高mm", "number")}
+  </div>`;
+}
+
+function dynamicAttributeInputs(sku, attributes) {
+  const entries = Object.entries(attributes || {}).filter(([, value]) => value && typeof value === "object");
+  if (!entries.length) return `<small class="muted">按类目字段自动生成</small>`;
+  return `<div class="sku-dynamic-attrs">${entries.map(([attributeId, field]) => {
+    const name = field.attribute_name || field.name || attributeId;
+    const unit = field.canonical_unit || field.target_unit || "属性";
+    return `<label class="sku-mini-field"><span>${escapeHtml(name)}</span><input data-sku-fact-sku="${escapeHtml(sku.sku_id)}" data-sku-field="attribute:${escapeHtml(attributeId)}" value="${escapeHtml(skuFactValue(field))}"><small>${escapeHtml(unit)}</small></label>`;
+  }).join("")}</div>`;
 }
 
 function pricingRows(item) {
@@ -947,12 +1518,23 @@ function collectDraftField(field, rawValue) {
   return rawValue;
 }
 
+function mergeDraftObject(field, existing, value) {
+  if (field !== "sku_overrides") {
+    return {...(existing || {}), ...value};
+  }
+  const merged = {...(existing || {})};
+  for (const [skuId, skuValues] of Object.entries(value || {})) {
+    merged[skuId] = {...(merged[skuId] || {}), ...(skuValues || {})};
+  }
+  return merged;
+}
+
 function scheduleDraftSave(patch) {
   const saveState = document.getElementById("save-state");
   if (saveState) { saveState.textContent = "正在保存"; saveState.classList.remove("error"); }
   for (const [field, value] of Object.entries(patch)) {
     if (["attributes", "sku_overrides", "image_prompts"].includes(field) && value && typeof value === "object") {
-      state.pendingDraftPatch[field] = {...(state.pendingDraftPatch[field] || {}), ...value};
+      state.pendingDraftPatch[field] = mergeDraftObject(field, state.pendingDraftPatch[field], value);
     } else {
       state.pendingDraftPatch[field] = value;
     }
@@ -974,7 +1556,7 @@ async function saveDraft(patch) {
   } catch (error) {
     for (const [field, value] of Object.entries(patch)) {
       if (["attributes", "sku_overrides", "image_prompts"].includes(field) && value && typeof value === "object") {
-        state.pendingDraftPatch[field] = {...value, ...(state.pendingDraftPatch[field] || {})};
+        state.pendingDraftPatch[field] = mergeDraftObject(field, value, state.pendingDraftPatch[field]);
       } else if (!(field in state.pendingDraftPatch)) {
         state.pendingDraftPatch[field] = value;
       }
@@ -986,6 +1568,16 @@ async function saveDraft(patch) {
   }
 }
 
+async function saveSkuImageBinding(skuId, selectedImagePath) {
+  if (!selectedImagePath) return;
+  const result = await api(`/api/workbench/products/${state.currentProductId}/sku-image-bindings`, {
+    method: "POST",
+    body: JSON.stringify({sku_id: skuId, selected_image_path: selectedImagePath}),
+  });
+  toast(result.message || "SKU参考图已绑定，点击继续即可恢复任务", "success");
+  await refreshCurrentProduct();
+}
+
 function imageSignature(product) {
   return JSON.stringify({
     status: product.status.status,
@@ -994,6 +1586,7 @@ function imageSignature(product) {
     ai_service_retry_after: product.status.ai_service_retry_after,
     error_message: product.status.error_message,
     progress: product.progress,
+    pipeline_progress: product.pipeline_progress,
     outputs: {
       analysis: Boolean(product.analysis && Object.keys(product.analysis).length),
       category: Boolean(product.category && Object.keys(product.category).length),
@@ -1011,12 +1604,14 @@ function updateLiveProgress(product) {
   const value = document.querySelector("[data-progress-value]");
   const bar = document.querySelector("[data-progress-bar]");
   const status = document.querySelector("[data-progress-status]");
+  const meta = document.querySelector("[data-progress-meta]");
   if (step) step.textContent = liveProgressText(product);
   if (value) value.textContent = `${progress}%`;
   if (bar) bar.style.width = `${progress}%`;
   if (status) status.textContent = aiServiceWaiting(product)
     ? "已暂停当前步骤，系统会自动重试；不会使用本地备用分析。"
-    : product.status?.error_message && product.status.error_message !== "unknown" ? product.status.error_message : "后台正在处理，页面会自动更新";
+    : product.status?.error_message && product.status.error_message !== "unknown" ? product.status.error_message : (product.pipeline_progress?.status_note || "后台正在处理，页面会自动更新");
+  if (meta) meta.innerHTML = renderPipelineProgressMeta(product.pipeline_progress || {});
   const queueProgress = document.querySelector(`[data-queue-progress="${product.product_id}"]`);
   if (queueProgress) queueProgress.textContent = `${progress}% · ${stepLabel(product.status?.current_step)}`;
 }
@@ -1029,11 +1624,11 @@ function startReviewPolling() {
     try {
       const product = await api(`/api/workbench/products/${state.currentProductId}`);
       maybeNotifyListingSuccess(product);
+      updateLiveProgress(product);
       const signature = imageSignature(product);
       if (signature !== state.lastImageSignature) {
         state.currentProduct = product;
         state.lastImageSignature = signature;
-        updateLiveProgress(product);
         const imageWorkspace = document.getElementById("image-workspace");
         if (imageWorkspace && document.querySelector(".future-review-shell")) imageWorkspace.outerHTML = renderFutureImageStage(product);
         else if (imageWorkspace) imageWorkspace.innerHTML = document.querySelector(".product-preview-page") ? renderPreviewGallery(product) : renderImageWorkspace(product);
@@ -1064,25 +1659,343 @@ async function queueImageRegeneration(slot, prompt = "") {
   document.getElementById("image-workspace").innerHTML = renderImageWorkspace(state.currentProduct);
 }
 
-async function renderInbox() {
-  const data = await loadProducts(searchInput.value);
-  state.selectedBatchProducts = new Set([...state.selectedBatchProducts].filter((id) => state.products.some((item) => item.product_id === id)));
+const INBOX_FILTERS = ["全部", "运行中", "需处理", "待运行", "待上传", "已提交"];
+
+function inboxStatusMeta(product) {
+  const raw = String(product.raw_status || "").toUpperCase();
+  const priorityUpload = (state.queueSummary?.priority_product_ids || []).includes(product.product_id);
+  if (isTerminalStatus(raw)) {
+    return {label:"已提交", className:"completed", group:"completed", icon:"ph-check-circle"};
+  }
+  if (raw === "PARTIAL") return {label:"待继续", className:"warning", group:"attention", icon:"ph-warning-circle"};
+  if (priorityUpload) return {label:"优先上传", className:"priority", group:"running", icon:"ph-upload-simple"};
+  if (isNeedsAttentionStatus(raw)) return {label:"需要处理", className:"failed", group:"attention", icon:"ph-warning-circle"};
+  if (raw === "UPLOADING") return {label:"上传中", className:"processing", group:"running", icon:"ph-upload-simple"};
+  if (raw === "QUEUED") return {label:"排队中", className:"waiting", group:"waiting", icon:"ph-clock"};
+  if (raw === "PROCESSING" || isPipelineRunningLike(product)) {
+    return {label:"制作中", className:"processing", group:"running", icon:"ph-spinner-gap"};
+  }
+  if (product.attention_required) return {label:"待确认", className:"warning", group:"attention", icon:"ph-hand"};
+  return {label:"待运行", className:"waiting", group:"waiting", icon:"ph-clock"};
+}
+
+function inboxMatchesFilter(product, filter = state.inboxFilter) {
+  if (!filter || filter === "全部") return true;
+  const group = inboxStatusMeta(product).group;
+  return (filter === "运行中" && group === "running")
+    || (filter === "需处理" && productNeedsCauseReview(product))
+    || (filter === "待运行" && group === "waiting")
+    || (filter === "待上传" && product.primary_action?.key === "review_upload")
+    || (filter === "已提交" && group === "completed");
+}
+
+function inboxSnapshotSignature(products = state.products, queue = state.queueSummary) {
+  return JSON.stringify({
+    products: products.map((product) => [
+      product.product_id, product.raw_status, product.current_step, product.progress,
+      product.primary_action?.key, product.primary_action?.label, product.attention_required,
+      product.image_count, product.error?.technical, product.handoff_message,
+    ]),
+    queue: queue ? [
+      queue.active_batch_id, queue.active_product_count, queue.queued_batch_count,
+      queue.queued_product_count, queue.priority_preemption_pending,
+      queue.active_priority_upload, queue.message,
+    ] : [],
+  });
+}
+
+function inboxProductDecision(product) {
+  const action = product.primary_action || {key:"status", label:"查看进度"};
+  const raw = String(product.raw_status || "").toUpperCase();
+  const failed = isNeedsAttentionStatus(raw);
+  const priorityUpload = (state.queueSummary?.priority_product_ids || []).includes(product.product_id);
+  const error = failed ? friendlyErrorInfo(product) : null;
+  if (priorityUpload) {
+    return {tone:"priority", title:"正在优先上传", body:state.queueSummary?.message || "上传任务已置顶，系统会避免重复提交。", action:"等待后台"};
+  }
+  if (product.pending_question?.question) {
+    return {tone:"attention", title:"需要人工回答", body:product.pending_question.question, action:"回答问题"};
+  }
+  if (error) {
+    return {tone:"danger", title:error.title, body:error.message, action:error.action || "处理问题"};
+  }
+  if (raw === "WAITING_MANUAL_REVIEW") {
+    return {tone:"upload", title:"等待最终上传确认", body:"资料已经生成，进入预览检查后选择店铺并提交 Ozon。", action:"检查并上传"};
+  }
+  if (raw === "PARTIAL") {
+    return {tone:"upload", title:"部分店铺未提交", body:"已提交过的店铺不会重复提交；继续时只处理未完成店铺。", action:"继续上传"};
+  }
+  if (["PENDING_REMOTE", "HANDED_OFF_TO_OZON", "OZON_MODERATION"].includes(raw)) {
+    return {tone:"running", title:"等待 Ozon 处理", body:product.handoff_message || "任务号已保存，本地可只读查询结果，不能重复提交。", action:"查询结果"};
+  }
+  if (isTerminalStatus(raw)) {
+    return {tone:"done", title:"已上架", body:product.handoff_message || "Ozon 已返回商品卡结果，本地只读。", action:"查看记录"};
+  }
+  if (raw === "PROCESSING" || raw === "UPLOADING" || isPipelineRunningLike(product)) {
+    return {tone:"running", title:"后台正在执行", body:`当前步骤：${stepLabel(product.current_step)}，页面会自动同步进度。`, action:"查看进度"};
+  }
+  if (action.key === "run") {
+    return {tone:"ready", title:"可以开始生产", body:"SKU、类目和店铺确认后，可以加入本次批量任务。", action:action.label};
+  }
+  return {tone:"neutral", title:"等待下一步", body:`当前停在 ${stepLabel(product.current_step)}。`, action:action.label};
+}
+
+function inboxChecklist(product) {
+  const raw = String(product.raw_status || "").toUpperCase();
+  const skuOk = Number(product.sku_count || 0) > 0;
+  const storeOk = Number(product.selected_store_count || 0) > 0;
+  const imagesOk = Number(product.image_count || 0) >= Math.max(1, Math.min(Number(product.sku_count || 0), 1));
+  const uploadReady = ["WAITING_MANUAL_REVIEW", "PARTIAL"].includes(raw);
+  const contentReady = !["COLLECTED", "STOPPED", "UNKNOWN"].includes(raw) || Number(product.progress || 0) >= 35;
+  return [
+    {label:"SKU", value:`${product.sku_count || 0}`, ok:skuOk},
+    {label:"店铺", value:`${product.selected_store_count || 0}`, ok:storeOk},
+    {label:"资料", value:contentReady ? "已生成" : "待生成", ok:contentReady},
+    {label:"图片", value:`${product.image_count || 0}`, ok:imagesOk},
+    {label:"上传", value:uploadReady ? "就绪" : "未到", ok:uploadReady},
+  ];
+}
+
+function actionableProductIds(products = state.products) {
+  return products
+    .filter((product) => ["run", "fix", "review_upload"].includes(product.primary_action?.key))
+    .filter((product) => !isTerminalStatus(product.raw_status))
+    .map((product) => product.product_id);
+}
+
+function productNeedsCauseReview(product) {
+  const raw = String(product.raw_status || "").toUpperCase();
+  if (product.primary_action?.key === "review_upload" || raw === "PARTIAL") return false;
+  return Boolean(
+    product.attention_required
+    || isNeedsAttentionStatus(raw)
+    || product.pending_question?.question
+  );
+}
+
+function renderNextActionStrip(products) {
+  const upload = products.filter((product) => product.primary_action?.key === "review_upload");
+  const generate = products.filter((product) => ["run", "fix"].includes(product.primary_action?.key) && !isTerminalStatus(product.raw_status));
+  const attention = products.filter(productNeedsCauseReview);
+  const items = [
+    ["继续上传", upload, "待提交的店铺不会重复提交", "待上传", "ph-storefront"],
+    ["继续生成", generate, "从当前断点继续跑生产线", "待运行", "ph-play"],
+    ["查看原因", attention, "先看中文原因和恢复建议", "需处理", "ph-warning-circle"],
+  ].filter(([, list]) => list.length);
+  if (!items.length) {
+    return `<section class="fusion-next-actions is-clear"><div><span class="ph ph-check-circle" aria-hidden="true"></span><strong>当前没有需要继续的商品</strong><small>新采集商品会出现在这里。</small></div></section>`;
+  }
+  const uniqueCount = new Set(items.flatMap(([, list]) => list.map((product) => product.product_id))).size;
+  return `<section class="fusion-next-actions" aria-label="下一步任务">
+    <header><span>下一步任务</span><strong>${uniqueCount} 个商品待处理</strong></header>
+    <div>${items.map(([title, list, note, filter, icon]) => `<button type="button" data-inbox-filter="${filter}"><span class="ph ${icon}" aria-hidden="true"></span><strong>${title} ${list.length}</strong><small>${escapeHtml(note)}</small></button>`).join("")}</div>
+  </section>`;
+}
+
+function inboxLauncherSummary(products, queue, plan) {
+  const attention = products.filter(productNeedsCauseReview);
+  const uploadReady = products.filter((product) => ["review_upload"].includes(product.primary_action?.key));
+  const runnable = products.filter((product) => ["run", "fix"].includes(product.primary_action?.key));
+  const running = products.filter((product) => inboxStatusMeta(product).group === "running");
+  if (attention.length) {
+    return {
+      tone:"attention",
+      label:"优先处理",
+      title:`${attention.length} 个商品需要处理`,
+      body:"先看需要继续的商品。能自动补全的会直接继续，真正失败的卡片会显示中文原因。",
+      action:"查看下一步",
+      filter:"需处理",
+    };
+  }
+  if (uploadReady.length) {
+    return {
+      tone:"upload",
+      label:"继续上传",
+      title:`${uploadReady.length} 个商品还有店铺未提交`,
+      body:"继续时只处理未完成店铺，已提交过的店铺不会重复提交。",
+      action:"查看待上传",
+      filter:"待上传",
+    };
+  }
+  if (running.length) {
+    return {
+      tone:"running",
+      label:"正在运行",
+      title:`${running.length} 个商品正在后台执行`,
+      body:queue.message || plan.summary || "页面会自动同步真实队列、步骤和进度。",
+      action:"查看运行中",
+      filter:"运行中",
+    };
+  }
+  if (runnable.length) {
+    return {
+      tone:"ready",
+      label:"可以开始",
+      title:`${runnable.length} 个商品可加入生产`,
+      body:"选择可处理商品后点击运行。资料、生图和上传按系统上限受控运行。",
+      action:"运行可处理商品",
+      filter:"待运行",
+    };
+  }
+  return {
+    tone:"quiet",
+    label:"暂无动作",
+    title:"当前没有需要启动的商品",
+    body:queue.message || "采集新商品后会出现在这里。",
+    action:"查看全部",
+    filter:"全部",
+  };
+}
+
+function inboxNavigationAttrs(filter) {
+  if (filter === "需处理") return 'data-inbox-filter="需处理"';
+  if (filter === "已提交") return 'data-go="listed"';
+  return `data-inbox-filter="${escapeHtml(filter || "全部")}"`;
+}
+
+function fusionInboxCard(product) {
+  const action = product.primary_action || {key:"status", label:"查看进度"};
+  const failed = isNeedsAttentionStatus(product.raw_status);
+  const priorityUpload = (state.queueSummary?.priority_product_ids || []).includes(product.product_id);
+  const status = inboxStatusMeta(product);
+  const progress = Math.max(0, Math.min(100, Number(product.progress) || 0));
+  const running = isPipelineRunningLike(product) && !priorityUpload;
+  const visibleAction = running ? {key:"status", label:"查看进度"} : action;
+  const decision = inboxProductDecision(product);
+  const actionLabel = priorityUpload ? "优先上传处理中" : failed ? "查看原因并继续" : running ? `查看进度（${progress}%）` : visibleAction.label;
+  return `<article class="fusion-task-card ${status.className} ${product.attention_required ? "needs-attention" : ""}" data-card-product="${escapeHtml(product.product_id)}">
+    <div class="fusion-task-thumb">${thumbnail(product)}</div>
+    <div class="fusion-task-main">
+      <div class="fusion-task-kicker"><strong>${escapeHtml(product.product_id)}</strong><span>${escapeHtml(product.workflow_bucket)}</span></div>
+      <h3>${escapeHtml(product.title_cn)}</h3>
+      <div class="fusion-task-facts"><span><i class="ph ph-stack"></i>${product.sku_count} SKU</span><span><i class="ph ph-image"></i>${product.image_count || 0} 图</span><span><i class="ph ph-storefront"></i>${product.selected_store_count || 0} 店</span></div>
+      <p class="fusion-task-plain">${escapeHtml(decision.title)} · ${escapeHtml(decision.body)}</p>
+    </div>
+    <div class="fusion-task-progress">
+      <div class="fusion-status ${status.className}"><i class="ph ${status.icon}"></i>${status.label}</div>
+      <div class="fusion-progress-row"><span><i style="width:${progress}%"></i></span><b>${progress}%</b></div>
+      <small>${escapeHtml(stepLabel(product.current_step))}</small>
+    </div>
+    <div class="fusion-task-actions">
+      <label class="fusion-card-select"><input class="batch-select" type="checkbox" aria-label="选择 ${escapeHtml(product.product_id)}" data-select-batch-product="${escapeHtml(product.product_id)}" ${state.selectedBatchProducts.has(product.product_id) ? "checked" : ""}> 选择</label>
+      ${failed ? `<button class="secondary-button" data-error-edit="${escapeHtml(product.product_id)}">立即修改</button>` : ""}
+      <button class="primary-button" data-primary-action="${escapeHtml(visibleAction.key)}" data-product-id="${escapeHtml(product.product_id)}" ${priorityUpload ? "disabled" : ""}>${escapeHtml(actionLabel)}</button>
+    </div>
+    ${productMenu(product.product_id)}
+  </article>`;
+}
+
+function inboxBackedViewActive() {
+  return ["inbox", "attention", "waiting"].includes(state.view);
+}
+
+function scheduleInboxPolling() {
+  clearTimeout(state.inboxPollTimer);
+  if (!inboxBackedViewActive()) return;
+  state.inboxPollTimer = setTimeout(async () => {
+    if (!inboxBackedViewActive()) return;
+    if (state.inboxPollBusy || document.hidden || document.querySelector("dialog[open]") || document.activeElement === searchInput) {
+      scheduleInboxPolling();
+      return;
+    }
+    state.inboxPollBusy = true;
+    const before = inboxSnapshotSignature();
+    try {
+      const data = await loadProducts(searchInput.value, {force:true});
+      state.inboxLastSyncedAt = new Date();
+      if (before !== inboxSnapshotSignature()) await renderInbox({data, reuseShops:true});
+    } catch (_) {
+      // 保留当前可操作页面；顶部主机状态会单独报告连接问题。
+    } finally {
+      state.inboxPollBusy = false;
+      scheduleInboxPolling();
+    }
+  }, 12000);
+}
+
+async function renderInbox(options = {}) {
+  const data = options.data || await loadProducts(searchInput.value, {force:Boolean(options.force || options.forceProducts)});
+  const actionableIds = new Set(actionableProductIds(state.products));
+  state.selectedBatchProducts = new Set([...state.selectedBatchProducts].filter((id) => actionableIds.has(id)));
   await loadWorkbenchSettings();
+  if (!state.shops.length || options.forceShops) {
+    try {
+      state.shops = (await api("/api/workbench/shops")).items || [];
+    } catch (_) {
+      state.shops = state.shops || [];
+    }
+  }
   const runnable = state.products.filter((item) => ["run", "fix"].includes(item.primary_action?.key));
-  root.innerHTML = `<section class="task-summary"><div><h2>${data.total} 个工作室商品</h2><p>所有电脑共享商品和进度；每个商品最多10个SKU · 当前${state.workbenchSettings.auto_mode_enabled ? "自动模式" : "手动检查模式"}</p></div><button class="primary-button task-primary" data-action="open-batch" ${runnable.length ? "" : "disabled"}>运行可处理商品</button></section><div class="bulk-toolbar"><label><input type="checkbox" data-select-all-products> 多选商品</label><span>已选 ${state.selectedBatchProducts.size} 个</span><span class="spacer"></span><button class="primary-button" data-action="open-batch" ${state.selectedBatchProducts.size ? "" : "disabled"}>运行所选</button></div><div class="list-layout inbox-list">${state.products.map((product) => inboxCard(product, true)).join("") || empty("工作室还没有商品。请先在1688选择SKU和最终Ozon类目，再完成采集。")}</div>`;
+  const plan = state.executionPlan || {};
+  const queue = state.queueSummary || {};
+  const filteredProducts = state.products.filter((product) => inboxMatchesFilter(product));
+  const statusGroups = state.products.map((product) => inboxStatusMeta(product).group);
+  const runningCount = Math.max(statusGroups.filter((group) => group === "running").length, Number(queue.active_product_count) || 0, queue.waiting_for_active ? 1 : 0);
+  const waitingCount = Math.max(statusGroups.filter((group) => group === "waiting").length, Number(queue.queued_product_count) || 0);
+  const attentionCount = state.products.filter(productNeedsCauseReview).length;
+  const submittedCount = statusGroups.filter((group) => group === "completed").length;
+  const uploadReadyCount = state.products.filter((product) => product.primary_action?.key === "review_upload").length;
+  const launcher = inboxLauncherSummary(state.products, queue, plan);
+  const actionableCount = actionableIds.size;
+  const launcherPrimary = launcher.tone === "ready"
+    ? `<button type="button" class="primary-button task-primary" data-action="open-batch" ${runnable.length ? "" : "disabled"}><span class="ph ph-play"></span>运行可处理商品</button>`
+    : `<button type="button" class="primary-button task-primary" ${inboxNavigationAttrs(launcher.filter)}><span class="ph ph-arrow-right"></span>${escapeHtml(launcher.action)}</button>`;
+  state.inboxLastSyncedAt = state.inboxLastSyncedAt || new Date();
+  root.innerHTML = `<div class="fusion-inbox">
+    <section class="fusion-command-hero fusion-launcher">
+      <div class="fusion-launch-primary ${launcher.tone}">
+        <span class="fusion-eyebrow">JLC GLOBAL COMMAND</span>
+        <small>${escapeHtml(launcher.label)}</small>
+        <h2>${escapeHtml(launcher.title)}</h2>
+        <p>${escapeHtml(launcher.body)}</p>
+        <div class="fusion-launch-actions">
+          ${launcherPrimary}
+        </div>
+      </div>
+      <aside class="fusion-launch-console">
+        <div class="fusion-live-chip"><i></i>后台在线 · 自动同步</div>
+        <dl>
+          <div><dt>运行</dt><dd>${runningCount}</dd></div>
+          <div><dt>待处理</dt><dd>${attentionCount}</dd></div>
+          <div><dt>已提交</dt><dd>${submittedCount}</dd></div>
+        </dl>
+        <small>${escapeHtml(queue.message || plan.summary || "生产线空闲，等待新商品。")}</small>
+      </aside>
+      <div class="fusion-lanes">
+        <button type="button" data-inbox-filter="待运行"><span>${runnable.length}</span><strong>可运行</strong><small>可加入批次</small></button>
+        <button type="button" data-inbox-filter="需处理"><span>${attentionCount}</span><strong>需处理</strong><small>失败或确认</small></button>
+        <button type="button" data-inbox-filter="待上传"><span>${uploadReadyCount}</span><strong>待上传</strong><small>点击上传</small></button>
+      </div>
+    </section>
+    <section class="fusion-task-toolbar">
+      <div class="fusion-filter-group" aria-label="商品状态筛选">${INBOX_FILTERS.map((filter) => `<button type="button" data-inbox-filter="${filter}" class="${state.inboxFilter === filter ? "active" : ""}">${filter === "全部" ? "全部商品" : filter}</button>`).join("")}</div>
+      <label class="fusion-select-all"><input type="checkbox" data-select-all-products ${actionableCount && state.selectedBatchProducts.size === actionableCount ? "checked" : ""}> 全选可处理</label>
+      <span class="spacer"></span>
+      <small>最近同步 ${state.inboxLastSyncedAt.toLocaleTimeString("zh-CN", {hour:"2-digit", minute:"2-digit", second:"2-digit"})}</small>
+      <button class="primary-button" data-action="open-batch" ${state.selectedBatchProducts.size ? "" : "disabled"}>${state.selectedBatchProducts.size ? `${batchProductsAreUploadReady([...state.selectedBatchProducts]) ? "继续上传所选" : "运行所选"} ${state.selectedBatchProducts.size}` : "选择任务"}</button>
+    </section>
+    <section class="fusion-list-heading"><div><span>PRODUCT TASKS</span><h3>任务列表</h3></div><strong>${filteredProducts.length} / ${state.products.length}</strong></section>
+    <div class="fusion-task-list">${filteredProducts.map(fusionInboxCard).join("") || empty(state.products.length ? "当前筛选条件下没有商品" : "工作室还没有商品。请先在1688选择SKU和最终Ozon类目，再完成采集。")}</div>
+  </div>`;
+  scheduleInboxPolling();
 }
 
 async function renderAttention() {
-  await loadProducts(searchInput.value);
-  await pollNotifications({showDesktop:false});
-  const items = state.products.filter((item) => item.attention_required);
-  root.innerHTML = `<section class="task-summary"><div><h2>${items.length ? `${items.length} 个商品需要你处理` : "现在没有需要处理的商品"}</h2><p>这里只显示等待回答或明确失败的商品；Ozon提交后的状态请在商品卡后台查看。</p></div><div class="secondary-button disabled-control">远端回查已停用</div></section><div class="list-layout inbox-list">${items.map((product) => inboxCard(product, false)).join("") || empty("你当前没有待处理事项")}</div>`;
+  state.inboxFilter = "需处理";
+  document.body.dataset.activeView = "inbox";
+  return renderInbox();
+}
+
+async function renderWaitingUpload() {
+  state.inboxFilter = "待上传";
+  document.body.dataset.activeView = "inbox";
+  return renderInbox();
 }
 
 async function renderListed() {
   await loadProducts(searchInput.value);
-  const items = state.products.filter((item) => ["UPLOADED", "ACTIVE"].includes(String(item.raw_status || "").toUpperCase()));
-  root.innerHTML = `<section class="task-summary"><div><h2>${items.length} 个已上架商品</h2><p>只显示本地已提交的商品；Ozon审核和商品卡状态请在Ozon后台查看。</p></div><div class="secondary-button disabled-control">远端回查已停用</div></section><div class="list-layout inbox-list">${items.map((product) => inboxCard(product, false)).join("") || empty("还没有已上架商品")}</div>`;
+  const items = state.products.filter((item) => isTerminalStatus(item.raw_status));
+  root.innerHTML = `<section class="task-summary"><div><h2>${items.length} 个已提交商品</h2><p>只显示本地已交接给 Ozon 的商品；Ozon审核、商品卡和库存状态请在Ozon后台查看。</p></div><div class="secondary-button disabled-control">远端回查已停用</div></section><div class="list-layout inbox-list">${items.map((product) => inboxCard(product, false)).join("") || empty("还没有已提交商品")}</div>`;
 }
 
 function localIsoDate(value = new Date()) {
@@ -1376,18 +2289,28 @@ async function renderMarketDetail(sourceProductId) {
 }
 
 function inboxCard(product, selectable = false) {
-  const action = product.primary_action || {key:"status", label:"查看进度"};
-  const failed = String(product.raw_status || "").toUpperCase() === "FAILED_HARD_BLOCKER";
+  const action = {...(product.primary_action || {key:"status", label:"查看进度"})};
+  const failed = isNeedsAttentionStatus(product.raw_status);
+  const priorityUpload = (state.queueSummary?.priority_product_ids || []).includes(product.product_id);
+  const running = isPipelineRunningLike(product) && !priorityUpload;
+  if (running) {
+    action.key = "status";
+    action.label = "查看进度";
+  }
   const error = failed ? friendlyErrorInfo(product) : null;
-  const alert = product.pending_question?.question
+  const failureEvents = (failed || product.attention_required) ? pipelineFailureEvents(product).slice(0, 3) : [];
+  const failureList = failureEvents.length ? `<div class="card-failure-list">${failureEvents.map((event) => `<button type="button" data-error-edit="${escapeHtml(product.product_id)}" data-error-step="${escapeHtml(event.step)}"><strong>${escapeHtml(event.title)}</strong><span>${escapeHtml(event.reason)}</span></button>`).join("")}</div>` : "";
+  const alert = priorityUpload
+    ? `<div class="card-info-message upload-priority"><strong>优先上传</strong><span>${escapeHtml(state.queueSummary?.message || "已进入优先上传队列")}</span></div>`
+    : product.pending_question?.question
     ? `<p class="card-alert">需要确认：${escapeHtml(product.pending_question.question)}</p>`
       : error
       ? `<div class="card-error-message"><strong>${escapeHtml(error.title)}</strong><span>${escapeHtml(error.message)}</span><small>停在：${escapeHtml(stepLabel(error.step || product.current_step))}</small></div>`
       : product.handoff_message
-        ? `<div class="card-info-message"><strong>已提交Ozon</strong><span>${escapeHtml(product.handoff_message)}</span></div>`
+        ? `<div class="card-info-message"><strong>等待Ozon生成商品卡</strong><span>${escapeHtml(product.handoff_message)}</span></div>`
       : "";
-  const actionLabel = failed ? "查看失败原因并继续" : action.label;
-  return `<article class="list-card task-card ${product.attention_required ? "task-card-attention" : ""}" data-card-product="${product.product_id}">${selectable ? `<input class="batch-select" type="checkbox" data-select-batch-product="${product.product_id}" ${state.selectedBatchProducts.has(product.product_id) ? "checked" : ""}>` : `<span></span>`}${thumbnail(product)}<div><h3>${escapeHtml(product.title_cn)}</h3><p>${product.product_id} · ${product.sku_count} SKU · ${dateText(product.captured_at)}</p><p><span class="workflow-bucket">${escapeHtml(product.workflow_bucket)}</span> · ${escapeHtml(stepLabel(product.current_step))} · ${product.progress}%</p>${alert}</div><div class="list-actions">${failed ? `<button class="secondary-button" data-error-edit="${product.product_id}">立即修改</button>` : ""}<button class="primary-button" data-primary-action="${escapeHtml(action.key)}" data-product-id="${product.product_id}">${escapeHtml(actionLabel)}</button><a class="source-link" href="${escapeHtml(product.source_url)}" target="_blank" rel="noreferrer">查看1688来源</a></div>${productMenu(product.product_id)}</article>`;
+  const actionLabel = priorityUpload ? "优先上传处理中" : failed ? "查看原因并继续" : running ? `查看进度（${product.progress || 0}%）` : action.label;
+  return `<article class="list-card task-card ${product.attention_required ? "task-card-attention" : ""} ${priorityUpload ? "task-card-priority-upload" : ""}" data-card-product="${product.product_id}">${selectable ? `<input class="batch-select" type="checkbox" data-select-batch-product="${product.product_id}" ${state.selectedBatchProducts.has(product.product_id) ? "checked" : ""}>` : `<span></span>`}${thumbnail(product)}<div><h3>${escapeHtml(product.title_cn)}</h3><p>${product.product_id} · ${product.sku_count} SKU · ${dateText(product.captured_at)}</p><p><span class="workflow-bucket">${escapeHtml(product.workflow_bucket)}</span> · ${escapeHtml(stepLabel(product.current_step))} · ${product.progress}%</p>${alert}${failureList}</div><div class="list-actions">${failed ? `<button class="secondary-button" data-error-edit="${product.product_id}">立即修改</button>` : ""}<button class="primary-button" data-primary-action="${escapeHtml(action.key)}" data-product-id="${product.product_id}" ${priorityUpload ? "disabled" : ""}>${escapeHtml(actionLabel)}</button><a class="source-link" href="${escapeHtml(product.source_url)}" target="_blank" rel="noreferrer">查看1688来源</a></div>${productMenu(product.product_id)}</article>`;
 }
 
 function confidenceMeta(value) {
@@ -1559,7 +2482,8 @@ function thumbnail(product) {
 
 async function renderBatches() {
   const data = await api("/api/workbench/batches");
-  root.innerHTML = `<section class="section-head"><div><h2>任务状态</h2><p>${data.running_pid ? "当前有任务正在运行，可安全停止并保留断点" : "当前没有运行中的任务"}</p></div><div class="toolbar"><button class="secondary-button" data-action="open-batch">运行新任务</button><button class="danger-button" data-batch-action="stop" ${data.running_pid ? "" : "disabled"}>安全停止</button></div></section><div class="table-wrap"><table class="data-table"><thead><tr><th>批次</th><th>状态</th><th>目标店铺</th><th>模式</th><th>商品</th><th>成功/失败</th><th>进度</th><th>操作</th></tr></thead><tbody>${data.items.map((batch) => {
+  const plan = data.execution_plan || {};
+  root.innerHTML = `<section class="section-head"><div><h2>任务状态</h2><p>${data.running_pid ? "当前有任务正在运行，会持续到上架或明确失败；可手动停止并保留断点" : "当前没有运行中的任务"} · 排队中兼容商品会自动合并</p></div><div class="toolbar"><span class="bounded-parallel-summary"><strong>${escapeHtml(plan.label || "受控并行")}</strong>${escapeHtml(plan.summary || "资料并行，生图和上传限流")}</span><button class="secondary-button" data-action="open-batch">运行新任务</button><button class="danger-button" data-batch-action="stop" data-batch-action-source="manual_toolbar_v2" ${data.running_pid ? "" : "disabled"}><span class="ph ph-stop-circle" aria-hidden="true"></span>手动停止</button></div></section><div class="table-wrap"><table class="data-table"><thead><tr><th>批次</th><th>状态</th><th>目标店铺</th><th>模式</th><th>商品</th><th>成功/失败/未完成</th><th>进度</th><th>操作</th></tr></thead><tbody>${data.items.map((batch) => {
     const waitingUpload = batch.status === "AWAITING_MANUAL_UPLOAD";
     const readyProductId = batch.ready_product_ids?.[0];
     const statusMarkup = batch.status === "AWAITING_CONFIRMATION"
@@ -1572,7 +2496,7 @@ async function renderBatches() {
       : waitingUpload && readyProductId
         ? `<button class="primary-button" data-open-product="${escapeHtml(readyProductId)}">检查并上传</button>`
         : dateText(batch.created_at || batch.started_at);
-    return `<tr><td>${escapeHtml(batch.batch_id)}</td><td>${statusMarkup}</td><td>${escapeHtml((batch.target_store_ids || []).join("、") || "未选择")}</td><td><span class="status-pill ${batch.auto_upload ? "auto-badge" : "manual-badge"}">${batch.auto_upload ? "自动处理并上传" : "手动检查后上传"}</span></td><td>${batch.product_count || 0}</td><td>${batch.success_count || 0} / ${batch.failed_count || 0}</td><td>${batch.progress || 0}%</td><td>${actionMarkup}</td></tr>`;
+    return `<tr><td>${escapeHtml(batch.batch_id)}</td><td>${statusMarkup}</td><td>${escapeHtml((batch.target_store_ids || []).join("、") || "未选择")}</td><td><span class="status-pill ${batch.auto_upload ? "auto-badge" : "manual-badge"}">${batch.auto_upload ? "自动处理并上传" : "手动检查后上传"}</span><small class="batch-parallel-plan">${escapeHtml(batch.execution_plan?.summary || "受控并行")}</small></td><td>${batch.product_count || 0}</td><td>${batch.success_count || 0} / ${batch.failed_count || 0} / ${batch.incomplete_count || 0}</td><td>${batch.progress || 0}%</td><td>${actionMarkup}</td></tr>`;
   }).join("")}</tbody></table></div>`;
 }
 
@@ -1593,7 +2517,7 @@ async function renderImages() {
 async function renderRisks() {
   const data = await api("/api/workbench/risks");
   const actionLabel = {allow:"自动通过", review:"人工确认", block:"禁止跳过"};
-  root.innerHTML = `<section class="section-head"><div><h2>风险中心</h2><p>${data.items.length} 条商品风险 · ${data.rules.length} 条管理规则</p></div></section><div class="settings-grid">${data.rules.map((rule) => `<article class="setting-block"><div class="store-card-head"><div><h3>${escapeHtml(rule.name)}</h3><span class="status-pill ${rule.action === "block" ? "failed" : rule.action === "review" ? "medium" : "low"}">${actionLabel[rule.action]}</span></div>${rule.immutable ? `<span>硬规则</span>` : `<select data-risk-rule="${rule.id}"><option value="allow" ${rule.action === "allow" ? "selected" : ""}>自动通过</option><option value="review" ${rule.action === "review" ? "selected" : ""}>人工确认</option><option value="block" ${rule.action === "block" ? "selected" : ""}>禁止跳过</option></select>`}</div></article>`).join("")}</div><section class="section-head" style="margin-top:16px"><div><h2>风险商品</h2><p>修复后只重新执行受影响步骤</p></div></section><div class="risk-list">${data.items.map((item) => `<article class="risk-row ${item.level}"><strong>${escapeHtml(item.product_id)}</strong>${riskPill(item)}<p>${escapeHtml(item.message)}</p><button class="secondary-button" data-open-product="${item.product_id}">修复</button></article>`).join("") || empty("当前没有阻断风险")}</div>`;
+  root.innerHTML = `<section class="section-head"><div><h2>问题中心</h2><p>${data.items.length} 条商品问题 · ${data.rules.length} 条管理规则</p></div></section><div class="settings-grid">${data.rules.map((rule) => `<article class="setting-block"><div class="store-card-head"><div><h3>${escapeHtml(rule.name)}</h3><span class="status-pill ${rule.action === "block" ? "failed" : rule.action === "review" ? "medium" : "low"}">${actionLabel[rule.action]}</span></div>${rule.immutable ? `<span>硬规则</span>` : `<select data-risk-rule="${rule.id}"><option value="allow" ${rule.action === "allow" ? "selected" : ""}>自动通过</option><option value="review" ${rule.action === "review" ? "selected" : ""}>人工确认</option><option value="block" ${rule.action === "block" ? "selected" : ""}>禁止跳过</option></select>`}</div></article>`).join("")}</div><section class="section-head" style="margin-top:16px"><div><h2>需要处理的商品</h2><p>修复后只重新执行受影响步骤</p></div></section><div class="risk-list">${data.items.map((item) => `<article class="risk-row ${item.level}"><strong>${escapeHtml(item.product_id)}</strong>${riskPill(item)}<p>${escapeHtml(item.message)}</p><button class="secondary-button" data-open-product="${item.product_id}">修复</button></article>`).join("") || empty("当前没有需要处理的问题")}</div>`;
 }
 
 async function renderShops() {
@@ -1619,10 +2543,15 @@ async function openBatchDialog() {
   await loadWorkbenchSettings();
   const shops = (await api("/api/workbench/shops")).items;
   state.shops = shops;
-  state.batchProducts = state.selectedBatchProducts.size ? [...state.selectedBatchProducts] : state.products.filter((item) => item.state === "待处理" || item.state === "失败").map((item) => item.product_id);
-  document.getElementById("batch-product-summary").textContent = `本批次包含 ${state.batchProducts.length} 个商品。默认选择全部已验证店铺，也可以取消其中的店铺。`;
+  state.batchProducts = state.selectedBatchProducts.size ? [...state.selectedBatchProducts] : actionableProductIds(state.products);
+  const uploadBatch = batchProductsAreUploadReady(state.batchProducts);
+  document.getElementById("batch-product-summary").textContent = uploadBatch
+    ? `本次选择 ${state.batchProducts.length} 个待上传商品。确认后会进入优先上传队列，不会重跑文字和图片。`
+    : `本批次包含 ${state.batchProducts.length} 个商品。默认选择全部已验证店铺，也可以取消其中的店铺。`;
   document.getElementById("batch-store-options").innerHTML = shops.map((shop) => { const available = shop.enabled && shop.connection_status === "connected"; return `<label class="store-option ${available ? "" : "unavailable"}"><input type="checkbox" data-batch-store="${escapeHtml(shop.id)}" ${available ? "checked" : "disabled"}><span><strong>${escapeHtml(shop.display_name)}</strong><small>${storeStatusLabel(shop.connection_status)} · ${shop.credentials_display}</small></span></label>`; }).join("") || `<p class="form-help">没有已配置店铺，请先到店铺中心添加并完成只读验证。</p>`;
-  document.getElementById("batch-mode-summary").textContent = state.workbenchSettings.auto_mode_enabled
+  document.getElementById("batch-mode-summary").textContent = uploadBatch
+    ? "上传模式：只提交已经等待人工检查的商品；如果本地上传包缺失，后台会先补齐，补不齐会显示具体原因。"
+    : state.workbenchSettings.auto_mode_enabled
     ? "自动模式：确认本批次后会连续完成文字、图片和多店提交；失败商品隔离，其他商品继续。"
     : "手动模式：先确认类目、SKU、店铺和价格，再生成文字与图片；最后由你确认后才上传。";
   updateBatchDialogButton();
@@ -1671,11 +2600,28 @@ function selectedBatchStores() {
   return [...document.querySelectorAll("[data-batch-store]:checked")].map((input) => input.dataset.batchStore);
 }
 
+function batchProductsAreUploadReady(ids = state.batchProducts) {
+  return Boolean(ids?.length) && ids.every((id) => {
+    const product = state.products.find((item) => item.product_id === id);
+    return product?.primary_action?.key === "review_upload";
+  });
+}
+
+function updateInboxBatchButtonLabel() {
+  const button = document.querySelector(".fusion-task-toolbar [data-action='open-batch']");
+  if (!button) return;
+  button.textContent = batchProductsAreUploadReady([...state.selectedBatchProducts]) ? "继续上传所选" : "运行所选";
+}
+
 function updateBatchDialogButton() {
   const button = document.getElementById("confirm-create-batch");
   const count = selectedBatchStores().length;
   button.disabled = !count || !state.batchProducts.length;
-  button.textContent = count ? `创建批次 · ${count} 家店铺` : "请选择目标店铺";
+  button.textContent = count
+    ? batchProductsAreUploadReady(state.batchProducts)
+      ? `确认上传 · ${count} 家店铺`
+      : `创建批次 · ${count} 家店铺`
+    : "请选择目标店铺";
 }
 
 async function refreshCurrentProduct() {
@@ -1695,7 +2641,7 @@ async function handleImageAction(action, slot, tile) {
   if (action === "replace") return tile.querySelector("[data-replace-file]").click();
   if (action === "keep") {
     await api(`/api/workbench/products/${state.currentProductId}/images/${encodeURIComponent(slot)}`, {method:"PATCH", body:JSON.stringify({action:"accept"})});
-    toast("已确认使用；图片已进入已确认区", "success");
+    toast("图片已加入历史确认区", "success");
     return refreshCurrentProduct();
   }
   if (action === "delete") {
@@ -1740,7 +2686,7 @@ async function renderSettings() {
   root.innerHTML = `<section class="section-head"><div><h2>主电脑设置</h2><p>工作室电脑自动识别、商品任务全部共享；店铺凭证与系统设置只在主电脑管理。</p></div></section><div class="settings-grid">
     <article class="setting-block primary-setting"><h3>处理模式</h3><label class="toggle-row"><span><strong>${state.workbenchSettings.auto_mode_enabled ? "自动连续流程" : "手动检查模式"}</strong><small>${state.workbenchSettings.auto_mode_enabled ? "运行后连续完成文字、图片和上传；失败商品会隔离" : "运行前确认商品信息，生成完成后由你确认才上传"}</small></span><input type="checkbox" data-global-auto-mode ${state.workbenchSettings.auto_mode_enabled ? "checked" : ""}></label><div class="summary-row"><span>经验学习</span><strong>同类目同类修改出现2次后才启用</strong></div></article>
     <article class="setting-block"><div class="store-card-head"><div><h3>设备连接</h3><span class="status-pill success">自动识别</span></div></div><p class="form-help">局域网电脑打开主电脑工作台即可使用，不再填写访问码。商品、批次、失败处理和预览窗口对所有电脑一致。</p><div class="summary-row"><span>当前设备</span><strong>${escapeHtml(operator.device_name || "主电脑")}</strong></div><div class="summary-row"><span>操作记录</span><strong>按电脑自动留痕</strong></div><div class="summary-row"><span>设置权限</span><strong>仅主电脑</strong></div></article>
-    <article class="setting-block"><h3>永久安全规则</h3><div class="summary-row"><span>Ozon</span><strong>禁止重复创建商品，处理中禁止重复提交</strong></div><div class="summary-row"><span>库存</span><strong>不提交库存字段，库存接口永久禁用</strong></div><div class="summary-row"><span>商品</span><strong>真实性失败阻断，单商品最多10个SKU</strong></div><div class="summary-row"><span>图片</span><strong>失败只重做单图，保留真实SKU差异</strong></div></article>
+    <article class="setting-block"><h3>永久安全规则</h3><div class="summary-row"><span>Ozon</span><strong>禁止重复创建商品，处理中禁止重复提交</strong></div><div class="summary-row"><span>库存</span><strong>不提交库存字段，库存接口永久禁用</strong></div><div class="summary-row"><span>商品</span><strong>真实性失败需要处理，单商品最多10个SKU</strong></div><div class="summary-row"><span>图片</span><strong>失败只重做单图，保留真实SKU差异</strong></div></article>
     <article class="setting-block"><h3>工作室数据导出</h3><div class="store-card-actions"><a class="secondary-button" href="/api/workbench/export/csv">CSV</a><a class="secondary-button" href="/api/workbench/export/xlsx">Excel</a><a class="secondary-button" href="/api/workbench/export/json">JSON</a><a class="secondary-button" href="/api/workbench/export/backup">工作室备份</a></div><p class="form-help">导出包含工作室共享商品，自动排除所有明文店铺密钥。</p></article>
   </div>`;
 }
@@ -1759,7 +2705,10 @@ document.getElementById("toggle-sidebar").addEventListener("click", () => {
   else shell.classList.toggle("sidebar-collapsed");
 });
 
-document.getElementById("refresh-all").addEventListener("click", () => navigate(state.view));
+document.getElementById("refresh-all").addEventListener("click", () => {
+  invalidateProductsCache();
+  navigate(state.view, {force:true});
+});
 document.getElementById("safe-exit-workbench").addEventListener("click", async () => {
   const status = await pollSystemStatus({notify:false});
   if (!status) return toast("暂时无法读取后台状态，请稍后再试", "error");
@@ -1828,6 +2777,15 @@ root.addEventListener("input", (event) => {
   if (attributeId) {
     if (blockTerminalProductMutation()) return;
     scheduleDraftSave({attributes: {[attributeId]: event.target.value || "unknown"}});
+  }
+  const factSkuId = event.target.dataset.skuFactSku;
+  const skuField = event.target.dataset.skuField;
+  if (factSkuId && skuField) {
+    if (blockTerminalProductMutation()) return;
+    const rawValue = event.target.value;
+    const value = event.target.type === "number" ? (rawValue.trim() === "" ? "" : Number(rawValue)) : rawValue;
+    if (event.target.type === "number" && value !== "" && !(Number.isFinite(value) && value > 0)) return;
+    scheduleDraftSave({sku_overrides: {[factSkuId]: {[skuField]: value}}});
   }
   const skuId = event.target.dataset.skuPrice;
   if (skuId && Number(event.target.value) > 0) {
@@ -1898,7 +2856,7 @@ root.addEventListener("change", (event) => {
     if (event.target.checked) state.selectedStoreIds.add(storeId); else state.selectedStoreIds.delete(storeId);
     const button = root.querySelector('[data-action="run-product"]');
     if (button) {
-      const readyToUpload = ["OZON_READY", "WAITING_MANUAL_REVIEW"].includes(String(state.currentProduct?.status?.status || "").toUpperCase());
+      const readyToUpload = String(state.currentProduct?.status?.status || "").toUpperCase() === "WAITING_MANUAL_REVIEW";
       const needsStoreSelection = true;
       const blocked = (state.currentProduct?.stores || []).some((shop) =>
         state.selectedStoreIds.has(shop.id) && (!shop.enabled || shop.connection_status !== "connected")
@@ -1924,7 +2882,7 @@ root.addEventListener("change", (event) => {
     renderInbox();
   }
   if (event.target.matches("[data-select-all-products]")) {
-    state.selectedBatchProducts = event.target.checked ? new Set(state.products.map((item) => item.product_id)) : new Set();
+    state.selectedBatchProducts = event.target.checked ? new Set(actionableProductIds(state.products)) : new Set();
     renderInbox();
   }
   if (event.target.matches("[data-replace-file]")) {
@@ -1944,7 +2902,7 @@ root.addEventListener("change", (event) => {
   }
   if (event.target.matches("[data-risk-rule]")) {
     api(`/api/workbench/risk-rules/${event.target.dataset.riskRule}`, {method:"PATCH", body:JSON.stringify({action:event.target.value})})
-      .then(() => toast("风险规则已保存", "success"))
+      .then(() => toast("问题规则已保存", "success"))
       .catch((error) => { toast(error.message, "error"); renderRisks(); });
   }
   if (event.target.matches("[data-global-auto-mode]")) {
@@ -1967,7 +2925,7 @@ root.addEventListener("submit", async (event) => {
 async function updateGlobalAutoMode(enabled) {
   state.workbenchSettings = await api("/api/workbench/settings", {method:"PATCH", body:JSON.stringify({auto_mode_enabled:Boolean(enabled)})});
   await loadWorkbenchSettings();
-  toast(enabled ? "自动模式已开启：运行后会自动生成并上传" : "手动检查已开启：上传前必须由你确认", "success");
+  toast(enabled ? "自动模式已开启：运行后会自动生成并上传" : "手动模式已开启：你点击上传才会提交", "success");
 }
 
 root.addEventListener("dragstart", (event) => {
@@ -2069,6 +3027,19 @@ root.addEventListener("click", async (event) => {
   const marketProduct = event.target.closest("[data-market-product]");
   if (marketProduct) { window.scrollTo({top:0, left:0, behavior:"auto"}); return renderMarketDetail(marketProduct.dataset.marketProduct); }
   if (event.target.closest("[data-market-back]")) { window.scrollTo({top:0, left:0, behavior:"auto"}); return renderMarket(); }
+  const skuBindingChoice = event.target.closest("[data-sku-image-binding-choice]");
+  if (skuBindingChoice) {
+    event.preventDefault();
+    if (skuBindingChoice.disabled || blockTerminalProductMutation()) return;
+    skuBindingChoice.disabled = true;
+    try {
+      await saveSkuImageBinding(skuBindingChoice.dataset.skuImageBindingChoice, skuBindingChoice.dataset.selectedImagePath || "");
+    } catch (error) {
+      skuBindingChoice.disabled = false;
+      toast(error.message, "error");
+    }
+    return;
+  }
   const marketKeywordMore = event.target.closest("[data-market-keywords-more]");
   if (marketKeywordMore) {
     const expanded = marketKeywordMore.getAttribute("aria-expanded") === "true";
@@ -2093,7 +3064,7 @@ root.addEventListener("click", async (event) => {
   const errorEdit = event.target.closest("[data-error-edit]");
   if (errorEdit) {
     event.stopPropagation();
-    try { return await openProductErrorEditor(errorEdit.dataset.errorEdit); }
+    try { return await openProductErrorEditor(errorEdit.dataset.errorEdit, errorEdit.dataset.errorStep || ""); }
     catch (error) { return toast(`打开修改页面失败：${error.message}`, "error"); }
   }
   const passiveProductCard = event.target.closest("[data-card-product]");
@@ -2120,6 +3091,9 @@ root.addEventListener("click", async (event) => {
     if (actionKey === "run") {
       state.selectedBatchProducts = new Set([productId]);
       return openBatchDialog();
+    }
+    if (["fix", "review_upload"].includes(actionKey)) {
+      return startProductRun(productId, primaryAction);
     }
     return navigate("review", {productId});
   }
@@ -2179,8 +3153,13 @@ root.addEventListener("click", async (event) => {
   }
   const futureFlowStep = event.target.closest("[data-future-flow-step]");
   if (futureFlowStep) {
-    const map = {collect_source:"content", product_analysis:"content", measurements:"price", style_selector:"images", image_qc:"risk", ozon_upload:"store"};
-    const targetTab = map[futureFlowStep.dataset.futureFlowStep] || "content";
+    const step = futureFlowStep.dataset.futureFlowStep;
+    if (futureFlowStep.classList.contains("failed")) {
+      try { return await openProductErrorEditor(state.currentProductId, step); }
+      catch (error) { return toast(`刷新失败状态失败：${error.message}`, "error"); }
+    }
+    const map = {collect_source:"content", product_analysis:"content", measurements:"price", image_qc:"risk", ozon_upload:"store"};
+    const targetTab = map[step] || (["image_plan", "image_generation"].includes(step) ? "images" : ["category_match", "variant_rules", "field_completion"].includes(step) ? "category" : "content");
     root.querySelector(`[data-future-review-tab="${targetTab}"]`)?.click();
     return;
   }
@@ -2293,6 +3272,12 @@ root.addEventListener("click", async (event) => {
     return openCategoryDialog();
   }
   if (action === "edit-error") {
+    if (skusNeedingReferenceBinding(state.currentProduct).some((sku) => sku.binding_required)) {
+      root.querySelector('[data-future-review-tab="sku"]')?.click();
+      root.querySelector("[data-sku-reference-binding-board]")?.scrollIntoView({block:"center", behavior:"smooth"});
+      toast("请先给缺图SKU选择一张本商品采集图，绑定后再点继续生成。", "info", 5200);
+      return;
+    }
     try { return await openProductErrorEditor(state.currentProductId); }
     catch (error) { return toast(`打开修改页面失败：${error.message}`, "error"); }
   }
@@ -2355,42 +3340,15 @@ root.addEventListener("click", async (event) => {
     } catch (error) { return toast(error.message, "error"); }
   }
   if (action === "run-product") {
-    if (state.draftSaveFailed) return toast("草稿保存失败，已阻止上传", "error");
-    const rawProductStatus = String(state.currentProduct.status?.status || "").toUpperCase();
-    const readyToUpload = ["OZON_READY", "WAITING_MANUAL_REVIEW"].includes(rawProductStatus);
-    const resumeFailure = rawProductStatus === "FAILED_HARD_BLOCKER" && state.currentProduct.status?.task_authorized === true;
-    const resumeCheckpoint = ["CATEGORY_MATCHED", "PRICED", "CONTENT_GENERATED", "IMAGES_GENERATED"].includes(rawProductStatus) && state.currentProduct.status?.task_authorized === true;
-    const autoUpload = readyToUpload || Boolean(state.workbenchSettings.auto_mode_enabled);
-    if (!state.selectedStoreIds.size) return toast("请先选择至少一家已验证店铺", "error");
     const button = event.target.closest("button");
-    button.disabled = true; button.classList.add("uploading"); button.textContent = "正在启动";
-    try {
-      const result = await api(`/api/workbench/products/${state.currentProductId}/run`, {method: "POST", body:JSON.stringify({store_ids:[...state.selectedStoreIds], overrides:collectStoreOverrides(), auto_upload:autoUpload})});
-      if (result.status === "awaiting_confirmation") {
-        toast("请先确认类目、SKU、店铺和价格", "success");
-        state.confirmationBatchId = result.batch_id;
-        state.confirmationData = null;
-        state.confirmationProductId = state.currentProductId;
-        return navigate("confirm", {batchId:result.batch_id});
-      }
-      const message = result.resumed_from_checkpoint
-        ? `已从失败步骤继续：${result.batch_id}`
-        : result.status === "queued"
-        ? `单商品任务已排队：${result.batch_id}，前面还有 ${Math.max((result.queue_position || 1) - 1, 0)} 个任务`
-        : result.status === "already_queued"
-          ? `该商品已在任务中：${result.batch_id}`
-          : `任务已启动：${result.batch_id}`;
-      toast(message, "success");
-      if (state.autoAdvance) changeProduct("next");
-    } catch (error) { toast(error.message, "error"); button.disabled = false; button.classList.remove("uploading"); button.textContent = autoUpload ? `确认修改并立即上传（${state.selectedStoreIds.size} 家店铺）` : "运行任务生成商品资料"; }
-    return;
+    return startProductRun(state.currentProductId, button);
   }
   if (action === "refresh-ozon") {
     try { const result = await api("/api/inbox/refresh-ozon-status", {method: "POST"}); toast(`已只读刷新 ${result.synced_product_ids.length} 个任务`); await navigate(state.view); } catch (error) { toast(error.message, "error"); }
   }
   const batchAction = event.target.closest("[data-batch-action]");
   if (batchAction) {
-    try { const result = await api("/api/workbench/batches/control", {method: "POST", body: JSON.stringify({action: batchAction.dataset.batchAction})}); toast(result.message || `批次操作完成：${result.status}`, "success"); await (state.view === "review" ? refreshCurrentProduct() : renderBatches()); } catch (error) { toast(error.message, "error"); }
+    try { const result = await api("/api/workbench/batches/control", {method: "POST", body: JSON.stringify({action: batchAction.dataset.batchAction, source: batchAction.dataset.batchActionSource || ""})}); toast(result.message || `批次操作完成：${result.status}`, "success"); await (state.view === "review" ? refreshCurrentProduct() : renderBatches()); } catch (error) { toast(error.message, "error"); }
   }
   const suggestion = event.target.closest("[data-suggestion]");
   if (suggestion) {
@@ -2506,9 +3464,11 @@ document.getElementById("question-form").addEventListener("submit", async (event
   try {
     await api(`/api/workbench/products/${productId}/question/answer`, {method:"POST", body:JSON.stringify({answer})});
     document.getElementById("question-dialog").close();
-    toast("回答已保存。商品现在可以从失败步骤继续运行。", "success");
+    toast("回答已保存。商品现在可以继续运行。", "success");
     await pollNotifications({showDesktop:false});
-    return navigate("attention");
+    state.inboxFilter = "需处理";
+    await loadProducts(searchInput.value, {force:true});
+    return navigate("inbox", {force:true});
   } catch (error) { toast(error.message, "error"); }
 });
 document.getElementById("batch-store-options").addEventListener("change", updateBatchDialogButton);

@@ -2,8 +2,12 @@
 
 from __future__ import annotations
 
+import copy
+import hashlib
 import json
+import math
 import re
+import sys
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -20,8 +24,27 @@ SCHEMAS = {
     "rich-content.json": TEMPLATES / "rich-content.schema.json",
     "color-variants.json": TEMPLATES / "color-variants.schema.json",
     "color-variant-policy.json": TEMPLATES / "color-variant-policy.schema.json",
-    "final-upload-check.json": TEMPLATES / "final-upload-check.schema.json",
 }
+
+MODEL_ATTRIBUTE_NAMES = (
+    "Название модели (для объединения в одну карточку)",
+    "Название модели для шаблона наименования",
+    "Название модели",
+    "Модель",
+)
+MODEL_NAME_STRATEGY = "stable_random_numeric_v1"
+
+try:
+    from scripts.russian_color_rules import russian_color_or_unknown
+    from scripts.attribute_fill_input import build_attribute_fill_input
+    from scripts.ozon_attribute_compiler import compile_product_attributes
+    from scripts.ozon_ecommerce_designer_contract import _draft_attributes
+except ModuleNotFoundError:  # direct package execution
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from russian_color_rules import russian_color_or_unknown
+    from attribute_fill_input import build_attribute_fill_input
+    from ozon_attribute_compiler import compile_product_attributes
+    from ozon_ecommerce_designer_contract import _draft_attributes
 
 LUGGAGE_SCALE_TAGS = [
     "#весыдлябагажа", "#багажныевесы", "#весыдлячемодана", "#электронныевесы",
@@ -85,6 +108,20 @@ DRAIN_COVER_TAGS = [
     "#крышкадлядома", "#накладкадлядома", "#сливноеотверстие",
 ]
 
+TAG_STOPWORDS = {"для", "и", "в", "на", "с", "из", "по", "к", "или", "от", "до", "под"}
+TAG_PATTERN = re.compile(r"^#[А-Яа-яЁё]+$")
+TAG_FALLBACKS = [
+    "#товардлядома", "#полезнаяпокупка", "#удобноехранение", "#домашнийпорядок",
+    "#практичныйтовар", "#ежедневноеиспользование", "#товарыдлябыта", "#дляорганизации",
+    "#аккуратноехранение", "#простоеиспользование", "#домашнийаксессуар", "#дляповседневности",
+    "#выбордлясемьи", "#удобныйформат", "#компактныйтовар", "#подарокдлядома",
+    "#надолгоеслужит", "#дляквартиры", "#длязагородногодома", "#товарыдлякухни",
+    "#длягаража", "#длямастерской", "#дляпоездки", "#дляпикника",
+    "#организацияпространства", "#бережноехранение", "#удобнаяпокупка", "#товарыдлясемьи",
+    "#помощникдлядома", "#практичноерешение", "#каждыйдень", "#современныйтовар",
+    "#простаяпокупка", "#хорошийвыбор", "#дляподарка", "#длякомфорта",
+]
+
 
 def now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
@@ -130,7 +167,8 @@ def _attribute(
 
 
 def _product_family(product_dir: Path) -> str:
-    analysis = load_json(product_dir / "output/product-analysis.json")
+    analysis_path = product_dir / "output/product-analysis.json"
+    analysis = load_json(analysis_path) if analysis_path.is_file() else {}
     text = " ".join([
         str(analysis.get("product_type") or ""),
         str(analysis.get("category") or ""),
@@ -149,21 +187,196 @@ def _product_family(product_dir: Path) -> str:
     return "generic"
 
 
+def _blocked_tag_terms(product_dir: Path) -> set[str]:
+    values: List[str] = []
+    for relative in ("input/source.json", "output/product-analysis.json"):
+        path = product_dir / relative
+        if not path.is_file():
+            continue
+        try:
+            data = load_json(path)
+        except Exception:
+            continue
+        for key in ("brand", "brand_name", "manufacturer", "seller_brand"):
+            raw = data.get(key)
+            if isinstance(raw, str):
+                values.append(raw)
+        for item in data.get("product_attributes") or []:
+            name = str(item.get("name_cn") or item.get("name") or "").casefold()
+            if "品牌" in name or "brand" in name or "商标" in name:
+                values.append(str(item.get("value_cn") or item.get("value") or ""))
+    blocked = set()
+    ignored = {"", "unknown", "无", "无品牌", "нет бренда", "без бренда", "no brand", "none"}
+    for value in values:
+        folded = value.strip().casefold()
+        if folded in ignored:
+            continue
+        for token in re.findall(r"[А-Яа-яЁё]+", folded):
+            if len(token) >= 3:
+                blocked.add(token)
+    return blocked
+
+
+def _canonical_hashtag(value: Any, blocked_terms: set[str] | None = None) -> str | None:
+    raw = str(value or "").strip()
+    if not raw:
+        return None
+    # Reject the whole candidate instead of stripping model numbers, English
+    # brand fragments or underscores and accidentally turning packaging text
+    # into a misleading Ozon search tag.
+    if re.search(r"[A-Za-z0-9_]", raw):
+        return None
+    raw = raw[1:] if raw.startswith("#") else raw
+    words = [
+        word.casefold()
+        for word in re.findall(r"[А-Яа-яЁё]+", raw)
+        if word.casefold() not in TAG_STOPWORDS
+    ]
+    if not words:
+        return None
+    tag = "#" + "".join(words)
+    if not (3 <= len(tag) <= 30) or not TAG_PATTERN.fullmatch(tag):
+        return None
+    body = tag[1:].casefold()
+    if any(term and term in body for term in (blocked_terms or set())):
+        return None
+    return tag
+
+
+TAG_CONTEXT_STOPWORDS = {"для", "и", "в", "на", "с", "из", "по", "к", "или", "от", "без"}
+
+
+def _tag_context_key(body: str) -> str:
+    return body.replace("для", "")
+
+
+def _trusted_tag_context_strings(product_dir: Path) -> List[str]:
+    strings: List[str] = []
+    output = product_dir / "output"
+    candidates = [
+        output / "title-ru.json",
+        output / "description-ru.json",
+        output / "copy-ru.json",
+        output / "ozon-ecommerce-design.json",
+        output / "product-positioning.json",
+    ]
+
+    def walk(value: Any, key: str = "") -> None:
+        normalized_key = key.casefold()
+        if normalized_key in {"hashtags", "hashtags_ru", "tags"}:
+            return
+        if isinstance(value, str):
+            strings.append(value)
+            return
+        if isinstance(value, list):
+            for item in value:
+                walk(item, key)
+            return
+        if isinstance(value, dict):
+            for child_key, child_value in value.items():
+                walk(child_value, str(child_key))
+
+    for path in candidates:
+        if not path.is_file():
+            continue
+        try:
+            walk(load_json(path))
+        except Exception:
+            continue
+    return strings
+
+
+def _product_tag_context_bodies(product_dir: Path) -> set[str]:
+    bodies: set[str] = set()
+    for text in _trusted_tag_context_strings(product_dir):
+        words = [
+            word.casefold()
+            for word in re.findall(r"[А-Яа-яЁё]+", str(text))
+            if word.casefold() not in TAG_CONTEXT_STOPWORDS
+        ]
+        for index in range(len(words)):
+            for width in range(1, 6):
+                sequence = words[index:index + width]
+                if not sequence:
+                    continue
+                tag = _canonical_hashtag(" ".join(sequence))
+                if tag:
+                    bodies.add(tag[1:].casefold())
+    return bodies
+
+
+def _tag_matches_current_product(tag: str, context_bodies: set[str]) -> bool:
+    if not context_bodies:
+        return True
+    body = tag[1:].casefold() if tag.startswith("#") else tag.casefold()
+    if body in context_bodies:
+        return True
+    body_key = _tag_context_key(body)
+    if body_key in context_bodies:
+        return True
+    return any(
+        len(body_key) >= 6
+        and len(context_body) >= 6
+        and body_key in context_body
+        for context_body in context_bodies
+    )
+
+
+def _normalize_tag_list(
+    values: Any,
+    product_dir: Path,
+    *,
+    fill: bool = False,
+    context_bodies: set[str] | None = None,
+) -> Tuple[List[str], List[str]]:
+    warnings: List[str] = []
+    blocked_terms = _blocked_tag_terms(product_dir)
+    result: List[str] = []
+    seen: set[str] = set()
+    context_bodies = context_bodies or set()
+
+    def add(candidate: Any) -> None:
+        tag = _canonical_hashtag(candidate, blocked_terms)
+        if not tag:
+            return
+        if not _tag_matches_current_product(tag, context_bodies):
+            warnings.append(f"已移除与当前商品语义不一致的主题标签：{tag}")
+            return
+        key = tag.casefold()
+        if key in seen:
+            return
+        seen.add(key)
+        result.append(tag)
+
+    if isinstance(values, list):
+        for value in values:
+            before = str(value or "").strip()
+            add(value)
+            if before and (not result or result[-1] != before):
+                warnings.append(f"标签已按俄文纯字母规则净化：{before}")
+
+    # ``fill`` is deliberately ignored.  The old workflow invented generic
+    # product-family fillers until there were exactly 30 values.  A tag is
+    # optional in Ozon; only designer/workbench search-intent tags may pass.
+    return result[:30], list(dict.fromkeys(warnings))
+
+
 def _keyword_hashtags(product_dir: Path) -> List[str]:
     values: List[str] = []
-    for name in ("keywords-ru.json", "copy-ru.json"):
+    for name in ("keyword-research-ru.json", "keywords-ru.json", "copy-ru.json"):
         path = product_dir / "output" / name
         if not path.is_file():
             continue
         data = load_json(path)
-        for key in ("primary_keywords", "secondary_keywords", "keywords", "keywords_ru", "usage_scenarios"):
+        for key in ("primary_keywords", "secondary_keywords", "keywords", "keywords_ru", "approved_keywords", "usage_scenarios"):
             raw = data.get(key) or []
             if isinstance(raw, list):
                 values.extend(str(item) for item in raw)
-    tags = []
+    tags: List[str] = []
+    blocked_terms = _blocked_tag_terms(product_dir)
     for value in values:
-        normalized = "#" + re.sub(r"[^А-Яа-яЁё0-9]", "", value)
-        if 1 < len(normalized) <= 30 and normalized not in tags:
+        normalized = _canonical_hashtag(value, blocked_terms)
+        if normalized and normalized not in tags:
             tags.append(normalized)
     return tags
 
@@ -171,7 +384,7 @@ def _keyword_hashtags(product_dir: Path) -> List[str]:
 def _derived_truthful_hashtags(product_dir: Path) -> List[str]:
     """Derive extra tags only from already approved Russian copy tokens."""
     phrases: List[str] = []
-    for name in ("copy-ru.json", "marketplace-content-input.json"):
+    for name in ("copy-ru.json", "ozon-ecommerce-design.json"):
         path = product_dir / "output" / name
         if not path.is_file():
             continue
@@ -189,13 +402,13 @@ def _derived_truthful_hashtags(product_dir: Path) -> List[str]:
     stopwords = {"для", "и", "в", "на", "с", "из", "по", "к", "или"}
     result: List[str] = []
     for phrase in phrases:
-        words = re.findall(r"[А-Яа-яЁё0-9]+", phrase)
+        words = re.findall(r"[А-Яа-яЁё]+", phrase)
         sequences = [words]
         sequences.extend([words[index:index + 2] for index in range(max(0, len(words) - 1))])
         sequences.extend([[word] for word in words if word.casefold() not in stopwords])
         for sequence in sequences:
-            normalized = "#" + "".join(sequence)
-            if 1 < len(normalized) <= 30 and normalized not in result:
+            normalized = _canonical_hashtag(" ".join(sequence))
+            if normalized and normalized not in result:
                 result.append(normalized)
     return result
 
@@ -204,86 +417,94 @@ def build_tags(product_dir: Path) -> Dict[str, Any]:
     product_id = product_dir.name
     workbench_path = product_dir / "output/workbench-draft.json"
     workbench = load_json(workbench_path) if workbench_path.is_file() else {}
+    context_bodies = _product_tag_context_bodies(product_dir)
     manual_tags = workbench.get("tags")
     if manual_tags is not None:
-        if not isinstance(manual_tags, list) or len(manual_tags) != 30:
-            raise ValueError("Workbench tags must contain exactly 30 entries before upload")
-        tags = []
-        for value in manual_tags:
-            tag = str(value).strip()
-            if not re.fullmatch(r"#[А-Яа-яЁё0-9_]+", tag) or len(tag) > 30:
-                raise ValueError(f"Invalid workbench Ozon hashtag: {tag}")
-            if tag in tags:
-                raise ValueError(f"Duplicate workbench Ozon hashtag: {tag}")
-            tags.append(tag)
+        if not isinstance(manual_tags, list):
+            raise ValueError("Workbench tags must be a list")
+        tags, warnings = _normalize_tag_list(manual_tags, product_dir)
         return {
             "schema_version": "1.0.0", "product_id": product_id,
-            "tags": tags, "count": 30, "language": "ru",
+            "tags": tags, "count": len(tags), "language": "ru",
             "source_refs": [f"products/{product_id}/output/workbench-draft.json"],
-            "warnings": ["Hashtags were manually edited and locked in the workbench."],
+            "warnings": ["Workbench hashtags were normalized under the current Ozon search-tag rule; invalid or unrelated values were omitted."] + warnings,
         }
-    def validated_tags(values: Any) -> List[str] | None:
+    def validated_tags(values: Any, *, use_context: bool = True) -> List[str] | None:
+        tags, _warnings = _normalize_tag_list(
+            values,
+            product_dir,
+            fill=False,
+            context_bodies=context_bodies if use_context else set(),
+        )
         if not isinstance(values, list):
             return None
-        tags = [str(value).strip() for value in values]
         if (
-            len(tags) == 30
-            and len({tag.casefold() for tag in tags}) == 30
-            and all(
-                re.fullmatch(r"#[А-Яа-яЁё0-9_]+", tag)
-                and 3 <= len(tag) <= 30
-                and not tag[1:].isdigit()
-                for tag in tags
-            )
+            len(tags) <= 30
+            and len({tag.casefold() for tag in tags}) == len(tags)
+            and all(TAG_PATTERN.fullmatch(tag) and 3 <= len(tag) <= 30 for tag in tags)
         ):
             return tags
         return None
 
-    # The researched Russian-copy artifact is newer and more specific than a
-    # previously materialized field-completion file. Prefer it so rerunning
-    # field completion cannot restore stale mechanically derived tags.
-    content_path = product_dir / "output/marketplace-content-input.json"
-    if content_path.is_file():
-        content = load_json(content_path)
-        researched_tags = validated_tags(content.get("hashtags_ru"))
-        if researched_tags:
+    design_path = product_dir / "output/ozon-ecommerce-design.json"
+    if design_path.is_file():
+        design = load_json(design_path)
+        listing = design.get("listing") or {}
+        researched_tags, researched_warnings = _normalize_tag_list(
+            listing.get("hashtags") or design.get("hashtags"),
+            product_dir,
+            context_bodies=context_bodies,
+        )
+        if not researched_tags:
+            researched_tags, derived_warnings = _normalize_tag_list(
+                [*_keyword_hashtags(product_dir), *_derived_truthful_hashtags(product_dir)],
+                product_dir,
+                context_bodies=context_bodies,
+            )
+            researched_warnings += [
+                "Designer hashtags were empty or unrelated after product-context filtering; regenerated from current Russian title/copy/keywords."
+            ] + derived_warnings
+        if researched_tags is not None:
             return {
                 "schema_version": "1.0.0", "product_id": product_id,
-                "tags": researched_tags, "count": 30, "language": "ru",
-                "source_refs": [
-                    f"products/{product_id}/output/marketplace-content-input.json"
-                ],
+                "tags": researched_tags, "count": len(researched_tags), "language": "ru",
+                "source_refs": [f"products/{product_id}/output/ozon-ecommerce-design.json"],
                 "warnings": [
-                    "Live-researched Russian-copy hashtags were preserved during field completion."
-                ],
+                    "Designer hashtags were normalized during field completion."
+                ] + researched_warnings,
             }
 
     existing_path = product_dir / "output/ozon-tags.json"
     if existing_path.is_file():
         existing = load_json(existing_path)
-        existing_tags = validated_tags(existing.get("tags"))
-        if existing_tags:
+        existing_tags, existing_warnings = _normalize_tag_list(
+            existing.get("tags"),
+            product_dir,
+            context_bodies=context_bodies,
+        )
+        if existing_tags is not None:
+            source_refs = list(existing.get("source_refs") or [])
+            legacy_source_ref = str(existing.get("source_ref") or "").strip()
+            if legacy_source_ref and legacy_source_ref not in source_refs:
+                source_refs.append(legacy_source_ref)
+            if not source_refs:
+                source_refs = [
+                    f"products/{product_id}/output/ozon-ecommerce-design.json"
+                ]
             return {
-                **existing,
+                "schema_version": "1.0.0",
+                "product_id": product_id,
                 "tags": existing_tags,
-                "count": 30,
+                "count": len(existing_tags),
+                "language": "ru",
+                "source_refs": source_refs,
                 "warnings": list(existing.get("warnings") or []) + [
-                    "Validated Russian-copy hashtags were preserved during field completion."
-                ],
+                    "Validated Russian-copy hashtags were normalized and preserved during field completion."
+                ] + existing_warnings,
             }
-    family = _product_family(product_dir)
-    bank = {
-        "luggage_scale": LUGGAGE_SCALE_TAGS,
-        "knife_sharpener": KNIFE_SHARPENER_TAGS,
-        "pet_leash": PET_LEASH_TAGS,
-        "storage_bag": STORAGE_BAG_TAGS,
-        "drain_cover": DRAIN_COVER_TAGS,
-    }.get(family, [])
-    tags = list(dict.fromkeys(
-        _keyword_hashtags(product_dir) + list(bank) + _derived_truthful_hashtags(product_dir)
-    ))[:30]
-    if len(tags) != 30:
-        raise ValueError(f"Cannot generate 30 truthful Russian tags for product family {family}")
+    # No design tags means no tag attribute.  Never manufacture tags from a
+    # product-family bank, packaging text, model code, or generic filler.
+    tags, warnings = [], ["No valid product-specific Russian search tags were available; the optional Ozon hashtag attribute will be omitted."]
     return {
         "schema_version": "1.0.0",
         "product_id": product_id,
@@ -291,14 +512,11 @@ def build_tags(product_dir: Path) -> Dict[str, Any]:
         "count": len(tags),
         "language": "ru",
         "source_refs": [
-            f"products/{product_id}/input/source.json",
-            f"products/{product_id}/output/product-analysis.json",
-            f"products/{product_id}/output/product-positioning.json",
-            f"products/{product_id}/output/keywords-ru.json",
+            f"products/{product_id}/output/ozon-ecommerce-design.json",
         ],
         "warnings": [
             "Tags describe only the confirmed product type, usage scenes, and purchase motivation; brand and unconfirmed parameters are excluded."
-        ],
+        ] + warnings,
     }
 
 
@@ -311,6 +529,142 @@ def _ozon_image_urls(result: Dict[str, Any]) -> List[str]:
     first = items[0]
     urls = list(first.get("primary_image") or []) + list(first.get("images") or [])
     return list(dict.fromkeys(url for url in urls if isinstance(url, str) and url.startswith("https://")))
+
+
+def _project_relative_path(product_dir: Path, value: Any) -> str:
+    raw = str(value or "").strip()
+    if not raw:
+        raise ValueError("image path is empty")
+    path = Path(raw)
+    if path.is_absolute():
+        candidate = path.resolve()
+    elif path.parts and path.parts[0] == "products":
+        candidate = (ROOT / path).resolve()
+    else:
+        candidate = (product_dir / path).resolve()
+    root = ROOT.resolve()
+    if candidate != root and root not in candidate.parents:
+        raise ValueError(f"image path escapes project root: {value}")
+    return candidate.relative_to(root).as_posix()
+
+
+def _image_source_ids(item: Dict[str, Any]) -> List[str]:
+    values: List[str] = []
+    for key in ("reference_image_ids", "reference_images", "reference_product_images", "source_image_ids"):
+        raw = item.get(key) or []
+        if isinstance(raw, str):
+            raw = [raw]
+        if isinstance(raw, list):
+            values.extend(str(value) for value in raw if str(value).strip())
+    return list(dict.fromkeys(values))
+
+
+def _draft_images_from_image_plan(product_dir: Path) -> List[Dict[str, Any]]:
+    plan_path = product_dir / "output/image-plan.json"
+    if not plan_path.is_file():
+        return []
+    plan = load_json(plan_path)
+    image_qc_path = product_dir / "output/image-qc-report.json"
+    image_qc = load_json(image_qc_path) if image_qc_path.is_file() else {}
+    qc_passed = str(image_qc.get("decision") or "").casefold() == "pass"
+    checked_by_slot = {
+        str(item.get("slot")): item
+        for item in image_qc.get("images_checked") or []
+        if item.get("slot")
+    }
+    result: List[Dict[str, Any]] = []
+
+    def add_images(items: Iterable[Dict[str, Any]], role: str) -> None:
+        for item in items:
+            slot = str(item.get("slot") or "").strip()
+            if not slot:
+                continue
+            path_value = item.get("output_path") or item.get("path") or item.get("local_path")
+            try:
+                relative_path = _project_relative_path(product_dir, path_value)
+            except ValueError:
+                continue
+            if not (ROOT / relative_path).is_file():
+                continue
+            checked = checked_by_slot.get(slot) or {}
+            qc_status = "pass" if qc_passed and checked else str(item.get("qc_status") or item.get("status") or "not_checked")
+            if qc_status in {"generated", "ready", "passed", "complete", "completed"}:
+                qc_status = "pass"
+            if qc_status not in {"not_checked", "pass", "review_required", "fail"}:
+                qc_status = "not_checked"
+            draft_image: Dict[str, Any] = {
+                "slot": slot,
+                "role": role,
+                "path": relative_path,
+                "source_image_ids": _image_source_ids(item),
+                "qc_status": qc_status,
+            }
+            variant_scope = str(item.get("variant_scope") or "").strip()
+            if role == "main" and str(item.get("source_sku_id") or "").strip() not in {"", "all", "shared"}:
+                variant_scope = "sku"
+            elif role != "main":
+                variant_scope = "shared"
+            if variant_scope in {"shared", "sku"}:
+                draft_image["variant_scope"] = variant_scope
+            sku_id = str(item.get("source_sku_id") or "").strip()
+            if variant_scope == "sku" and sku_id and sku_id not in {"all", "shared"}:
+                draft_image["source_sku_id"] = sku_id
+            variant_kind = str(item.get("variant_kind") or "").strip()
+            if variant_kind not in {"color", "size_or_measurement", "configuration", "mixed_supported", "not_applicable"}:
+                variant_kind = "not_applicable"
+            draft_image["variant_kind"] = variant_kind
+            variant_value = str(item.get("variant_value") or "").strip()
+            if variant_value:
+                draft_image["variant_value"] = variant_value
+            result.append(draft_image)
+
+    add_images(plan.get("main_images") or [], "main")
+    add_images(plan.get("detail_images") or [], "detail")
+    add_images(plan.get("disclaimer_images") or [], "disclaimer")
+    return result
+
+
+def sync_draft_images_from_image_plan(
+    product_dir: Path,
+    draft: Dict[str, Any] | None = None,
+    *,
+    write: bool = False,
+) -> Dict[str, Any]:
+    """Fill ozon-draft images from the current image plan when the draft is stale.
+
+    Field completion can run before image generation, so old drafts may contain
+    an empty image list.  After image QC passes, upload and Rich Content must use
+    the current generated slots, not a historical empty draft.
+    """
+    draft_path = product_dir / "output/ozon-draft.json"
+    current = copy.deepcopy(draft if draft is not None else load_json(draft_path))
+    images = current.get("images") or []
+    image_plan_images = _draft_images_from_image_plan(product_dir)
+    if image_plan_images and len(images) != len(image_plan_images):
+        current["images"] = image_plan_images
+        if write:
+            write_json_atomic(draft_path, current)
+    return current
+
+
+def sync_draft_attributes_from_final_attributes(
+    product_dir: Path,
+    final_attributes: Dict[str, Any],
+    draft: Dict[str, Any] | None = None,
+    *,
+    write: bool = False,
+) -> Dict[str, Any]:
+    draft_path = product_dir / "output/ozon-draft.json"
+    if draft is None and not draft_path.is_file():
+        return {}
+    current = copy.deepcopy(draft if draft is not None else load_json(draft_path))
+    current["attributes"] = _draft_attributes(final_attributes)
+    for sku in current.get("skus") or []:
+        sku_id = str(sku.get("source_sku_id") or "")
+        sku["attributes"] = _draft_attributes(final_attributes, sku_id=sku_id)
+    if write:
+        write_json_atomic(draft_path, current)
+    return current
 
 
 def _text(content: str, size: str) -> Dict[str, Any]:
@@ -327,7 +681,7 @@ def build_rich_content(product_dir: Path, result: Dict[str, Any]) -> Dict[str, A
             urls = _ozon_image_urls({
                 "raw_response": {"image_verification": transfer.get("response") or {}}
             })
-    draft = load_json(product_dir / "output/ozon-draft.json")
+    draft = sync_draft_images_from_image_plan(product_dir)
     planned = [item for item in draft["images"] if (ROOT / item["path"]).is_file()][:4]
     local_paths = [item["path"] for item in planned]
     roles = ["main", "benefit", "scene", "disclaimer"][:len(local_paths)]
@@ -386,52 +740,10 @@ def build_rich_content(product_dir: Path, result: Dict[str, Any]) -> Dict[str, A
 
 
 def _color_from_sku_name(name: str) -> str:
-    # 1688 seller names often use marketing colour names rather than the
-    # literal ``黑色/白色`` form.  Keep the mapping conservative and map only
-    # to values that are present in the cached Ozon colour dictionary.
-    if any(token in name for token in ("黑曜石", "曜石黑")):
-        return "черный"
-    if any(token in name for token in ("奶油白", "乳白")):
-        return "кремовый"
-    if any(token in name for token in ("酒红", "酒红色", "深酒红")):
-        return "бордовый"
-    if any(token in name for token in ("浅绿", "淡绿", " светло-зелен")):
-        return "светло-зеленый"
-    if any(token in name for token in ("深绿", "墨绿", " темно-зелен")):
-        return "темно-зеленый"
-    if any(token in name for token in ("浅蓝", "淡蓝", " светло-син")):
-        return "светло-синий"
-    if any(token in name for token in ("深蓝", "藏青", " темно-син")):
-        return "темно-синий"
-    if "银色" in name:
-        return "серебристый"
-    if "黑色" in name:
-        return "черный"
-    if any(token in name for token in ("绿色", " зел")):
-        return "зеленый"
-    if "卡其色" in name:
-        return "хаки"
-    if "白色" in name:
-        return "белый"
-    if "灰色" in name:
-        return "серый"
-    if "红色" in name:
-        return "красный"
-    if "粉色" in name or "粉红" in name:
-        return "розовый"
-    if "蓝色" in name:
-        return "синий"
-    if "黄色" in name:
-        return "желтый"
-    if "橙色" in name or "橙黄" in name:
-        return "оранжевый"
-    if "透明" in name:
-        return "прозрачный"
-    if "米色" in name or "米白" in name:
-        return "бежевый"
-    if "棕色" in name or "咖啡色" in name:
-        return "коричневый"
-    return "unknown"
+    # One shared rule for all Ozon-facing color fields: extract only the color
+    # word, never capacity/model/spec fragments such as ``1.9L`` or
+    # ``601-800 мл``.
+    return russian_color_or_unknown(name)
 
 
 def _dictionary_value(metadata: Dict[str, Any], value: str) -> Tuple[str, int] | None:
@@ -545,17 +857,22 @@ def _dictionary_match_from_source_text(
     return str(item["value"]), int(item["id"])
 
 
-def _explicit_dimensions_mm(source: Dict[str, Any]) -> Tuple[float, float, float | None] | None:
+def _explicit_dimensions_cm(source: Dict[str, Any]) -> Tuple[float, float, float | None] | None:
     values = []
-    direct = _source_attribute_value(source, ("尺寸", "产品尺寸", "规格尺寸", "长宽高"))
+    direct = _source_attribute_value(source, (
+        "尺寸", "产品尺寸", "商品尺寸", "规格尺寸", "长宽高",
+        "规格(长*宽*高)", "规格（长*宽*高）", "规格(长×宽×高)",
+        "产品规格(长*宽*高)", "商品规格(长*宽*高)",
+    ))
     if direct:
         values.append(direct)
     for sku in source.get("skus") or []:
         values.append(str(sku.get("sku_name") or ""))
         values.extend(str(item.get("value_cn") or "") for item in sku.get("option_values") or [])
     pattern = re.compile(
-        r"(?P<a>\d+(?:\.\d+)?)\s*[x×*]\s*(?P<b>\d+(?:\.\d+)?)"
-        r"(?:\s*[x×*]\s*(?P<c>\d+(?:\.\d+)?))?\s*(?P<unit>mm|毫米|cm|厘米)",
+        r"(?P<a>\d+(?:[.,]\d+)?)\s*(?P<unit_a>mm|毫米|cm|厘米)?\s*[x×*]\s*"
+        r"(?P<b>\d+(?:[.,]\d+)?)\s*(?P<unit_b>mm|毫米|cm|厘米)?"
+        r"(?:\s*[x×*]\s*(?P<c>\d+(?:[.,]\d+)?)\s*(?P<unit_c>mm|毫米|cm|厘米)?)?",
         re.IGNORECASE,
     )
     matches = [match for value in values if (match := pattern.search(value))]
@@ -563,16 +880,76 @@ def _explicit_dimensions_mm(source: Dict[str, Any]) -> Tuple[float, float, float
         return None
     converted = []
     for match in matches:
-        factor = 10.0 if match.group("unit").casefold() in {"cm", "厘米"} else 1.0
+        units = [
+            match.group(name) for name in ("unit_a", "unit_b", "unit_c")
+            if match.group(name)
+        ]
+        if not units:
+            continue
+        normalized_units = {
+            "mm" if unit.casefold() in {"mm", "毫米"} else "cm" for unit in units
+        }
+        if len(normalized_units) != 1:
+            continue
+        factor = 0.1 if "mm" in normalized_units else 1.0
         converted.append((
-            float(match.group("a")) * factor,
-            float(match.group("b")) * factor,
-            float(match.group("c")) * factor if match.group("c") else None,
+            float(match.group("a").replace(",", ".")) * factor,
+            float(match.group("b").replace(",", ".")) * factor,
+            float(match.group("c").replace(",", ".")) * factor if match.group("c") else None,
         ))
-    return converted[0] if all(item == converted[0] for item in converted) else None
+    return converted[0] if converted and all(item == converted[0] for item in converted) else None
 
 
-def _explicit_weight_g(source: Dict[str, Any]) -> float | None:
+def _plain_dimension_attributes(metadata: Dict[str, Any]) -> Dict[str, Tuple[Dict[str, Any], str]]:
+    """Return only plain L/W/H fields and the unit printed in the Ozon name.
+
+    Related measurements such as seat width or back height must never receive
+    the overall product dimensions.
+    """
+    dimensions: Dict[str, Tuple[Dict[str, Any], str]] = {}
+    axis_names = {
+        "длина": "length",
+        "ширина": "width",
+        "высота": "height",
+        "глубина": "length",
+    }
+    pattern = re.compile(
+        r"^\s*(длина|ширина|высота|глубина)[\s,，:()（）]*(мм|mm|см|cm)\s*$",
+        re.IGNORECASE,
+    )
+    for item in metadata.get("attributes") or []:
+        match = pattern.match(str(item.get("attribute_name") or ""))
+        if not match:
+            continue
+        axis = axis_names[match.group(1).casefold()]
+        # Prefer the literal length field if a category exposes both length
+        # and depth; depth is only an exact-name fallback.
+        if axis in dimensions and match.group(1).casefold() == "глубина":
+            continue
+        unit = "mm" if match.group(2).casefold() in {"мм", "mm"} else "cm"
+        dimensions[axis] = (item, unit)
+    return dimensions
+
+
+def _measurement_override_attribute_ids(metadata: Dict[str, Any]) -> set[int]:
+    aliases = (
+        ("Вес товара, г", "Вес товара", "Вес, г"),
+        ("Вес товара с упаковкой", "Вес с упаковкой", "Вес с упаковкой, г", "Вес упаковки"),
+        ("Длина, мм", "Длина товара, мм", "Длина, см", "Длина товара, см"),
+        ("Ширина, мм", "Ширина товара, мм", "Ширина, см", "Ширина товара, см"),
+        ("Высота, мм", "Высота товара, мм", "Высота, см", "Высота товара, см"),
+        ("Размер упаковки", "Габариты упаковки"),
+        ("Размеры, мм", "Размеры товара, мм"),
+    )
+    result: set[int] = set()
+    for names in aliases:
+        attribute = _find_attribute_by_names(metadata, names)
+        if attribute:
+            result.add(int(attribute["attribute_id"]))
+    return result
+
+
+def _explicit_weight_g(source: Dict[str, Any]) -> int | None:
     raw = _source_attribute_value(source, ("重量", "产品重量", "单品重量", "净重"))
     if not raw:
         return None
@@ -580,7 +957,8 @@ def _explicit_weight_g(source: Dict[str, Any]) -> float | None:
     if not match:
         return None
     value = float(match.group(1))
-    return value * 1000 if match.group(2).casefold() in {"kg", "千克", "公斤"} else value
+    grams = value * 1000 if match.group(2).casefold() in {"kg", "千克", "公斤"} else value
+    return int(math.ceil(grams))
 
 
 def _reliable_dynamic_attributes(
@@ -650,17 +1028,21 @@ def _reliable_dynamic_attributes(
                     selected[0], "human_override" if manual_color != "unknown" else "1688", 1.0, evidence, None
                 )
 
-    dimensions = _explicit_dimensions_mm(source)
+    dimensions = _explicit_dimensions_cm(source)
     if dimensions:
-        for aliases, value in (
-            (("Длина, мм", "Длина"), dimensions[0]),
-            (("Ширина, мм", "Ширина"), dimensions[1]),
-            (("Высота, мм", "Высота"), dimensions[2]),
-        ):
-            attribute = _find_attribute_by_names(metadata, aliases)
-            if attribute and value is not None:
+        axes = {"length": dimensions[0], "width": dimensions[1], "height": dimensions[2]}
+        for axis, (attribute, unit) in _plain_dimension_attributes(metadata).items():
+            value_cm = axes[axis]
+            if value_cm is not None:
+                value = value_cm * 10.0 if unit == "mm" else value_cm
+                if float(value).is_integer():
+                    value = int(value)
                 result[int(attribute["attribute_id"])] = (
-                    value, "1688", 1.0, ["source product/SKU dimensions"], None
+                    value,
+                    "1688",
+                    1.0,
+                    [f"source product/SKU dimensions converted from cm to {unit}"],
+                    None,
                 )
 
     weight = _explicit_weight_g(source)
@@ -1002,7 +1384,12 @@ def build_color_variants(product_dir: Path, source: Dict[str, Any]) -> Dict[str,
         str(item.get("source_sku_id")): item
         for item in plan.get("main_images") or []
         if item.get("variant_scope") == "sku"
-        and item.get("variant_kind") in {"color", "mixed_supported"}
+        and str(item.get("source_sku_id") or "").strip() not in {"", "all", "shared"}
+        and (
+            str(item.get("image_type") or "").casefold() == "main"
+            or str(item.get("layout_type") or "").casefold() == "sku_main"
+            or str(item.get("slot") or "").startswith("main-")
+        )
         and item.get("slot") in qc_slots
         and (project_root / str(item.get("output_path") or "missing")).is_file()
     }
@@ -1022,7 +1409,14 @@ def build_color_variants(product_dir: Path, source: Dict[str, Any]) -> Dict[str,
     }
     for sku in source["skus"]:
         sku_id = str(sku["sku_id"])
-        image = str(sku.get("variant_local_image_path") or sku.get("local_image_path") or "unknown")
+        image = str(
+            sku.get("variant_local_image_path")
+            or sku.get("local_image_path")
+            or sku.get("image_path")
+            or sku.get("sku_image_path")
+            or sku.get("image_local_path")
+            or "unknown"
+        )
         if sku_id in generated_variant_mains:
             generated = generated_variant_mains[sku_id]
             image = str(generated["output_path"])
@@ -1030,7 +1424,7 @@ def build_color_variants(product_dir: Path, source: Dict[str, Any]) -> Dict[str,
             image_source = "generated_from_real_sku_reference"
             resolution_level = 3
             confidence = 1.0
-            reason = "This SKU-specific generated main uses the exact real SKU reference and passed the common image QC gate."
+            reason = "This SKU-specific generated main is tied to the current SKU and passed the common image QC gate."
         elif sku_id in ai_passed:
             generated = str(ai_passed[sku_id].get("image", "missing"))
             if generated != "missing" and (project_root / generated).is_file():
@@ -1169,19 +1563,61 @@ def build_attributes(
     ) else "AI_estimated"
     product_measurements_confidence = 1.0 if product_manual or product_measurements_source == "1688" else 0.68
     supplied: Dict[int, Tuple[Any, str, float, List[str], int | None]] = {
-        int(config["model_name"]["attribute_id"]): (config["model_name"]["value"], "AI_estimated", 0.95, ["ozon-upload-config.model_name", "product-analysis.product_type"], None),
         int(config["brand"]["attribute_id"]): (config["brand"]["value"], "AI_estimated", 0.90, ["store policy: products without a confirmed brand use Нет бренда"], config["brand"]["dictionary_value_id"]),
         int(config["type"]["attribute_id"]): (config["type"]["value"], "AI_estimated", 0.99, ["product-analysis.product_type", "ozon-category.category_name"], config["type"]["dictionary_value_id"]),
     }
+    configured_model_attribute_id = int((config.get("model_name") or {}).get("attribute_id") or 0)
+    if configured_model_attribute_id > 0:
+        supplied[configured_model_attribute_id] = (
+            config["model_name"]["value"],
+            "AI_estimated",
+            0.95,
+            ["ozon-upload-config.model_name", "product-analysis.product_type"],
+            None,
+        )
+    # Model name is a system grouping key.  It must be one stable random-looking
+    # number for the whole product card, shared by every SKU and every Ozon model
+    # alias in this category.  It is intentionally not copied from the title and
+    # not overridden by workbench drafts.
+    model_attribute_names = {
+        _normalized_attribute_name(name) for name in MODEL_ATTRIBUTE_NAMES
+    }
+    model_attribute_ids: set[int] = set()
+    for item in metadata.get("attributes") or []:
+        if _normalized_attribute_name(item.get("attribute_name")) not in model_attribute_names:
+            continue
+        model_attribute_ids.add(int(item["attribute_id"]))
+        supplied.setdefault(
+            int(item["attribute_id"]),
+            (
+                config["model_name"]["value"],
+                "AI_estimated",
+                0.95,
+                ["ozon-upload-config.model_name", MODEL_NAME_STRATEGY],
+                None,
+            ),
+        )
     supplied.update(_reliable_dynamic_attributes(product_dir, metadata))
     supplied.update(_safe_optional_attributes(product_dir, metadata))
     workbench_path = product_dir / "output/workbench-draft.json"
     workbench = load_json(workbench_path) if workbench_path.is_file() else {}
     manual_attributes = workbench.get("attributes") or {}
+    has_confirmed_source_measurements = any(
+        config[field]["source_status"] == "confirmed_source"
+        for field in ("product_weight", "product_dimensions", "package_weight", "package_dimensions")
+    )
+    protected_measurement_attribute_ids = (
+        _measurement_override_attribute_ids(metadata)
+        if has_confirmed_source_measurements else set()
+    )
     for item in metadata.get("attributes") or []:
         attribute_id = int(item["attribute_id"])
         raw_value = manual_attributes.get(str(attribute_id), manual_attributes.get(attribute_id))
         if raw_value in {None, "", "unknown"}:
+            continue
+        if attribute_id in model_attribute_ids:
+            continue
+        if attribute_id in protected_measurement_attribute_ids:
             continue
         dictionary_id = None
         allowed_values = item.get("allowed_values") or []
@@ -1199,6 +1635,14 @@ def build_attributes(
         supplied[attribute_id] = (
             raw_value, "human_override", 1.0,
             ["workbench-draft.attributes", f"attribute_id={attribute_id}"], dictionary_id,
+        )
+    for attribute_id in model_attribute_ids:
+        supplied[attribute_id] = (
+            config["model_name"]["value"],
+            "AI_estimated",
+            0.95,
+            ["ozon-upload-config.model_name", MODEL_NAME_STRATEGY],
+            None,
         )
     def display_number(value: Any) -> str:
         number = float(value)
@@ -1334,149 +1778,6 @@ def build_attributes(
     }
 
 
-def build_final_check(
-    product_dir: Path,
-    tags: Dict[str, Any],
-    attrs: Dict[str, Any],
-    rich: Dict[str, Any],
-    colors: Dict[str, Any],
-    color_policy: Dict[str, Any],
-    config: Dict[str, Any],
-) -> Dict[str, Any]:
-    checks = []
-    errors = []
-
-    def add(name: str, passed: bool, detail: str) -> None:
-        checks.append({"name": name, "passed": passed, "detail": detail})
-        if not passed:
-            errors.append(detail)
-
-    add("tags", tags["count"] == 30 and len(set(tags["tags"])) == 30, "Exactly 30 unique Russian hashtags are required.")
-    add("required_attributes", attrs["required_summary"]["missing"] == 0, "All required live Ozon category attributes must have a traceable value.")
-    add(
-        "rich_content",
-        rich["status"] in {"ready", "ready_for_upload"},
-        "Rich Content must be valid and use either persistent HTTPS images or local assets resolvable during production upload.",
-    )
-    add(
-        "color_variant_images",
-        color_policy["status"] != "BLOCK",
-        "The main SKU must have a safe color image; missing non-core variants are warnings.",
-    )
-    output = product_dir / "output"
-    draft = load_json(output / "ozon-draft.json")
-    pricing_path = output / "pricing-result.json"
-    pricing = load_json(pricing_path) if pricing_path.is_file() else {}
-    priced_skus = {
-        str(item.get("sku_id")) for item in pricing.get("sku_pricing", [])
-        if float(item.get("selling_price_cny") or 0) > 0
-    }
-    selected_skus = {str(item["source_sku_id"]) for item in draft["skus"]}
-    add(
-        "pricing",
-        bool(pricing) and selected_skus == priced_skus,
-        "Every selected SKU requires a positive price in pricing-result.json.",
-    )
-    plan_path = output / "image-plan.json"
-    plan = load_json(plan_path) if plan_path.is_file() else {}
-    planned_main = list(plan.get("main_images") or [])
-    planned_detail = list(plan.get("detail_images") or [])
-    draft_by_slot = {str(item.get("slot")): item for item in draft.get("images") or []}
-    selected_sku_ids = {str(item.get("source_sku_id")) for item in draft.get("skus") or []}
-    missing_main = []
-    for sku_id in sorted(selected_sku_ids):
-        candidates = [
-            item for item in planned_main
-            if str(item.get("source_sku_id") or "") == sku_id
-        ]
-        if not candidates:
-            missing_main.append(f"SKU {sku_id}: no planned main image")
-            continue
-        for item in candidates[:1]:
-            slot = str(item.get("slot") or "")
-            draft_item = draft_by_slot.get(slot)
-            if not draft_item or draft_item.get("qc_status") != "pass" or not (ROOT / str(draft_item.get("path") or "")).is_file():
-                missing_main.append(f"SKU {sku_id}: {slot or 'main image'} missing or not QC-passed")
-    missing_detail = []
-    if len(planned_detail) != 8:
-        missing_detail.append(f"image plan contains {len(planned_detail)} detail slots; exactly 8 are required")
-    for item in planned_detail:
-        slot = str(item.get("slot") or "")
-        draft_item = draft_by_slot.get(slot)
-        if not draft_item or draft_item.get("qc_status") != "pass" or not (ROOT / str(draft_item.get("path") or "")).is_file():
-            missing_detail.append(slot or "unnamed detail slot")
-    completeness_ok = not missing_main and not missing_detail
-    add(
-        "image_slot_completeness",
-        completeness_ok,
-        "每个已选SKU必须有主图，且商品必须有完整8张详情图；缺图、损坏或未通过技术检查时禁止上传。"
-        + (f" 缺失：主图 {', '.join(missing_main)}；详情图 {', '.join(missing_detail)}" if not completeness_ok else ""),
-    )
-    images_ok = bool(draft.get("images")) and all(
-        item.get("qc_status") == "pass" and (ROOT / item["path"]).is_file()
-        for item in draft.get("images", [])
-    )
-    add("images_qc", images_ok, "Every planned upload image must exist and pass image QC.")
-    product_weight = config.get("product_weight") or {}
-    package_weight = config.get("package_weight") or {}
-    product_dimensions = config.get("product_dimensions") or {}
-    package_dimensions = config.get("package_dimensions") or {}
-    hierarchy_ok = (
-        float(package_weight.get("value_g") or 0) > float(product_weight.get("value_g") or 0) > 0
-        and all(
-            float(package_dimensions.get(key) or 0) > float(product_dimensions.get(key) or 0) > 0
-            for key in ("length_mm", "width_mm", "height_mm")
-        )
-    )
-    add(
-        "measurement_hierarchy",
-        hierarchy_ok,
-        "Package weight and every package dimension must be strictly greater than product measurements.",
-    )
-    category = draft.get("category", {})
-    add(
-        "category",
-        category.get("metadata_source") == "ozon_seller_api"
-        and isinstance(draft.get("description_category_id"), int)
-        and isinstance(draft.get("type_id"), int)
-        and category.get("match_status") == "api_confirmed"
-        and float(category.get("confidence") or 0) >= 0.90,
-        "A live, high-confidence Ozon category_id and type_id match is required.",
-    )
-    tree_path = output / "ozon-category-tree.json"
-    category_pair_in_tree = False
-    if tree_path.is_file():
-        tree = load_json(tree_path)
-        category_pair_in_tree = any(
-            item.get("category_id") == draft.get("description_category_id")
-            and item.get("type_id") == draft.get("type_id")
-            and item.get("disabled") is not True
-            for item in tree.get("categories") or []
-        )
-    add(
-        "category_type_pair",
-        category_pair_in_tree,
-        "The selected category_id/type_id pair must be an enabled leaf in the same fetched Ozon category tree.",
-    )
-    add(
-        "attribute_schema_identity",
-        attrs.get("category_id") == draft.get("description_category_id")
-        and attrs.get("type_id") == draft.get("type_id"),
-        "Ozon attributes must belong to the selected category_id/type_id pair.",
-    )
-    upload_allowed = all(item["passed"] for item in checks)
-    return {
-        "schema_version": "1.0.0",
-        "product_id": product_dir.name,
-        "checked_at": now(),
-        "status": "PASS" if upload_allowed else "FAIL",
-        "upload_allowed": upload_allowed,
-        "checks": checks,
-        "errors": errors,
-        "warnings": ["This check performs no Ozon API write and does not modify the existing online product."],
-    }
-
-
 def build_attribute_coverage_report(attrs: Dict[str, Any]) -> Dict[str, Any]:
     filled = [item for item in attrs["attributes"] if item["value"] != "unknown"]
     omitted = [item for item in attrs["attributes"] if item["value"] == "unknown"]
@@ -1531,6 +1832,100 @@ def _find_attribute_by_names(metadata: Dict[str, Any], names: Iterable[str]) -> 
     )
 
 
+def _find_brand_attribute(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Find the live Ozon brand attribute even when the category renames it.
+
+    Some apparel/accessory categories expose brand as names such as
+    ``Бренд в одежде и обуви`` rather than plain ``Бренд``.  Treating only the
+    exact name as reliable made otherwise valid categories stop before field
+    compilation.
+    """
+    candidates = []
+    for item in metadata.get("attributes", []) or []:
+        name = _normalized_attribute_name(item.get("attribute_name"))
+        try:
+            attribute_id = int(item.get("attribute_id") or 0)
+        except (TypeError, ValueError):
+            attribute_id = 0
+        if attribute_id == 85 or "бренд" in name or "brand" in name:
+            candidates.append(item)
+    if not candidates:
+        return {}
+    return min(
+        candidates,
+        key=lambda item: (
+            0 if (item.get("required") is True or item.get("is_required") is True) else 1,
+            0 if _allowed_value_by_text(item, "Нет бренда") else 1,
+            len(str(item.get("attribute_name") or "")),
+            int(item.get("attribute_id") or 0),
+        ),
+    )
+
+
+def _allowed_value_by_text(attribute: Dict[str, Any], text: str) -> Dict[str, Any] | None:
+    expected = _normalized_attribute_name(text)
+    return next(
+        (
+            item for item in attribute.get("allowed_values", []) or []
+            if _normalized_attribute_name(item.get("value")) == expected
+        ),
+        None,
+    )
+
+
+def _find_model_attribute(metadata: Dict[str, Any]) -> Dict[str, Any]:
+    """Prefer a required Ozon model field, then the most specific known alias."""
+    priority = {
+        _normalized_attribute_name(name): index
+        for index, name in enumerate(MODEL_ATTRIBUTE_NAMES)
+    }
+    candidates = [
+        item for item in metadata.get("attributes", [])
+        if _normalized_attribute_name(item.get("attribute_name")) in priority
+    ]
+    if not candidates:
+        return {}
+    return min(
+        candidates,
+        key=lambda item: (
+            0 if (item.get("required") is True or item.get("is_required") is True) else 1,
+            priority[_normalized_attribute_name(item.get("attribute_name"))],
+            int(item.get("attribute_id") or 0),
+        ),
+    )
+
+
+def _stable_random_model_name(product_dir: Path, source: Dict[str, Any]) -> str:
+    """Return a random-looking but repeatable 12-digit model for one product."""
+    identity = {
+        "strategy": MODEL_NAME_STRATEGY,
+        "product_id": str(source.get("product_id") or product_dir.name),
+        "collection_id": str(source.get("collection_id") or "unknown"),
+        "source_product_id": str(
+            source.get("source_product_id") or source.get("offer_id") or "unknown"
+        ),
+        "source_url": str(
+            source.get("canonical_source_url") or source.get("source_url") or "unknown"
+        ),
+    }
+    encoded = json.dumps(
+        identity, ensure_ascii=False, sort_keys=True, separators=(",", ":")
+    ).encode("utf-8")
+    digest = hashlib.sha256(encoded).digest()
+    number = 100_000_000_000 + int.from_bytes(digest[:8], "big") % 900_000_000_000
+    return str(number)
+
+
+def _resolve_product_model_name(
+    product_dir: Path,
+    source: Dict[str, Any],
+    existing_model_name: Any = None,
+    existing_model_source: Any = None,
+) -> Tuple[str, str]:
+    _ = (existing_model_name, existing_model_source)
+    return _stable_random_model_name(product_dir, source), MODEL_NAME_STRATEGY
+
+
 def _find_type_attribute(metadata: Dict[str, Any], type_id: int) -> Dict[str, Any]:
     matches = [
         item for item in metadata.get("attributes", [])
@@ -1561,6 +1956,8 @@ def _auto_upload_config(
     metadata: Dict[str, Any],
     *,
     allow_unpriced: bool = False,
+    existing_model_name: Any = None,
+    existing_model_source: Any = None,
 ) -> Dict[str, Any]:
     output = product_dir / "output"
     source = load_json(product_dir / "input/source.json")
@@ -1582,21 +1979,24 @@ def _auto_upload_config(
         if value <= 0 and not allow_unpriced:
             raise ValueError(f"SKU {sku_id} has no positive selling price")
         return f"{value:.2f}"
-    product_dimensions = cost.get("product_dimensions", cost["dimensions"])
-    product_weight = cost.get("product_weight", cost["weight"])
-    package_dimensions = cost.get("package_dimensions", cost["dimensions"])
-    package_weight = cost.get("package_weight", cost["weight"])
+    product_dimensions = cost.get("product_dimensions") or cost.get("dimensions") or {}
+    product_weight = cost.get("product_weight") or cost.get("weight") or {}
+    package_dimensions = cost.get("package_dimensions") or cost.get("dimensions") or {}
+    package_weight = cost.get("package_weight") or cost.get("weight") or {}
     type_meta = _find_type_attribute(metadata, int(category["type_id"]))
     type_values = type_meta.get("allowed_values") or []
     type_value = next((item for item in type_values if int(item["id"]) == int(category["type_id"])), None)
     if not type_value:
         raise ValueError(f"Ozon type_id {category['type_id']} is absent from the live product-type attribute")
-    brand_meta = _find_attribute_by_names(metadata, ("Бренд",))
-    model_meta = _find_attribute_by_names(metadata, (
-        "Название модели", "Название модели (для объединения в одну карточку)", "Модель",
-    ))
-    if not brand_meta or not model_meta:
-        raise ValueError("Live Ozon metadata does not expose a reliable brand or model attribute")
+    brand_meta = _find_brand_attribute(metadata)
+    model_meta = _find_model_attribute(metadata)
+    if not brand_meta:
+        raise ValueError("Live Ozon metadata does not expose a reliable brand attribute")
+    unbranded = _allowed_value_by_text(brand_meta, str(shop.get("default_unbranded_value") or "Нет бренда"))
+    if not unbranded:
+        unbranded = _allowed_value_by_text(brand_meta, "Нет бренда")
+    if not unbranded:
+        raise ValueError("Live Ozon brand dictionary does not expose Нет бренда")
     aspect_ids = _official_aspect_ids(metadata)
     color_meta = _find_attribute_by_names(metadata, ("Цвет товара", "Цвет"))
     if color_meta and color_meta["attribute_id"] not in aspect_ids:
@@ -1633,6 +2033,12 @@ def _auto_upload_config(
             "dictionary_value_id": int(dictionary["id"]),
             "value": str(dictionary["value"]),
         })
+    preserved_model_name, model_name_source = _resolve_product_model_name(
+        product_dir,
+        source,
+        existing_model_name,
+        existing_model_source,
+    )
     return {
         "schema_version": "1.0.0",
         "product_id": product_dir.name,
@@ -1647,14 +2053,14 @@ def _auto_upload_config(
         ],
         "brand": {
             "attribute_id": int(brand_meta["attribute_id"]),
-            "dictionary_value_id": int(shop["default_unbranded_dictionary_value_id"]),
-            "value": str(shop.get("default_unbranded_value") or "Нет бренда"),
+            "dictionary_value_id": int(unbranded.get("dictionary_value_id", unbranded.get("id"))),
+            "value": str(unbranded.get("value") or "Нет бренда"),
             "source": "shop_default_unbranded",
         },
         "model_name": {
-            "attribute_id": int(model_meta["attribute_id"]),
-            "value": f"{str(title['title_ru']).split(',')[0]} {product_dir.name}",
-            "source": "stable_internal_product_group",
+            "attribute_id": int(model_meta.get("attribute_id") or 0),
+            "value": preserved_model_name,
+            "source": model_name_source if model_meta else "stable_random_numeric_local_grouping_only",
         },
         "merge_product_name": str(title["title_ru"]),
         "type": {
@@ -1665,26 +2071,26 @@ def _auto_upload_config(
         },
         "sku_colors": sku_colors,
         "product_dimensions": {
-            "length_mm": float(product_dimensions["length"]) * 10,
-            "width_mm": float(product_dimensions["width"]) * 10,
-            "height_mm": float(product_dimensions["height"]) * 10,
+            "length_mm": int(math.ceil(float(product_dimensions["length"]) * 10)),
+            "width_mm": int(math.ceil(float(product_dimensions["width"]) * 10)),
+            "height_mm": int(math.ceil(float(product_dimensions["height"]) * 10)),
             "source": str(product_dimensions["source_ref"]),
             "source_status": "estimated_human_approved" if product_dimensions.get("profile") == "manual_confirmation" else "estimated_system" if product_dimensions.get("estimated") else "confirmed_source",
         },
         "product_weight": {
-            "value_g": float(product_weight["value"]),
+            "value_g": int(math.ceil(float(product_weight["value"]))),
             "source": str(product_weight["source_ref"]),
             "source_status": "estimated_human_approved" if product_weight.get("profile") == "manual_confirmation" else "estimated_system" if product_weight.get("estimated") else "confirmed_source",
         },
         "package_dimensions": {
-            "length_mm": float(package_dimensions["length"]) * 10,
-            "width_mm": float(package_dimensions["width"]) * 10,
-            "height_mm": float(package_dimensions["height"]) * 10,
+            "length_mm": int(math.ceil(float(package_dimensions["length"]) * 10)),
+            "width_mm": int(math.ceil(float(package_dimensions["width"]) * 10)),
+            "height_mm": int(math.ceil(float(package_dimensions["height"]) * 10)),
             "source": str(package_dimensions["source_ref"]),
             "source_status": "estimated_human_approved" if package_dimensions.get("profile") == "manual_confirmation" else "estimated_system" if package_dimensions.get("estimated") else "confirmed_source",
         },
         "package_weight": {
-            "value_g": float(package_weight["value"]),
+            "value_g": int(math.ceil(float(package_weight["value"]))),
             "source": str(package_weight["source_ref"]),
             "source_status": "estimated_human_approved" if package_weight.get("profile") == "manual_confirmation" else "estimated_system" if package_weight.get("estimated") else "confirmed_source",
         },
@@ -1761,12 +2167,21 @@ def build_package(
             "match_status": str(category.get("match_status") or "api_confirmed"),
             "metadata_source": "ozon_seller_api",
         }
+        if not pre_image:
+            draft = sync_draft_images_from_image_plan(product_dir, draft, write=False)
         if write:
             write_json_atomic(draft_path, draft)
     config_path = output / "ozon-upload-config.json"
     if config_path.is_file():
         config = load_json(config_path)
-        refreshed = _auto_upload_config(product_dir, metadata, allow_unpriced=pre_image)
+        existing_model = config.get("model_name") or {}
+        refreshed = _auto_upload_config(
+            product_dir,
+            metadata,
+            allow_unpriced=pre_image,
+            existing_model_name=existing_model.get("value"),
+            existing_model_source=existing_model.get("source"),
+        )
         # Category remapping can change attribute IDs, dictionaries and the
         # product type. Keep operator/business settings, but never reuse those
         # category-bound fields from an older match.
@@ -1775,7 +2190,7 @@ def build_package(
             "product_weight", "product_dimensions", "package_weight", "package_dimensions",
         ):
             config[key] = refreshed[key]
-        if write and not pre_image:
+        if write:
             write_json_atomic(config_path, config)
     else:
         config = _auto_upload_config(product_dir, metadata, allow_unpriced=pre_image)
@@ -1785,12 +2200,28 @@ def build_package(
         )
         if config_errors:
             raise ValueError("Automatic upload config validation failed: " + "; ".join(config_errors))
-        if write and not pre_image:
+        if write:
             write_json_atomic(config_path, config)
     description = load_json(output / "description-ru.json")
     result_path = output / "ozon-result.json"
     result = load_json(result_path) if result_path.is_file() else {}
     tags = build_tags(product_dir)
+    colors = build_color_variants(product_dir, source)
+    color_policy = build_color_variant_policy(product_dir.name, source, colors)
+    build_attribute_fill_input(product_dir)
+    attrs = compile_product_attributes(product_dir)
+    # Field completion is the single draft outlet.  A new product legitimately
+    # has no ozon-draft.json yet; create the deterministic base draft before
+    # Rich Content tries to synchronize its image slots.
+    if not draft_path.is_file() and write:
+        import sys
+        scripts_dir = ROOT / "scripts"
+        if str(scripts_dir) not in sys.path:
+            sys.path.insert(0, str(scripts_dir))
+        from ozon_ecommerce_designer_contract import build_current_ozon_draft
+        build_current_ozon_draft(product_dir)
+    if write:
+        sync_draft_attributes_from_final_attributes(product_dir, attrs, write=True)
     rich = (
         {"serialized_json": "unknown"}
         if pre_image else build_rich_content(product_dir, result)
@@ -1800,12 +2231,6 @@ def build_package(
         if not rich_meta:
             rich["warnings"].append("The selected category has no live Rich Content attribute; it will not be sent.")
         rich["attribute_id"] = int(rich_meta["attribute_id"]) if rich_meta else 0
-    colors = build_color_variants(product_dir, source)
-    color_policy = build_color_variant_policy(product_dir.name, source, colors)
-    attrs = build_attributes(
-        product_dir, metadata, config, description, tags, rich,
-        include_rich_content=not pre_image,
-    )
     coverage = build_attribute_coverage_report(attrs)
     package = {
         "ozon-tags.json": tags,
@@ -1816,9 +2241,6 @@ def build_package(
     }
     if not pre_image:
         package["rich-content.json"] = rich
-        package["final-upload-check.json"] = build_final_check(
-            product_dir, tags, attrs, rich, colors, color_policy, config
-        )
     validation = validate_package(package)
     failures = {name: errors for name, errors in validation.items() if errors}
     if failures:

@@ -255,3 +255,11 @@ market-intelligence/
 - Ozon 官方免费“Что продавать на Ozon”服务可以打开，但要求首次使用 Ozon ID 手机或邮箱验证码登录，Seller API 密钥不能替代该登录。
 - 已建立本地数据源状态记录；当前状态为：商品目录已连接、商品搜索词需要 Premium、免费市场分析等待登录。
 - 本轮 Ozon 商品写接口调用 0 次，库存接口调用 0 次。
+
+## 十五、2026-08-02 商品搜索词只读探针
+
+- 探针窗口改为截止到 3 天前的 7 天，避免 Ozon 最近 3 天数据延迟导致误判。
+- 当前店铺 Seller API 商品目录只读访问正常，返回真实商品总数 1068。
+- `/v1/analytics/product-queries` 商品搜索词汇总接口可用，但样本 SKU 在本窗口返回 `result_count=0`。
+- `/v1/analytics/product-queries/details` 商品搜索词明细接口可用，样本 SKU 返回 `query_count=1`。
+- 本轮 Ozon 商品写接口调用 0 次，库存接口调用 0 次，广告接口调用 0 次。

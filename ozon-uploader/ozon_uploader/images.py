@@ -4,6 +4,8 @@ from __future__ import annotations
 
 import hashlib
 import http.server
+import json
+import os
 import re
 import selectors
 import shutil
@@ -27,12 +29,119 @@ class _QuietHandler(http.server.SimpleHTTPRequestHandler):
         return
 
 
+REPO_ROOT = Path(__file__).resolve().parents[2]
+WATERMARK_CONFIG_PATH = REPO_ROOT / "config" / "image-watermark.json"
+CLOUDFLARED_FALLBACK_PATHS = (
+    "/opt/homebrew/bin/cloudflared",
+    "/usr/local/bin/cloudflared",
+)
+
+
 def sha256_file(path: Path) -> str:
     digest = hashlib.sha256()
     with path.open("rb") as handle:
         for chunk in iter(lambda: handle.read(1024 * 1024), b""):
             digest.update(chunk)
     return digest.hexdigest()
+
+
+def _load_watermark_config() -> Dict[str, Any]:
+    if not WATERMARK_CONFIG_PATH.is_file():
+        return {"enabled": False}
+    with WATERMARK_CONFIG_PATH.open("r", encoding="utf-8") as handle:
+        value = json.load(handle)
+    if not isinstance(value, dict):
+        raise ImageTunnelError("Image watermark config must be a JSON object")
+    return value
+
+
+def _resolve_project_path(value: str) -> Path:
+    path = Path(value)
+    if path.is_absolute():
+        return path
+    return REPO_ROOT / path
+
+
+def resolve_cloudflared_binary() -> str:
+    configured = str(os.environ.get("CLOUDFLARED_BIN") or "").strip()
+    candidates = [configured] if configured else []
+    found = shutil.which("cloudflared")
+    if found:
+        candidates.append(found)
+    candidates.extend(CLOUDFLARED_FALLBACK_PATHS)
+    for candidate in candidates:
+        if candidate and Path(candidate).is_file():
+            return candidate
+    raise ImageTunnelError(
+        "cloudflared is not installed or not reachable; checked PATH, "
+        "CLOUDFLARED_BIN, /opt/homebrew/bin/cloudflared and /usr/local/bin/cloudflared"
+    )
+
+
+def _watermark_enabled_for_role(config: Dict[str, Any], role: str) -> bool:
+    if not config.get("enabled", False):
+        return False
+    roles = config.get("apply_to_roles") or []
+    return not roles or role in {str(item) for item in roles}
+
+
+def _apply_watermark(source: Path, target: Path, role: str, config: Dict[str, Any]) -> bool:
+    if not _watermark_enabled_for_role(config, role):
+        shutil.copy2(source, target)
+        return False
+
+    logo_path = _resolve_project_path(str(config.get("logo_path") or ""))
+    if not logo_path.is_file():
+        raise ImageTunnelError(f"Image watermark logo is missing: {logo_path}")
+
+    try:
+        from PIL import Image
+    except ImportError as exc:  # pragma: no cover - runtime requirements include Pillow
+        raise ImageTunnelError(
+            "Image watermark requires Pillow; install project requirements before upload"
+        ) from exc
+
+    try:
+        base = Image.open(source)
+        base_format = base.format or (source.suffix.lower().lstrip(".") or "PNG").upper()
+        base_rgba = base.convert("RGBA")
+        logo = Image.open(logo_path).convert("RGBA")
+    except OSError as exc:
+        raise ImageTunnelError(f"Image watermark failed to read image assets: {exc}") from exc
+
+    bbox = logo.getchannel("A").getbbox()
+    if not bbox:
+        raise ImageTunnelError(f"Image watermark logo has no visible pixels: {logo_path}")
+    logo = logo.crop(bbox)
+
+    max_width_ratio = float(config.get("max_width_ratio", 0.18))
+    margin_ratio = float(config.get("margin_ratio", 0.035))
+    opacity = max(0.0, min(1.0, float(config.get("opacity", 0.24))))
+    max_width = max(1, int(base_rgba.width * max_width_ratio))
+    scale = max_width / logo.width
+    logo = logo.resize((max_width, max(1, int(logo.height * scale))), Image.LANCZOS)
+
+    alpha = logo.getchannel("A").point(lambda pixel: int(pixel * opacity))
+    logo.putalpha(alpha)
+
+    margin = max(8, int(min(base_rgba.width, base_rgba.height) * margin_ratio))
+    position = str(config.get("position") or "bottom_right")
+    if position == "bottom_left":
+        paste_at = (margin, base_rgba.height - logo.height - margin)
+    elif position == "top_right":
+        paste_at = (base_rgba.width - logo.width - margin, margin)
+    elif position == "top_left":
+        paste_at = (margin, margin)
+    else:
+        paste_at = (base_rgba.width - logo.width - margin, base_rgba.height - logo.height - margin)
+
+    base_rgba.alpha_composite(logo, paste_at)
+    target.parent.mkdir(parents=True, exist_ok=True)
+    if base_format in {"JPEG", "JPG"} or target.suffix.lower() in {".jpg", ".jpeg"}:
+        base_rgba.convert("RGB").save(target, format="JPEG", quality=95, optimize=True)
+    else:
+        base_rgba.save(target, format=base_format if base_format != "MPO" else "JPEG")
+    return True
 
 
 def stage_images(
@@ -47,6 +156,7 @@ def stage_images(
     if staging.exists():
         shutil.rmtree(staging)
     staging.mkdir(parents=True)
+    watermark_config = _load_watermark_config()
     images: List[Dict[str, Any]] = []
     variant_main_skus = {
         str(item.get("source_sku_id"))
@@ -55,6 +165,7 @@ def stage_images(
         and item.get("variant_scope") == "sku"
         and item.get("source_sku_id") not in {None, "all", "unknown"}
     }
+    variant_main_by_sku: Dict[str, Dict[str, Any]] = {}
     for index, item in enumerate(draft["images"], start=1):
         path = root / item["path"]
         if not path.is_file():
@@ -62,7 +173,8 @@ def stage_images(
         suffix = path.suffix.lower() or ".png"
         role = "variant_main" if item.get("role") == "main" and item.get("variant_scope") == "sku" else item["role"]
         staged_name = f"{index:02d}-{role}{suffix}"
-        shutil.copy2(path, staging / staged_name)
+        staged_path = staging / staged_name
+        watermark_applied = _apply_watermark(path, staged_path, role, watermark_config)
         images.append({
             "slot": item["slot"],
             "role": role,
@@ -70,23 +182,35 @@ def stage_images(
             "local_path": item["path"],
             "staged_name": staged_name,
             "public_url": "unknown",
-            "sha256": sha256_file(path),
+            "sha256": sha256_file(staged_path),
+            "watermark_applied": watermark_applied,
             "status": "pending",
             "ozon_image_id": "unknown",
             "ozon_url": "unknown",
             "error": "unknown",
         })
+        if role == "variant_main":
+            variant_main_by_sku[str(item.get("source_sku_id") or "all")] = images[-1]
     for index, item in enumerate((color_variants or {}).get("variants", []), start=1):
         if item.get("status") != "mapped" or item.get("image") == "missing":
             continue
-        if str(item.get("sku_id")) in variant_main_skus:
+        sku_id = str(item.get("sku_id"))
+        if sku_id in variant_main_skus and sku_id in variant_main_by_sku:
+            source = variant_main_by_sku[sku_id]
+            images.append({
+                **source,
+                "slot": f"color-{sku_id}",
+                "role": "color",
+                "source_sku_id": sku_id,
+            })
             continue
         path = root / item["image"]
         if not path.is_file():
             raise ImageTunnelError(f"Color variant image is missing: {path}")
         suffix = path.suffix.lower() or ".png"
         staged_name = f"color-{index:02d}-{item['sku_id']}{suffix}"
-        shutil.copy2(path, staging / staged_name)
+        staged_path = staging / staged_name
+        watermark_applied = _apply_watermark(path, staged_path, "color", watermark_config)
         images.append({
             "slot": f"color-{item['sku_id']}",
             "role": "color",
@@ -94,7 +218,8 @@ def stage_images(
             "local_path": item["image"],
             "staged_name": staged_name,
             "public_url": "unknown",
-            "sha256": sha256_file(path),
+            "sha256": sha256_file(staged_path),
+            "watermark_applied": watermark_applied,
             "status": "pending",
             "ozon_image_id": "unknown",
             "ozon_url": "unknown",
@@ -130,9 +255,10 @@ class CloudflareImageTunnel:
         self.server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
         self.thread = threading.Thread(target=self.server.serve_forever, daemon=True)
         self.thread.start()
+        cloudflared = resolve_cloudflared_binary()
         self.process = subprocess.Popen(
             [
-                "cloudflared", "tunnel", "--url", f"http://127.0.0.1:{port}",
+                cloudflared, "tunnel", "--url", f"http://127.0.0.1:{port}",
                 "--no-autoupdate", "--protocol", "http2",
             ],
             stdout=subprocess.PIPE,

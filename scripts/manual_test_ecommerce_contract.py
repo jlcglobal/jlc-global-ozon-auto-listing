@@ -210,11 +210,9 @@ def build_plan(case_id: str, design: dict[str, Any], source: dict[str, Any], tim
         "collection_id": source["collection_id"],
         "source_kind": "manual_test",
         "source_refs": design["source_refs"],
-        "style_profile_ref": f"test-data/manual-output/{case_id}/style-profile.json",
-        "creative_brief_ref": f"test-data/manual-output/{case_id}/ecommerce-creative-brief.json",
         "ecommerce_design_ref": f"test-data/manual-output/{case_id}/ozon-ecommerce-design.json",
-        "style_family": "fresh_fridge_organization",
-        "image_structure_rule_ref": "manual-test:N-sku-mains-plus-8-shared-details",
+        "visual_family": "fresh_fridge_organization",
+        "image_sequence_ref": "manual-test:N-sku-mains-plus-8-shared-details",
         "image_set_structure": ["one_main_per_sku", "exactly_eight_shared_details"],
         "variant_image_strategy": {
             "mode": "sku_specific_main_shared_details",
@@ -236,8 +234,8 @@ def build_plan(case_id: str, design: dict[str, Any], source: dict[str, Any], tim
         },
         "buyer_objections": list(design["buyer_strategy"].get("purchase_objections") or []),
         "generator_contract": {
-            "must_follow_style_profile": True,
-            "style_profile_ref": f"test-data/manual-output/{case_id}/style-profile.json",
+            "must_follow_ecommerce_design": True,
+            "ecommerce_design_ref": f"test-data/manual-output/{case_id}/ozon-ecommerce-design.json",
             "allowed_structure": ["one_main_per_sku", "exactly_eight_shared_details"],
             "aspect_ratio": "3:4",
             "deviation_requires_review": True,
@@ -262,7 +260,6 @@ def build_plan(case_id: str, design: dict[str, Any], source: dict[str, Any], tim
             "prompt_first_required": True,
             "empty_placeholder_panels_forbidden": True,
             "exact_shared_detail_count": 8,
-            "creative_brief_required": True,
             "ecommerce_design_required": True,
             "fixed_template_fallback_forbidden": True,
             "overlay_strategy": "single_pass_model_native_typography",
@@ -334,20 +331,6 @@ def materialize(case_id: str, design: dict[str, Any]) -> dict[str, Any]:
         "category": load(manual_input / "category-selection.json"),
         "attributes": design["attribute_plan"], "sku_plan": design["sku_plan"],
         "unknown_high_risk_facts": design["product_understanding"]["unknown_high_risk_facts"],
-    })
-    write_atomic(manual_output / "ecommerce-creative-brief.json", {
-        "schema_version": "1.0.0", "product_id": case_id,
-        "collection_id": source["collection_id"], "source_kind": "manual_test",
-        "source_refs": design["source_refs"],
-        "designer_ref": f"test-data/manual-output/{case_id}/ozon-ecommerce-design.json",
-        "product_understanding": design["product_understanding"],
-        "product_positioning": design["buyer_strategy"],
-        "visual_style": design["visual_system"],
-        "main_image_roles": design["main_images"], "image_roles": design["detail_images"],
-        "preserve": sorted({value for item in [*design["main_images"], *design["detail_images"]] for value in item["must_preserve"]}),
-        "forbidden": design["forbidden"],
-        "generation_order": ["unified_ecommerce_design", "all_prompts", "one_sku_sample", "single_pass_final_image", "hard_qc", "human_review"],
-        "processing": {"step": "ecommerce_creative_brief", "status": "completed", "generated_at": timestamp, "error": None},
     })
     plan = build_plan(case_id, design, source, timestamp)
     write_atomic(manual_output / "image-plan.json", plan)

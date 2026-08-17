@@ -37,6 +37,10 @@ SCHEDULED_MAX_ATTEMPTS = 2
 SCHEDULED_RETRY_DELAY = timedelta(hours=1)
 MISSING_PURCHASE_SOURCES = {"", "missing", "missing_assumed_zero", "unknown", "legacy"}
 MISSING_LOGISTICS_SOURCES = {"", "missing", "unknown", "legacy", "missing_shipment_date"}
+OZON_AD_OPERATION_TYPES = (
+    "OperationMarketplaceCostPerClick",
+    "OperationPromotionWithCostPerOrder",
+)
 
 # Advertising spend may enter an individual order only when the ad row retains
 # an exact order/posting identifier. Product identifiers are corroborating
@@ -155,6 +159,12 @@ CREATE TABLE IF NOT EXISTS product_costs (
   source TEXT NOT NULL DEFAULT 'imported_purchase_cost', updated_at TEXT,
   batch_id TEXT, note TEXT, store_id TEXT NOT NULL DEFAULT 'default_store'
 );
+CREATE TABLE IF NOT EXISTS purchase_order_match (
+  id TEXT PRIMARY KEY, store_id TEXT NOT NULL DEFAULT 'default_store', order_id TEXT NOT NULL,
+  posting_number TEXT NOT NULL, sku TEXT, purchase_cost_cny TEXT NOT NULL,
+  weight_g TEXT, source_file TEXT NOT NULL, source_row INTEGER NOT NULL DEFAULT 0,
+  matched_at TEXT NOT NULL, created_at TEXT NOT NULL
+);
 CREATE TABLE IF NOT EXISTS product_master (
   id TEXT PRIMARY KEY, store_id TEXT NOT NULL DEFAULT 'default_store', sku TEXT NOT NULL,
   offer_id TEXT, product_id TEXT, product_name TEXT, image_url TEXT,
@@ -243,6 +253,7 @@ CREATE INDEX IF NOT EXISTS idx_fc_orders_store_date ON orders(store_id, order_da
 CREATE INDEX IF NOT EXISTS idx_fc_orders_posting ON orders(store_id, posting_number, sku);
 CREATE INDEX IF NOT EXISTS idx_fc_profit_store_date ON profit_snapshots(store_id, order_date);
 CREATE INDEX IF NOT EXISTS idx_fc_finance_store_date ON finance_transactions(store_id, occurred_at);
+CREATE INDEX IF NOT EXISTS idx_fc_purchase_order_match ON purchase_order_match(store_id, posting_number, sku);
 CREATE INDEX IF NOT EXISTS idx_fc_ads_store_date ON ad_spend_transactions(store_id, occurred_at);
 """
 
@@ -279,7 +290,8 @@ IMPORT_FIELDS: dict[str, dict[str, tuple[str, ...]]] = {
         "store_id": ("店铺", "店铺id", "store", "storeid", "shop"),
         "sku": ("sku", "商品编号", "商业编号", "ozonsku"),
         "offer_id": ("offerid", "offer_id", "货号", "商家编码", "seller sku"),
-        "product_name": ("商品名称", "商品名", "产品名称", "productname", "name"),
+        "product_name": ("名称", "商品名称", "商品名", "产品名称", "productname", "name"),
+        "order_number": ("订单编号", "订单号", "ordernumber", "order_number", "postingnumber", "posting_number"),
         "purchase_cost_cny": ("采购价", "采购成本", "采购单价", "成本价", "purchasecost", "costcny"),
         "effective_date": ("生效日期", "日期", "采购日期", "effectivedate"),
         "currency_original": ("币种", "货币", "currency"),
@@ -337,7 +349,7 @@ IMPORT_FIELDS: dict[str, dict[str, tuple[str, ...]]] = {
 }
 
 IMPORT_REQUIRED = {
-    "purchase_cost": ({"sku", "offer_id"}, {"purchase_cost_cny"}),
+    "purchase_cost": ({"sku", "offer_id", "order_number"}, {"purchase_cost_cny"}),
     "orders": ({"posting_number", "order_number"}, {"sku"}, {"buyer_paid_cny", "buyer_paid_rub"}),
     "finance": ({"posting_number", "order_number"}, {"amount_cny", "amount_rub"}),
     "ads": ({"occurred_at"}, {"spend_cny", "spend_rub"}),
@@ -356,6 +368,8 @@ class FinanceCenter:
         self.db_path = Path(db_path or self.root / "runtime/finance/finance.sqlite3").resolve()
         self.backup_dir = self.db_path.parent / "backups"
         self._sync_lock = threading.Lock()
+        self._initialize_lock = threading.Lock()
+        self._initialized = False
 
     @contextmanager
     def connect(self, *, readonly: bool = False) -> Iterator[sqlite3.Connection]:
@@ -380,25 +394,31 @@ class FinanceCenter:
             conn.close()
 
     def initialize(self) -> None:
-        with self.connect() as conn:
-            conn.executescript(SCHEMA)
-            unmatched_columns = {
-                str(row[1]) for row in conn.execute("PRAGMA table_info(import_unmatched_rows)")
-            }
-            if "file_path" not in unmatched_columns:
-                conn.execute("ALTER TABLE import_unmatched_rows ADD COLUMN file_path TEXT NOT NULL DEFAULT ''")
-            if "raw_payload" not in unmatched_columns:
-                conn.execute("ALTER TABLE import_unmatched_rows ADD COLUMN raw_payload TEXT NOT NULL DEFAULT '{}'")
-            ad_columns = {
-                str(row[1]) for row in conn.execute("PRAGMA table_info(ad_spend_transactions)")
-            }
-            for column in ("posting_number", "order_number", "offer_id"):
-                if column not in ad_columns:
-                    conn.execute(
-                        f"ALTER TABLE ad_spend_transactions ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
-                    )
-            self._set_meta(conn, "schema_version", "1.0.2")
-        self.db_path.chmod(0o600)
+        if self._initialized:
+            return
+        with self._initialize_lock:
+            if self._initialized:
+                return
+            with self.connect() as conn:
+                conn.executescript(SCHEMA)
+                unmatched_columns = {
+                    str(row[1]) for row in conn.execute("PRAGMA table_info(import_unmatched_rows)")
+                }
+                if "file_path" not in unmatched_columns:
+                    conn.execute("ALTER TABLE import_unmatched_rows ADD COLUMN file_path TEXT NOT NULL DEFAULT ''")
+                if "raw_payload" not in unmatched_columns:
+                    conn.execute("ALTER TABLE import_unmatched_rows ADD COLUMN raw_payload TEXT NOT NULL DEFAULT '{}'")
+                ad_columns = {
+                    str(row[1]) for row in conn.execute("PRAGMA table_info(ad_spend_transactions)")
+                }
+                for column in ("posting_number", "order_number", "offer_id"):
+                    if column not in ad_columns:
+                        conn.execute(
+                            f"ALTER TABLE ad_spend_transactions ADD COLUMN {column} TEXT NOT NULL DEFAULT ''"
+                        )
+                self._set_meta(conn, "schema_version", "1.0.2")
+            self.db_path.chmod(0o600)
+            self._initialized = True
 
     @staticmethod
     def _set_meta(conn: sqlite3.Connection, key: str, value: str) -> None:
@@ -585,6 +605,105 @@ class FinanceCenter:
             "rollback_available": True, "unmatched_rows_added": unmatched_changes,
         }
 
+    def repair_ozon_service_buckets(
+        self, *, apply: bool = False, created_by: str = "system",
+    ) -> dict[str, Any]:
+        """Reclassify existing Seller Finance rows with the current operation contract."""
+        self.initialize()
+        changes: list[tuple[dict[str, Any], dict[str, str]]] = []
+        with self.connect(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT * FROM finance_transactions WHERE trim(COALESCE(raw_payload,'')) NOT IN ('','{}')"
+            ).fetchall()
+            for row in rows:
+                try:
+                    operation = json.loads(str(row["raw_payload"] or "{}"))
+                except (TypeError, ValueError, json.JSONDecodeError):
+                    continue
+                if not isinstance(operation, dict) or not operation.get("operation_id"):
+                    continue
+                operation["operation_type"] = operation.get("operation_type") or row["operation_type"]
+                operation["operation_type_name"] = operation.get("operation_type_name") or row["service_name"]
+                rate = decimal_value(operation.get("rub_per_cny"))
+                if rate <= 0:
+                    amount_cny = abs(decimal_value(row["amount_cny"]))
+                    amount_rub = abs(decimal_value(row["amount_rub"]))
+                    rate = amount_rub / amount_cny if amount_cny > 0 else DEFAULT_RUB_PER_CNY
+                buckets = self._service_buckets(operation, rate)
+                updated = {
+                    "platform_commission_cny": money(buckets["platform"]),
+                    "logistics_fee_cny": money(buckets["logistics"]),
+                    "refund_cny": money(buckets["refund"]),
+                    "compensation_cny": money(buckets["compensation"]),
+                    "acquiring_cny": money(buckets["acquiring"]),
+                    "other_fee_cny": money(buckets["other"]),
+                }
+                if any(str(row[column]) != value for column, value in updated.items()):
+                    changes.append((dict(row), updated))
+        preview = {
+            "status": "preview", "changed_transaction_count": len(changes),
+            "affected_order_count": len({
+                str(row["matched_order_id"]) for row, _updated in changes if row.get("matched_order_id")
+            }),
+            "logistics_before_cny": money(sum(
+                (decimal_value(row["logistics_fee_cny"]) for row, _updated in changes), Decimal("0")
+            )),
+            "logistics_after_cny": money(sum(
+                (decimal_value(updated["logistics_fee_cny"]) for _row, updated in changes), Decimal("0")
+            )),
+        }
+        if not apply or not changes:
+            return {**preview, "status": "preview" if not apply else "no_changes"}
+
+        backup = self.backup("before-ozon-service-bucket-repair")
+        batch_id = f"ozon-fee-repair-{uuid.uuid4().hex[:12]}"
+        repair_time = now_iso()
+        affected_orders = {
+            str(row["matched_order_id"]) for row, _updated in changes if row.get("matched_order_id")
+        }
+        with self.connect() as conn:
+            conn.execute(
+                "INSERT INTO finance_import_batches(id,file_kind,file_name,status,created_by,created_at,applied_at,"
+                "backup_path,row_count,inserted_count,updated_count,mapping_json) "
+                "VALUES(?,?,'系统修复：Ozon费用分类','applying',?,?,?,?,?,0,?,'{}')",
+                (batch_id, "system_ozon_fee_repair", created_by, repair_time, repair_time, str(backup), len(changes), len(changes)),
+            )
+            snapshot_before = {
+                order_id: dict(row) for order_id in affected_orders
+                if (row := conn.execute(
+                    "SELECT * FROM profit_snapshots WHERE order_id=? ORDER BY created_at DESC LIMIT 1", (order_id,),
+                ).fetchone())
+            }
+            for before, updated in changes:
+                conn.execute(
+                    "UPDATE finance_transactions SET platform_commission_cny=?,logistics_fee_cny=?,refund_cny=?,"
+                    "compensation_cny=?,acquiring_cny=?,other_fee_cny=? WHERE id=?",
+                    (
+                        updated["platform_commission_cny"], updated["logistics_fee_cny"], updated["refund_cny"],
+                        updated["compensation_cny"], updated["acquiring_cny"], updated["other_fee_cny"], before["id"],
+                    ),
+                )
+                after = self._table_row(conn, "finance_transactions", str(before["id"])) or {}
+                self._record_change(conn, batch_id, "finance_transactions", str(before["id"]), "update", before, after)
+            for order_id in affected_orders:
+                self._recompute_order(conn, order_id)
+                after = conn.execute(
+                    "SELECT * FROM profit_snapshots WHERE order_id=? ORDER BY created_at DESC LIMIT 1", (order_id,),
+                ).fetchone()
+                if after:
+                    self._record_change(
+                        conn, batch_id, "profit_snapshots", str(after["id"]), "update",
+                        snapshot_before.get(order_id), dict(after),
+                    )
+            conn.execute(
+                "UPDATE finance_import_batches SET status='applied' WHERE id=?", (batch_id,),
+            )
+            self._set_meta(conn, "ozon_fee_classification_contract", "operation_level_expense_v2")
+        return {
+            **preview, "status": "applied", "batch_id": batch_id, "backup_path": str(backup),
+            "rollback_available": True,
+        }
+
     def migrate_legacy(self, source_path: Path) -> dict[str, Any]:
         source_path = Path(source_path).resolve()
         if source_path == self.db_path:
@@ -641,19 +760,180 @@ class FinanceCenter:
 
     def store_options(self) -> list[dict[str, Any]]:
         self.initialize()
+        display_names: dict[str, str] = {}
+        current_registry_ids: set[str] = set()
+        try:
+            from workbench_stores import load_registry
+
+            registry = load_registry(self.root)
+            for shop in registry.get("shops") or []:
+                current_registry_ids.add(str(shop.get("id") or ""))
+                display_name = str(shop.get("display_name") or shop.get("name") or shop.get("id") or "").strip()
+                if not display_name:
+                    continue
+                for value in (shop.get("id"), shop.get("name"), shop.get("display_name")):
+                    key = normalized_key(value)
+                    if key:
+                        display_names[key] = display_name
+                if str(shop.get("id") or "") == "volttech":
+                    display_names["voltech"] = display_name
+        except (ImportError, OSError, TypeError, ValueError):
+            display_names = {}
         with self.connect(readonly=True) as conn:
             rows = conn.execute(
                 "SELECT id,store_name,store_alias,status,last_sync_at,sync_status,sync_error "
                 "FROM stores ORDER BY lower(COALESCE(store_alias,store_name))"
             ).fetchall()
-        return [
-            {
-                "id": row["id"], "name": row["store_alias"] or row["store_name"],
+        result: list[dict[str, Any]] = []
+        for row in rows:
+            current_name = str(row["store_alias"] or row["store_name"] or row["id"])
+            display_name = next((
+                display_names[key] for key in (
+                    normalized_key(row["id"]), normalized_key(row["store_name"]), normalized_key(row["store_alias"]),
+                ) if key in display_names
+            ), current_name)
+            result.append({
+                "id": row["id"], "name": display_name,
                 "status": row["status"], "sync_status": row["sync_status"],
                 "last_sync_at": row["last_sync_at"], "sync_error": row["sync_error"],
-            }
-            for row in rows
-        ]
+            })
+        name_counts: dict[str, int] = {}
+        for item in result:
+            name_counts[str(item["name"])] = name_counts.get(str(item["name"]), 0) + 1
+        for item in result:
+            if name_counts.get(str(item["name"]), 0) > 1 and str(item["id"]) not in current_registry_ids:
+                item["name"] = f"{item['name']}（历史）"
+        return result
+
+    def set_sku_purchase_cost(
+        self, *, sku: str, purchase_cost_cny: Any, created_by: str = "owner",
+    ) -> dict[str, Any]:
+        self.initialize()
+        sku = str(sku or "").strip()
+        cost = decimal_value(purchase_cost_cny)
+        if not sku:
+            raise ValueError("没有读取到 SKU，不能同步采购价")
+        if cost <= 0:
+            raise ValueError("采购价必须大于 0")
+        batch_id = f"manual-{uuid.uuid4().hex[:16]}"
+        backup = self.backup(f"before-{batch_id}")
+        applied_at = now_iso()
+        with self.connect() as conn:
+            orders = conn.execute(
+                "SELECT * FROM orders WHERE trim(COALESCE(sku,''))=? OR trim(COALESCE(offer_id,''))=? "
+                "ORDER BY store_id,order_date,posting_number",
+                (sku, sku),
+            ).fetchall()
+            masters = conn.execute(
+                "SELECT * FROM product_master WHERE trim(COALESCE(sku,''))=? OR trim(COALESCE(offer_id,''))=? "
+                "ORDER BY store_id,id",
+                (sku, sku),
+            ).fetchall()
+            if not orders and not masters:
+                raise ValueError("没有找到相同 SKU 的商品")
+            conn.execute(
+                "INSERT INTO finance_import_batches(id,file_kind,file_name,status,created_by,created_at,applied_at,"
+                "backup_path,row_count,mapping_json) VALUES(?,?,'工作台单笔采购价','applying',?,?,?,?,?,'{}')",
+                (batch_id, "manual_sku_cost", created_by, applied_at, applied_at, str(backup), len(orders)),
+            )
+            master_keys = {(str(row["store_id"]), str(row["sku"]), str(row["offer_id"] or "")) for row in masters}
+            for order in orders:
+                key = (str(order["store_id"]), str(order["sku"]), str(order["offer_id"] or ""))
+                if key in master_keys:
+                    continue
+                master_id = stable_id("product", order["store_id"], order["sku"])
+                payload = {
+                    "id": master_id, "store_id": order["store_id"], "sku": order["sku"],
+                    "offer_id": order["offer_id"], "product_id": None, "product_name": order["product_name"],
+                    "image_url": None, "unit_purchase_cost_cny": money(cost), "estimated_weight_g": None,
+                    "weight_source": "missing", "dimensions": None, "volume_weight": None,
+                    "purchase_cost_source": "manual_sku_cost", "created_at": applied_at, "updated_at": applied_at,
+                }
+                conn.execute(
+                    f"INSERT INTO product_master({','.join(payload)}) VALUES({','.join('?' for _ in payload)})",
+                    tuple(payload.values()),
+                )
+                self._record_change(conn, batch_id, "product_master", master_id, "insert", None, payload)
+                master_keys.add(key)
+            masters = conn.execute(
+                "SELECT * FROM product_master WHERE trim(COALESCE(sku,''))=? OR trim(COALESCE(offer_id,''))=? "
+                "ORDER BY store_id,id",
+                (sku, sku),
+            ).fetchall()
+            updated_masters = 0
+            for master in masters:
+                before = dict(master)
+                conn.execute(
+                    "UPDATE product_master SET unit_purchase_cost_cny=?,purchase_cost_source='manual_sku_cost',updated_at=? WHERE id=?",
+                    (money(cost), applied_at, master["id"]),
+                )
+                after = self._table_row(conn, "product_master", str(master["id"])) or {}
+                self._record_change(conn, batch_id, "product_master", str(master["id"]), "update", before, after)
+                cost_id = stable_id("manual-sku-cost", batch_id, master["store_id"], master["sku"])
+                cost_payload = {
+                    "id": cost_id, "row_hash": stable_id(sku, money(cost)), "file_hash": stable_id(batch_id),
+                    "sku": master["sku"], "offer_id": master["offer_id"], "product_name": master["product_name"],
+                    "purchase_cost_cny": money(cost), "effective_date": date.today().isoformat(),
+                    "raw_payload": safe_json({"source": "workbench_single_input", "input_sku": sku}),
+                    "created_at": applied_at, "amount_original": money(cost), "currency_original": "CNY",
+                    "currency_source": "operator_confirmed", "source": "manual_sku_cost", "updated_at": applied_at,
+                    "batch_id": batch_id, "note": "工作台单笔输入后同步相同 SKU", "store_id": master["store_id"],
+                }
+                conn.execute(
+                    f"INSERT INTO product_costs({','.join(cost_payload)}) VALUES({','.join('?' for _ in cost_payload)})",
+                    tuple(cost_payload.values()),
+                )
+                self._record_change(conn, batch_id, "product_costs", cost_id, "insert", None, cost_payload)
+                updated_masters += 1
+            updated_purchase_rows = 0
+            for order in orders:
+                aliases = {str(order["sku"] or "").strip(), str(order["offer_id"] or "").strip()}
+                aliases.discard("")
+                if aliases:
+                    placeholders = ",".join("?" for _ in aliases)
+                    purchase_rows = conn.execute(
+                        f"SELECT * FROM purchase_order_match WHERE store_id=? AND posting_number=? "
+                        f"AND trim(COALESCE(sku,'')) IN ({placeholders})",
+                        (order["store_id"], order["posting_number"], *sorted(aliases)),
+                    ).fetchall()
+                    total_cost = cost * self._order_quantity(order)
+                    for purchase_row in purchase_rows:
+                        before = dict(purchase_row)
+                        conn.execute(
+                            "UPDATE purchase_order_match SET purchase_cost_cny=?,matched_at=? WHERE id=?",
+                            (money(total_cost), applied_at, purchase_row["id"]),
+                        )
+                        after = self._table_row(conn, "purchase_order_match", str(purchase_row["id"])) or {}
+                        self._record_change(
+                            conn, batch_id, "purchase_order_match", str(purchase_row["id"]), "update", before, after,
+                        )
+                        updated_purchase_rows += 1
+                before_snapshot_row = conn.execute(
+                    "SELECT * FROM profit_snapshots WHERE order_id=? ORDER BY created_at DESC LIMIT 1",
+                    (order["id"],),
+                ).fetchone()
+                before_snapshot = dict(before_snapshot_row) if before_snapshot_row else None
+                self._recompute_order(conn, str(order["id"]))
+                after_snapshot_row = conn.execute(
+                    "SELECT * FROM profit_snapshots WHERE order_id=? ORDER BY created_at DESC LIMIT 1",
+                    (order["id"],),
+                ).fetchone()
+                if after_snapshot_row:
+                    after_snapshot = dict(after_snapshot_row)
+                    self._record_change(
+                        conn, batch_id, "profit_snapshots", str(after_snapshot["id"]),
+                        "update" if before_snapshot else "insert", before_snapshot, after_snapshot,
+                    )
+            conn.execute(
+                "UPDATE finance_import_batches SET status='applied',inserted_count=?,updated_count=? WHERE id=?",
+                (updated_masters, len(orders) + updated_purchase_rows, batch_id),
+            )
+        return {
+            "status": "applied", "batch_id": batch_id, "sku": sku,
+            "purchase_cost_cny": money(cost), "affected_order_count": len(orders),
+            "affected_store_count": len({str(row["store_id"]) for row in orders}),
+            "backup_path": str(backup), "ozon_write_api_calls": 0, "inventory_api_calls": 0,
+        }
 
     @staticmethod
     def _period(date_from: Optional[str], date_to: Optional[str]) -> tuple[str, str]:
@@ -688,6 +968,199 @@ class FinanceCenter:
         return DEFAULT_RUB_PER_CNY, "workbench_fixed_fallback"
 
     @staticmethod
+    def _period_ad_spend(
+        conn: sqlite3.Connection, store_id: str, start: str, end: str,
+        order_ads_by_store: Mapping[str, Decimal],
+    ) -> dict[str, Any]:
+        store_filter = "" if store_id in {"", "all"} else " AND store_id = ?"
+        api_params: list[Any] = [start, end, *OZON_AD_OPERATION_TYPES]
+        imported_params: list[Any] = [start, end]
+        if store_filter:
+            api_params.append(store_id)
+            imported_params.append(store_id)
+        placeholders = ",".join("?" for _ in OZON_AD_OPERATION_TYPES)
+        api_rows = {
+            str(row["store_id"]): row for row in conn.execute(
+                "SELECT store_id,COUNT(*) rows,COALESCE(SUM(CAST(amount_cny AS REAL)),0) net "
+                "FROM finance_transactions WHERE substr(COALESCE(occurred_at,''),1,10) BETWEEN ? AND ? "
+                f"AND operation_type IN ({placeholders})" + store_filter + " GROUP BY store_id",
+                api_params,
+            ).fetchall()
+        }
+        imported_rows = {
+            str(row["store_id"]): row for row in conn.execute(
+                "SELECT store_id,COUNT(*) rows,COALESCE(SUM(CAST(spend_cny AS REAL)),0) total "
+                "FROM ad_spend_transactions WHERE substr(COALESCE(occurred_at,''),1,10) BETWEEN ? AND ?"
+                + store_filter + " GROUP BY store_id",
+                imported_params,
+            ).fetchall()
+        }
+        total = Decimal("0")
+        unallocated = Decimal("0")
+        api_record_count = 0
+        imported_record_count = 0
+        by_store: dict[str, dict[str, Any]] = {}
+        for current_store in sorted(set(api_rows) | set(imported_rows)):
+            api_row = api_rows.get(current_store)
+            if api_row and int(api_row["rows"] or 0) > 0:
+                spend = max(-decimal_value(api_row["net"]), Decimal("0"))
+                total += spend
+                unallocated += spend
+                api_record_count += int(api_row["rows"] or 0)
+                by_store[current_store] = {
+                    "total": spend, "unallocated": spend, "source": "ozon_finance",
+                }
+                continue
+            imported_row = imported_rows.get(current_store)
+            if imported_row and int(imported_row["rows"] or 0) > 0:
+                spend = max(decimal_value(imported_row["total"]), Decimal("0"))
+                store_unallocated = max(
+                    spend - order_ads_by_store.get(current_store, Decimal("0")), Decimal("0")
+                )
+                total += spend
+                unallocated += store_unallocated
+                imported_record_count += int(imported_row["rows"] or 0)
+                by_store[current_store] = {
+                    "total": spend, "unallocated": store_unallocated, "source": "imported_ads",
+                }
+        if api_record_count and imported_record_count:
+            source = "ozon_finance_and_imported_fallback"
+            source_label = "Ozon Finance + 导入广告表"
+        elif api_record_count:
+            source = "ozon_finance"
+            source_label = "Ozon Finance"
+        elif imported_record_count:
+            source = "imported_ads"
+            source_label = "导入广告表"
+        else:
+            source = "missing"
+            source_label = "未读取"
+        return {
+            "total": total,
+            "unallocated": unallocated,
+            "available": bool(api_record_count or imported_record_count),
+            "source": source,
+            "source_label": source_label,
+            "api_record_count": api_record_count,
+            "imported_record_count": imported_record_count,
+            "by_store": by_store,
+        }
+
+    @staticmethod
+    def _cost_rate(
+        product_rates: Mapping[tuple[str, str], tuple[Decimal, Decimal]],
+        store_rates: Mapping[str, tuple[Decimal, Decimal]],
+        global_rate: tuple[Decimal, Decimal],
+        store_key: str, product_key: str,
+    ) -> tuple[Optional[Decimal], str]:
+        for bucket, source in (
+            (product_rates.get((store_key, product_key)), "same_sku_history"),
+            (store_rates.get(store_key), "store_history"),
+            (global_rate, "all_store_history"),
+        ):
+            if bucket and bucket[1] > 0:
+                return bucket[0] / bucket[1], source
+        return None, "missing"
+
+    def _costed_rows(
+        self, conn: sqlite3.Connection, rows: list[sqlite3.Row], advertising: Mapping[str, Any],
+    ) -> list[dict[str, Any]]:
+        """Apply actual costs first, then explicit estimates for unsettled orders."""
+        history = conn.execute(CANONICAL_SQL).fetchall()
+
+        def benchmarks(field: str) -> tuple[
+            dict[tuple[str, str], tuple[Decimal, Decimal]],
+            dict[str, tuple[Decimal, Decimal]],
+            tuple[Decimal, Decimal],
+        ]:
+            product: dict[tuple[str, str], tuple[Decimal, Decimal]] = {}
+            store: dict[str, tuple[Decimal, Decimal]] = {}
+            global_cost = Decimal("0")
+            global_sales = Decimal("0")
+            for item in history:
+                cost = decimal_value(item[field])
+                sales = decimal_value(item["buyer_paid_cny"])
+                if cost <= 0 or sales <= 0:
+                    continue
+                store_key = str(item["store_key"] or item["store_id"] or "default_store")
+                product_key = str(item["product_key"] or item["sku"] or "")
+                old_cost, old_sales = product.get((store_key, product_key), (Decimal("0"), Decimal("0")))
+                product[(store_key, product_key)] = (old_cost + cost, old_sales + sales)
+                old_cost, old_sales = store.get(store_key, (Decimal("0"), Decimal("0")))
+                store[store_key] = (old_cost + cost, old_sales + sales)
+                global_cost += cost
+                global_sales += sales
+            return product, store, (global_cost, global_sales)
+
+        finance_product, finance_store, finance_global = benchmarks("finance_fee_cny")
+        logistics_product, logistics_store, logistics_global = benchmarks("logistics_cost_cny")
+        selected_sales_by_store: dict[str, Decimal] = {}
+        for row in rows:
+            current_store = str(row["store_key"] or row["store_id"] or "default_store")
+            selected_sales_by_store[current_store] = (
+                selected_sales_by_store.get(current_store, Decimal("0"))
+                + decimal_value(row["buyer_paid_cny"])
+            )
+
+        costed: list[dict[str, Any]] = []
+        ad_by_store = dict(advertising.get("by_store") or {})
+        for row in rows:
+            current_store = str(row["store_key"] or row["store_id"] or "default_store")
+            product_key = str(row["product_key"] or row["sku"] or "")
+            sales = decimal_value(row["buyer_paid_cny"])
+            purchase = decimal_value(row["purchase_cost_cny"])
+
+            actual_finance = decimal_value(row["finance_fee_cny"])
+            if actual_finance != 0:
+                finance_cost = actual_finance
+                finance_source = "actual_finance"
+            else:
+                finance_rate, finance_source = self._cost_rate(
+                    finance_product, finance_store, finance_global, current_store, product_key,
+                )
+                finance_cost = sales * finance_rate if finance_rate is not None else Decimal("0")
+
+            actual_logistics = decimal_value(row["logistics_cost_cny"] or row["logistics_fee_cny"])
+            if actual_logistics > 0:
+                logistics_cost = actual_logistics
+                logistics_source = "actual_finance"
+            else:
+                logistics_rate, logistics_source = self._cost_rate(
+                    logistics_product, logistics_store, logistics_global, current_store, product_key,
+                )
+                logistics_cost = sales * logistics_rate if logistics_rate is not None else Decimal("0")
+
+            exact_ads = decimal_value(row["ad_spend_cny"])
+            store_ad = dict(ad_by_store.get(current_store) or {})
+            store_sales = selected_sales_by_store.get(current_store, Decimal("0"))
+            ad_share = Decimal("0")
+            if store_sales > 0:
+                ad_share = decimal_value(store_ad.get("unallocated")) * sales / store_sales
+            ad_cost = exact_ads + ad_share
+            if exact_ads > 0 and ad_share > 0:
+                ad_source = "actual_and_period_allocation"
+            elif exact_ads > 0:
+                ad_source = "actual_order"
+            elif ad_share > 0:
+                ad_source = "period_sales_allocation"
+            else:
+                ad_source = "missing"
+
+            profit = sales - purchase - finance_cost - logistics_cost - ad_cost
+            costed.append({
+                "row": row,
+                "finance_cost": finance_cost,
+                "finance_source": finance_source,
+                "logistics_cost": logistics_cost,
+                "logistics_source": logistics_source,
+                "ad_cost": ad_cost,
+                "ad_source": ad_source,
+                "profit": profit,
+                "profit_margin": Decimal("0") if sales == 0 else profit / sales,
+            })
+        return costed
+
+    @staticmethod
     def _convert(value: Decimal, currency: str, rate: Decimal) -> Decimal:
         return value * rate if currency == "RUB" else value
 
@@ -712,6 +1185,15 @@ class FinanceCenter:
                 Decimal("0"),
             )
             order_ads = sum((decimal_value(row["ad_spend_cny"]) for row in rows), Decimal("0"))
+            order_ads_by_store: dict[str, Decimal] = {}
+            for row in rows:
+                current_store = str(row["store_id"] or "")
+                order_ads_by_store[current_store] = (
+                    order_ads_by_store.get(current_store, Decimal("0"))
+                    + decimal_value(row["ad_spend_cny"])
+                )
+            advertising = self._period_ad_spend(conn, store_id, start, end, order_ads_by_store)
+            costed_rows = self._costed_rows(conn, rows, advertising)
             purchase_rows = [row for row in rows if str(row["purchase_cost_source"] or "").lower() not in MISSING_PURCHASE_SOURCES]
             finance_rows = [row for row in rows if decimal_value(row["finance_fee_cny"]) != 0]
             logistics_rows = [row for row in rows if decimal_value(row["logistics_cost_cny"] or row["logistics_fee_cny"]) > 0]
@@ -724,20 +1206,8 @@ class FinanceCenter:
                 if row in purchase_rows and row in finance_rows and row in logistics_rows and row in attributed_ad_rows
             ]
             confirmed_profit = sum((decimal_value(row["final_profit_cny"]) for row in complete_rows), Decimal("0"))
-            store_filter = "" if store_id in {"", "all"} else " AND a.store_id = ?"
-            params: list[Any] = [start, end]
-            if store_filter:
-                params.append(store_id)
-            store_ads_row = conn.execute(
-                "SELECT COALESCE(SUM(CAST(a.spend_cny AS REAL)),0) total, "
-                f"SUM(CASE WHEN ({AD_MATCH_IS_EXACT_SQL}) THEN 1 ELSE 0 END) matched, COUNT(*) rows "
-                "FROM ad_spend_transactions a LEFT JOIN orders o "
-                "ON o.id=a.matched_order_id AND o.store_id=a.store_id "
-                "WHERE substr(COALESCE(a.occurred_at,''),1,10) BETWEEN ? AND ?" + store_filter,
-                params,
-            ).fetchone()
-            total_ads = decimal_value(store_ads_row["total"])
-            period_unallocated_ads = max(total_ads - order_ads, Decimal("0"))
+            total_ads = decimal_value(advertising["total"])
+            period_unallocated_ads = decimal_value(advertising["unallocated"])
             other_params: list[Any] = [start, end]
             other_filter = ""
             if store_id not in {"", "all"}:
@@ -750,19 +1220,31 @@ class FinanceCenter:
             other_income = sum((decimal_value(row["amount_cny"]) for row in other_rows if row["entry_type"] == "income"), Decimal("0"))
             other_expense = sum((decimal_value(row["amount_cny"]) for row in other_rows if row["entry_type"] == "expense"), Decimal("0"))
             purchase_estimate_available = purchase_sales > 0
-            finance_estimate_available = finance_sales > 0
-            logistics_estimate_available = logistics_sales > 0
-            ads_estimate_available = int(store_ads_row["rows"] or 0) > 0
+            finance_estimate_available = bool(costed_rows) and all(
+                item["finance_source"] != "missing" for item in costed_rows
+            )
+            logistics_estimate_available = bool(costed_rows) and all(
+                item["logistics_source"] != "missing" for item in costed_rows
+            )
+            ads_estimate_available = bool(advertising["available"])
             missing_purchase_estimate = (
                 (sales - purchase_sales) * purchase / purchase_sales
                 if purchase_estimate_available else None
             )
+            effective_finance = sum((item["finance_cost"] for item in costed_rows), Decimal("0"))
+            effective_logistics = sum((item["logistics_cost"] for item in costed_rows), Decimal("0"))
             missing_finance_estimate = (
-                (sales - finance_sales) * finance / finance_sales
+                sum(
+                    (item["finance_cost"] for item in costed_rows if item["finance_source"] != "actual_finance"),
+                    Decimal("0"),
+                )
                 if finance_estimate_available else None
             )
             missing_logistics_estimate = (
-                (sales - logistics_sales) * logistics / logistics_sales
+                sum(
+                    (item["logistics_cost"] for item in costed_rows if item["logistics_source"] != "actual_finance"),
+                    Decimal("0"),
+                )
                 if logistics_estimate_available else None
             )
             expected_profit_available = all((
@@ -774,8 +1256,8 @@ class FinanceCenter:
             expected_profit = None
             if expected_profit_available:
                 expected_profit = (
-                    trial_profit - period_unallocated_ads - missing_purchase_estimate
-                    - missing_finance_estimate - missing_logistics_estimate + other_income - other_expense
+                    sales - purchase - missing_purchase_estimate - effective_finance
+                    - effective_logistics - total_ads + other_income - other_expense
                 )
             missing_sources = [
                 source for source, available in (
@@ -816,6 +1298,9 @@ class FinanceCenter:
                 "expected_profit_available": expected_profit_available,
                 "expected_profit_missing_sources": missing_sources,
                 "trial_profit_before_gap_estimates": converted(trial_profit - period_unallocated_ads),
+                "ad_spend": converted(total_ads),
+                "ozon_fees": converted(effective_finance),
+                "logistics": converted(effective_logistics),
                 "other_income": converted(other_income), "other_expense": converted(other_expense),
                 "effective_order_lines": len(rows), "fully_covered_order_lines": len(complete_rows),
             },
@@ -823,7 +1308,15 @@ class FinanceCenter:
                 "purchase": ratio(purchase_sales, sales),
                 "finance": ratio(finance_sales, sales),
                 "logistics": ratio(logistics_sales, sales),
-                "ads": ratio(Decimal(int(store_ads_row["matched"] or 0)), Decimal(int(store_ads_row["rows"] or 0))),
+                "ads": 1.0 if ads_estimate_available else 0.0,
+            },
+            "advertising": {
+                "total": converted(total_ads),
+                "source": advertising["source"],
+                "source_label": advertising["source_label"],
+                "api_record_count": advertising["api_record_count"],
+                "imported_record_count": advertising["imported_record_count"],
+                "attributed_to_orders": False,
             },
             "gap_estimates": {
                 "missing_purchase": converted_optional(missing_purchase_estimate),
@@ -843,11 +1336,15 @@ class FinanceCenter:
             },
             "warnings": [
                 (
-                    "预计利润不是最终真实利润；缺失成本使用已覆盖订单成本率外推。"
+                    "已结算订单使用真实费用；配送中订单按同店同 SKU 历史费用估算。"
                     if expected_profit_available
                     else "采购、Finance、物流或广告缺少可用样本，本期预计利润暂不可计算。"
                 ),
-                "未匹配 Finance 金额不计入成本或收入；期间级广告仅汇总扣除一次，不分摊到订单。",
+                (
+                    "广告费用来自 Ozon Finance；没有订单号的费用按同店当期销售额分摊并标记为估算。"
+                    if advertising["source"] in {"ozon_finance", "ozon_finance_and_imported_fallback"}
+                    else "广告费用来自导入记录；没有订单号的费用按同店当期销售额分摊并标记为估算。"
+                ),
             ],
             "profit_margin_contract": "0_to_1_decimal",
             "ozon_write_api_calls": 0, "inventory_api_calls": 0,
@@ -862,8 +1359,18 @@ class FinanceCenter:
         query_key = normalized_key(query)
         with self.connect(readonly=True) as conn:
             rows = self._canonical_rows(conn, store_id, start, end)
+            order_ads_by_store: dict[str, Decimal] = {}
+            for row in rows:
+                current_store = str(row["store_id"] or "")
+                order_ads_by_store[current_store] = (
+                    order_ads_by_store.get(current_store, Decimal("0"))
+                    + decimal_value(row["ad_spend_cny"])
+                )
+            advertising = self._period_ad_spend(conn, store_id, start, end, order_ads_by_store)
+            costed_rows = self._costed_rows(conn, rows, advertising)
         items = []
-        for row in rows:
+        for costed in costed_rows:
+            row = costed["row"]
             fields = [row["posting_number"], row["order_number"], row["sku"], row["offer_id"], row["product_name"]]
             if query_key and not any(query_key in normalized_key(value) for value in fields):
                 continue
@@ -876,10 +1383,21 @@ class FinanceCenter:
                 "posting_number": row["posting_number"], "sku": row["sku"], "offer_id": row["offer_id"],
                 "product_name": row["product_name"], "image_url": row["image_url"], "order_date": row["order_date"],
                 "buyer_paid_cny": money(row["buyer_paid_cny"]), "buyer_paid_rub": money(row["buyer_paid_rub"]),
-                "purchase_cost_cny": money(row["purchase_cost_cny"]), "finance_fee_cny": money(row["finance_fee_cny"]),
-                "logistics_cny": money(row["logistics_cost_cny"] or row["logistics_fee_cny"]),
-                "ad_spend_cny": money(row["ad_spend_cny"]), "profit_cny": money(row["final_profit_cny"]),
-                "profit_margin": float(decimal_value(row["profit_margin"])),
+                "purchase_cost_cny": money(row["purchase_cost_cny"]),
+                "finance_fee_cny": money(costed["finance_cost"]),
+                "logistics_cny": money(costed["logistics_cost"]),
+                "ad_spend_cny": money(costed["ad_cost"]), "profit_cny": money(costed["profit"]),
+                "profit_margin": float(costed["profit_margin"]),
+                "cost_sources": {
+                    "finance": costed["finance_source"],
+                    "logistics": costed["logistics_source"],
+                    "ads": costed["ad_source"],
+                },
+                "has_estimates": any((
+                    costed["finance_source"] not in {"actual_finance", "missing"},
+                    costed["logistics_source"] not in {"actual_finance", "missing"},
+                    costed["ad_source"] in {"period_sales_allocation", "actual_and_period_allocation"},
+                )),
                 "coverage": {"purchase": purchase_ok, "finance": finance_ok, "logistics": logistics_ok, "ads": ads_ok},
                 "fully_covered": purchase_ok and finance_ok and logistics_ok and ads_ok,
             })
@@ -994,32 +1512,55 @@ class FinanceCenter:
             )
             if not sheet_names:
                 raise ValueError("Excel 文件中没有工作表")
-            root = ElementTree.fromstring(archive.read(sheet_names[0]))
-            matrix: list[list[str]] = []
-            for row_node in (node for node in root.iter() if node.tag.endswith("}row")):
-                cells: dict[int, str] = {}
-                for cell in (node for node in row_node if node.tag.endswith("}c")):
-                    reference = cell.attrib.get("r", "A1")
-                    letters = re.match(r"[A-Z]+", reference)
-                    column = 0
-                    for letter in (letters.group(0) if letters else "A"):
-                        column = column * 26 + ord(letter) - 64
-                    column -= 1
-                    kind = cell.attrib.get("t", "")
-                    value_node = next((node for node in cell if node.tag.endswith("}v")), None)
-                    inline = next((node for node in cell if node.tag.endswith("}is")), None)
-                    if inline is not None:
-                        value = "".join(node.text or "" for node in inline.iter() if node.tag.endswith("}t"))
-                    else:
-                        value = value_node.text if value_node is not None and value_node.text is not None else ""
-                        if kind == "s" and value.isdigit() and int(value) < len(shared):
-                            value = shared[int(value)]
-                        elif kind == "b":
-                            value = "是" if value == "1" else "否"
-                    cells[column] = str(value).strip()
-                width = max(cells, default=-1) + 1
-                matrix.append([cells.get(index, "") for index in range(width)])
-            return matrix
+            candidates: list[tuple[int, list[list[str]]]] = []
+            alias_keys = {
+                normalized_key(alias)
+                for fields in IMPORT_FIELDS.values()
+                for aliases in fields.values()
+                for alias in aliases
+            }
+            for sheet_name in sheet_names:
+                root = ElementTree.fromstring(archive.read(sheet_name))
+                matrix: list[list[str]] = []
+                for row_node in (node for node in root.iter() if node.tag.endswith("}row")):
+                    cells: dict[int, str] = {}
+                    for cell in (node for node in row_node if node.tag.endswith("}c")):
+                        reference = cell.attrib.get("r", "A1")
+                        letters = re.match(r"[A-Z]+", reference)
+                        column = 0
+                        for letter in (letters.group(0) if letters else "A"):
+                            column = column * 26 + ord(letter) - 64
+                        column -= 1
+                        kind = cell.attrib.get("t", "")
+                        value_node = next((node for node in cell if node.tag.endswith("}v")), None)
+                        inline = next((node for node in cell if node.tag.endswith("}is")), None)
+                        if inline is not None:
+                            value = "".join(node.text or "" for node in inline.iter() if node.tag.endswith("}t"))
+                        else:
+                            value = value_node.text if value_node is not None and value_node.text is not None else ""
+                            if kind == "s" and value.isdigit() and int(value) < len(shared):
+                                value = shared[int(value)]
+                            elif kind == "b":
+                                value = "是" if value == "1" else "否"
+                        cells[column] = str(value).strip()
+                    width = max(cells, default=-1) + 1
+                    matrix.append([cells.get(index, "") for index in range(width)])
+                best_score = -1
+                best_header = 0
+                for row_index, row in enumerate(matrix[:25]):
+                    keys = {normalized_key(cell) for cell in row if str(cell).strip()}
+                    score = len(keys.intersection(alias_keys))
+                    if normalized_key("订单号") in keys:
+                        score += 5
+                    if normalized_key("采购成本") in keys:
+                        score += 5
+                    if normalized_key("店铺") in keys:
+                        score += 2
+                    if score > best_score:
+                        best_score = score
+                        best_header = row_index
+                candidates.append((best_score, matrix[best_header:]))
+            return max(candidates, key=lambda item: item[0])[1]
 
     @staticmethod
     def _field_score(source_header: str, target_field: str, aliases: Iterable[str]) -> float:
@@ -1145,30 +1686,44 @@ class FinanceCenter:
         backup = self.backup(f"before-{batch_id}")
         inserted = 0
         updated = 0
+        unmatched = 0
+        processed_rows = len(rows)
+        matched_source_rows = 0
         with self.connect() as conn:
             conn.execute(
                 "INSERT INTO finance_import_batches(id,file_kind,file_name,status,created_by,created_at,backup_path,row_count,mapping_json) "
                 "VALUES(?,?,?,?,?,?,?,?,?)",
                 (batch_id, file_kind, Path(file_name).name, "applying", created_by, now_iso(), str(backup), len(rows), safe_json(mapping)),
             )
-            for index, source_row in enumerate(rows, start=2):
-                value = self._mapped_row(source_row, mapping)
-                if not any(str(item).strip() for item in value.values()):
-                    continue
-                if file_kind == "purchase_cost":
-                    result = self._import_purchase_cost(conn, batch_id, index, value, source_row)
-                elif file_kind == "orders":
-                    result = self._import_order(conn, batch_id, index, value, source_row)
-                elif file_kind == "finance":
-                    result = self._import_finance(conn, batch_id, index, value, source_row)
-                else:
-                    result = self._import_ads(conn, batch_id, index, value, source_row)
-                inserted += result == "inserted"
-                updated += result == "updated"
+            if file_kind == "purchase_cost" and "order_number" in mapping.values():
+                purchase_result = self._import_purchase_order_rows(
+                    conn, batch_id, Path(file_name).name, rows, mapping,
+                )
+                inserted = purchase_result["inserted_count"]
+                updated = purchase_result["updated_count"]
+                unmatched = purchase_result["unmatched_count"]
+                processed_rows = purchase_result["source_row_count"]
+                matched_source_rows = purchase_result["matched_source_row_count"]
+            else:
+                for index, source_row in enumerate(rows, start=2):
+                    value = self._mapped_row(source_row, mapping)
+                    if not any(str(item).strip() for item in value.values()):
+                        continue
+                    if file_kind == "purchase_cost":
+                        result = self._import_purchase_cost(conn, batch_id, index, value, source_row)
+                    elif file_kind == "orders":
+                        result = self._import_order(conn, batch_id, index, value, source_row)
+                    elif file_kind == "finance":
+                        result = self._import_finance(conn, batch_id, index, value, source_row)
+                    else:
+                        result = self._import_ads(conn, batch_id, index, value, source_row)
+                    inserted += result == "inserted"
+                    updated += result == "updated"
             conn.execute(
                 "UPDATE finance_import_batches SET status='applied',applied_at=?,inserted_count=?,updated_count=? WHERE id=?",
                 (now_iso(), inserted, updated, batch_id),
             )
+            conn.execute("UPDATE finance_import_batches SET row_count=? WHERE id=?", (processed_rows, batch_id))
             for source, target in mapping.items():
                 mapping_id = stable_id(file_kind, normalized_key(source))
                 conn.execute(
@@ -1178,9 +1733,245 @@ class FinanceCenter:
                     (mapping_id, file_kind, source, target, now_iso()),
                 )
         return {
-            "batch_id": batch_id, "status": "applied", "row_count": len(rows),
+            "batch_id": batch_id, "status": "applied", "row_count": processed_rows,
             "inserted_count": inserted, "updated_count": updated,
+            "matched_count": matched_source_rows or inserted + updated, "unmatched_count": unmatched,
             "backup_path": str(backup), "rollback_available": True,
+        }
+
+    @staticmethod
+    def _purchase_candidate_key(order: Mapping[str, Any]) -> str:
+        return str(order.get("offer_id") or order.get("sku") or "").strip()
+
+    @staticmethod
+    def _purchase_candidate_aliases(orders: Iterable[Mapping[str, Any]]) -> set[str]:
+        aliases: set[str] = set()
+        for order in orders:
+            aliases.update(str(order.get(field) or "").strip() for field in ("sku", "offer_id"))
+        return {value for value in aliases if value}
+
+    def _purchase_store_ids(self, conn: sqlite3.Connection, value: Any) -> list[str]:
+        raw = self._store_value(value)
+        key = normalized_key(raw)
+        rows = conn.execute("SELECT id,store_name,store_alias FROM stores").fetchall()
+        matched = [
+            str(row["id"]) for row in rows
+            if key in {
+                normalized_key(row["id"]), normalized_key(row["store_name"]),
+                normalized_key(row["store_alias"]),
+            }
+        ]
+        return list(dict.fromkeys(matched or [raw]))
+
+    def _purchase_order_groups(
+        self, conn: sqlite3.Connection, store_ids: list[str], order_number: str,
+    ) -> dict[str, list[dict[str, Any]]]:
+        placeholders = ",".join("?" for _ in store_ids)
+        rows = conn.execute(
+            f"SELECT * FROM orders WHERE store_id IN ({placeholders}) "
+            "AND (trim(posting_number)=? OR trim(COALESCE(order_number,''))=?)",
+            (*store_ids, order_number, order_number),
+        ).fetchall()
+        groups: dict[str, list[dict[str, Any]]] = {}
+        for row in rows:
+            item = dict(row)
+            key = self._purchase_candidate_key(item)
+            if key:
+                groups.setdefault(key, []).append(item)
+        return groups
+
+    def _import_purchase_order_rows(
+        self, conn: sqlite3.Connection, batch_id: str, file_name: str,
+        rows: list[dict[str, Any]], mapping: Mapping[str, str],
+    ) -> dict[str, int]:
+        entries: list[dict[str, Any]] = []
+        evidence: dict[tuple[str, str], dict[str, int]] = {}
+        for row_number, raw in enumerate(rows, start=2):
+            value = self._mapped_row(raw, mapping)
+            if not any(str(item).strip() for item in value.values()):
+                continue
+            order_number = str(value.get("order_number") or "").strip()
+            source_name = str(value.get("product_name") or value.get("sku") or value.get("offer_id") or "").strip()
+            store_token = self._store_value(value.get("store_id"))
+            cost_text = str(value.get("purchase_cost_cny") if value.get("purchase_cost_cny") is not None else "").strip()
+            if not order_number and not source_name:
+                continue
+            if not cost_text:
+                continue
+            entry = {
+                "row_number": row_number, "raw": raw, "value": value,
+                "order_number": order_number, "source_name": source_name,
+                "store_token": store_token, "cost_text": cost_text,
+                "store_ids": self._purchase_store_ids(conn, store_token),
+                "groups": {}, "resolved_key": None,
+            }
+            if order_number:
+                entry["groups"] = self._purchase_order_groups(conn, entry["store_ids"], order_number)
+            groups = entry["groups"]
+            if len(groups) == 1:
+                entry["resolved_key"] = next(iter(groups))
+                evidence_key = (normalized_key(store_token), normalized_key(source_name))
+                scores = evidence.setdefault(evidence_key, {})
+                scores[entry["resolved_key"]] = scores.get(entry["resolved_key"], 0) + 1
+            entries.append(entry)
+
+        for entry in entries:
+            groups = entry["groups"]
+            if entry["resolved_key"] or len(groups) < 2:
+                continue
+            wanted = {
+                str(entry["value"].get(field) or "").strip()
+                for field in ("sku", "offer_id")
+                if str(entry["value"].get(field) or "").strip()
+            }
+            evidence_key = (normalized_key(entry["store_token"]), normalized_key(entry["source_name"]))
+            known = evidence.get(evidence_key, {})
+            scored: list[tuple[int, str]] = []
+            for key, candidates in groups.items():
+                aliases = self._purchase_candidate_aliases(candidates) | {key}
+                score = sum(known.get(alias, 0) for alias in aliases)
+                if wanted.intersection(aliases):
+                    score += 1000
+                if score:
+                    scored.append((score, key))
+            scored.sort(reverse=True)
+            if scored and (len(scored) == 1 or scored[0][0] > scored[1][0]):
+                entry["resolved_key"] = scored[0][1]
+
+        # A multi-product order often has one purchase row per SKU. Resolve the
+        # final row from the only candidate not already assigned in that order.
+        changed = True
+        while changed:
+            changed = False
+            order_entries: dict[tuple[str, str], list[dict[str, Any]]] = {}
+            for entry in entries:
+                if entry["groups"]:
+                    order_entries.setdefault(
+                        (normalized_key(entry["store_token"]), entry["order_number"]), []
+                    ).append(entry)
+            for related in order_entries.values():
+                assigned = {entry["resolved_key"] for entry in related if entry["resolved_key"]}
+                for entry in related:
+                    if entry["resolved_key"] or len(entry["groups"]) < 2:
+                        continue
+                    remaining = set(entry["groups"]).difference(assigned)
+                    if len(remaining) == 1:
+                        entry["resolved_key"] = remaining.pop()
+                        assigned.add(entry["resolved_key"])
+                        changed = True
+
+        grouped: dict[tuple[str, str, str], dict[str, Any]] = {}
+        unmatched = 0
+        for entry in entries:
+            if not entry["order_number"] or not entry["resolved_key"]:
+                reason = "订单尚未从 Ozon 读取" if not entry["groups"] else "同一订单包含多个 SKU，无法唯一确认采购价归属"
+                self._unmatched_import(
+                    conn, batch_id, "purchase_cost", entry["row_number"], entry["value"], entry["raw"], reason,
+                )
+                unmatched += 1
+                continue
+            group_key = (normalized_key(entry["store_token"]), entry["order_number"], entry["resolved_key"])
+            group = grouped.setdefault(group_key, {
+                "entries": [], "cost": Decimal("0"), "orders": entry["groups"][entry["resolved_key"]],
+                "store_token": entry["store_token"], "order_number": entry["order_number"],
+                "sku": entry["resolved_key"], "source_name": entry["source_name"],
+            })
+            group["entries"].append(entry)
+            group["cost"] += decimal_value(entry["cost_text"])
+
+        inserted = updated = 0
+        affected_orders: set[str] = set()
+        for group in sorted(grouped.values(), key=lambda item: max(entry["row_number"] for entry in item["entries"])):
+            source_row = min(entry["row_number"] for entry in group["entries"])
+            total_cost = group["cost"]
+            quantities = [self._order_quantity(order) for order in group["orders"]]
+            quantity = max((value for value in quantities if value > 0), default=Decimal("1"))
+            unit_cost = total_cost / quantity
+            order_stores = sorted({str(order["store_id"]) for order in group["orders"]})
+            for order in group["orders"]:
+                store_id = str(order["store_id"])
+                order_id = str(order["id"])
+                match_id = stable_id("purchase-order-import", order_id, group["sku"], batch_id)
+                payload = {
+                    "id": match_id, "store_id": store_id, "order_id": order_id,
+                    "posting_number": group["order_number"], "sku": group["sku"],
+                    "purchase_cost_cny": money(total_cost), "weight_g": None,
+                    "source_file": file_name, "source_row": source_row,
+                    "matched_at": now_iso(), "created_at": now_iso(),
+                }
+                conn.execute(
+                    f"INSERT INTO purchase_order_match({','.join(payload)}) VALUES({','.join('?' for _ in payload)})",
+                    tuple(payload.values()),
+                )
+                self._record_change(conn, batch_id, "purchase_order_match", match_id, "insert", None, payload)
+                inserted += 1
+
+            product_cost_id = stable_id("purchase-order-cost", batch_id, group["order_number"], group["sku"])
+            cost_payload = {
+                "id": product_cost_id, "row_hash": stable_id(group["order_number"], group["sku"], money(total_cost)),
+                "file_hash": stable_id(batch_id), "sku": group["sku"], "offer_id": group["sku"],
+                "product_name": group["source_name"], "purchase_cost_cny": money(unit_cost),
+                "effective_date": None, "raw_payload": safe_json([entry["raw"] for entry in group["entries"]]),
+                "created_at": now_iso(), "amount_original": money(unit_cost), "currency_original": "CNY",
+                "currency_source": "confirmed_import", "source": "finance_center_order_import",
+                "updated_at": now_iso(), "batch_id": batch_id,
+                "note": f"订单 {group['order_number']}，合计 {money(total_cost)} 元",
+                "store_id": order_stores[0],
+            }
+            conn.execute(
+                f"INSERT INTO product_costs({','.join(cost_payload)}) VALUES({','.join('?' for _ in cost_payload)})",
+                tuple(cost_payload.values()),
+            )
+            self._record_change(conn, batch_id, "product_costs", product_cost_id, "insert", None, cost_payload)
+
+            product_keys: set[tuple[str, str, str]] = set()
+            for order in group["orders"]:
+                product_keys.add((str(order["store_id"]), str(order["sku"]), str(order.get("offer_id") or "")))
+                affected_orders.add(str(order["id"]))
+            for store_id, sku, offer_id in product_keys:
+                master = conn.execute(
+                    "SELECT * FROM product_master WHERE store_id=? AND (sku=? OR (?!='' AND offer_id=?)) "
+                    "ORDER BY updated_at DESC LIMIT 1",
+                    (store_id, sku, offer_id, offer_id),
+                ).fetchone()
+                if not master:
+                    continue
+                before = dict(master)
+                conn.execute(
+                    "UPDATE product_master SET unit_purchase_cost_cny=?,purchase_cost_source='purchase_table',updated_at=? WHERE id=?",
+                    (money(unit_cost), now_iso(), master["id"]),
+                )
+                after = self._table_row(conn, "product_master", str(master["id"])) or {}
+                self._record_change(conn, batch_id, "product_master", str(master["id"]), "update", before, after)
+                updated += 1
+
+        for order_id in affected_orders:
+            before_snapshot_row = conn.execute(
+                "SELECT * FROM profit_snapshots WHERE order_id=? ORDER BY created_at DESC LIMIT 1",
+                (order_id,),
+            ).fetchone()
+            before_snapshot = dict(before_snapshot_row) if before_snapshot_row else None
+            self._recompute_order(conn, order_id)
+            conn.execute(
+                "UPDATE profit_snapshots SET purchase_cost_update_batch_id=?,recompute_reason='purchase_order_import' WHERE order_id=?",
+                (batch_id, order_id),
+            )
+            after_snapshot_row = conn.execute(
+                "SELECT * FROM profit_snapshots WHERE order_id=? ORDER BY created_at DESC LIMIT 1",
+                (order_id,),
+            ).fetchone()
+            if after_snapshot_row:
+                after_snapshot = dict(after_snapshot_row)
+                self._record_change(
+                    conn, batch_id, "profit_snapshots", str(after_snapshot["id"]),
+                    "update" if before_snapshot else "insert", before_snapshot, after_snapshot,
+                )
+        return {
+            "inserted_count": inserted,
+            "updated_count": updated,
+            "matched_source_row_count": sum(len(group["entries"]) for group in grouped.values()),
+            "unmatched_count": unmatched,
+            "source_row_count": len(entries),
         }
 
     def _import_purchase_cost(
@@ -1317,7 +2108,7 @@ class FinanceCenter:
     ) -> None:
         row_id = stable_id("unmatched", batch_id, file_type, row_number)
         amount_rub = value.get("amount_rub") or value.get("spend_rub") or "0"
-        amount_cny = value.get("amount_cny") or value.get("spend_cny") or "0"
+        amount_cny = value.get("amount_cny") or value.get("spend_cny") or value.get("purchase_cost_cny") or "0"
         payload = {
             "id": row_id, "store_id": self._store_value(value.get("store_id")), "file_type": file_type,
             "file_name": batch_id, "file_path": "", "source_row_number": row_number,
@@ -1427,7 +2218,7 @@ class FinanceCenter:
                 table = str(change["table_name"])
                 if table not in {
                     "orders", "finance_transactions", "ad_spend_transactions", "product_costs",
-                    "product_master", "import_unmatched_rows",
+                    "product_master", "purchase_order_match", "profit_snapshots", "import_unmatched_rows",
                 }:
                     raise ValueError("回滚记录包含不允许的表")
                 before_payload = json.loads(change["before_json"] or "{}")
@@ -1441,6 +2232,17 @@ class FinanceCenter:
                 elif table == "product_master":
                     value = before_payload or after_payload
                     recompute_products.add((str(value.get("store_id") or "default_store"), str(value.get("sku") or ""), str(value.get("offer_id") or "")))
+                elif table == "purchase_order_match":
+                    value = before_payload or after_payload
+                    if value.get("order_id"):
+                        recompute_order_ids.add(str(value["order_id"]))
+                    posting = str(value.get("posting_number") or "")
+                    store_value = str(value.get("store_id") or "default_store")
+                    for row in conn.execute(
+                        "SELECT id FROM orders WHERE store_id=? AND posting_number=?",
+                        (store_value, posting),
+                    ):
+                        recompute_order_ids.add(str(row["id"]))
                 if change["action"] == "insert":
                     conn.execute(f"DELETE FROM {table} WHERE id=?", (change["row_id"],))
                 else:
@@ -1569,9 +2371,23 @@ class FinanceCenter:
             (order["store_id"], order["sku"], order["offer_id"] or "", order["offer_id"] or ""),
         ).fetchone()
         quantity = self._order_quantity(order)
-        purchase_source = str(master["purchase_cost_source"] if master else "missing")
-        unit_cost = decimal_value(master["unit_purchase_cost_cny"] if master else 0)
-        purchase = unit_cost * quantity if purchase_source.lower() not in MISSING_PURCHASE_SOURCES else Decimal("0")
+        purchase_record = conn.execute(
+            "SELECT * FROM purchase_order_match WHERE store_id=? AND posting_number=? "
+            "AND (order_id=? OR trim(COALESCE(sku,'')) IN (trim(?),trim(COALESCE(?,'')))) "
+            "ORDER BY CASE WHEN order_id=? THEN 0 ELSE 1 END,matched_at DESC,created_at DESC LIMIT 1",
+            (
+                order["store_id"], order["posting_number"], order["id"], order["sku"],
+                order["offer_id"] or "", order["id"],
+            ),
+        ).fetchone()
+        if purchase_record:
+            purchase_source = "order_purchase_record"
+            purchase = decimal_value(purchase_record["purchase_cost_cny"])
+            unit_cost = purchase / quantity if quantity > 0 else purchase
+        else:
+            purchase_source = str(master["purchase_cost_source"] if master else "missing")
+            unit_cost = decimal_value(master["unit_purchase_cost_cny"] if master else 0)
+            purchase = unit_cost * quantity if purchase_source.lower() not in MISSING_PURCHASE_SOURCES else Decimal("0")
         if (
             purchase_source.lower() in MISSING_PURCHASE_SOURCES and existing_snapshot
             and str(existing_snapshot["purchase_cost_source"] or "").lower() not in MISSING_PURCHASE_SOURCES
@@ -1947,6 +2763,27 @@ class FinanceCenter:
                 buckets["compensation"] += amount
             else:
                 buckets["other"] += amount
+
+        # Several Ozon Global charges are returned as standalone negative
+        # operations with an empty services array. Classify the operation-level
+        # amount so delivery and acquiring costs are not silently treated as 0.
+        operation_type = str(operation.get("operation_type") or "").lower()
+        operation_name = str(operation.get("operation_type_name") or operation.get("service_name") or "").lower()
+        operation_label = f"{operation_type} {operation_name}"
+        operation_expense = max(-decimal_value(operation.get("amount")), Decimal("0"))
+        operation_expense = operation_expense / rate if rate > 0 else Decimal("0")
+        if operation_expense > 0 and operation_type not in {value.lower() for value in OZON_AD_OPERATION_TYPES}:
+            if any(token in operation_label for token in (
+                "deliveryservices", "достав", "логист", "transport", "транспорт",
+            )):
+                if buckets["logistics"] == 0:
+                    buckets["logistics"] = operation_expense
+            elif any(token in operation_label for token in ("эквай", "acquiring", "payment processing")):
+                if buckets["acquiring"] == 0:
+                    buckets["acquiring"] = operation_expense
+            elif any(token in operation_label for token in ("комисс", "commission")):
+                if buckets["platform"] == 0:
+                    buckets["platform"] = operation_expense
         return buckets
 
     def _sync_finance(
@@ -2117,7 +2954,7 @@ class FinanceCenter:
                         coverage_id = stable_id("coverage", finance_store_id, start, end, run_id)
                         conn.execute(
                             "INSERT INTO finance_data_coverage(id,store_id,date_from,date_to,orders_status,finance_status,ads_status,source,updated_at) "
-                            "VALUES(?,?,?,?,'complete','complete','not_configured','ozon_read_only_sync',?)",
+                            "VALUES(?,?,?,?,'complete','complete','complete_from_finance','ozon_read_only_sync',?)",
                             (coverage_id, finance_store_id, start, end, finished),
                         )
                         conn.execute(
@@ -2135,7 +2972,7 @@ class FinanceCenter:
                         "status": "success", "orders_seen": orders_seen, "finance_seen": finance_seen,
                         "changed_rows": order_changes + finance_changes + image_changes,
                         "read_api_calls": order_calls + finance_calls + image_calls,
-                        "ads_status": "not_configured", "write_api_calls": 0,
+                        "ads_status": "complete_from_finance", "write_api_calls": 0,
                     })
                 except Exception as exc:
                     message = str(exc)[:240]
@@ -2181,6 +3018,10 @@ class FinanceCenter:
                 with self.connect() as conn:
                     self._set_meta(conn, "last_successful_sync_date", date.today().isoformat())
                     self._set_meta(conn, "last_successful_sync_at", completed_at)
+                    self._set_meta(conn, "scheduled_sync_state", safe_json({
+                        "due_day": date.today().isoformat(), "status": "completed",
+                        "completed_at": completed_at, "attempt_count": 0,
+                    }))
                 self._clear_read_circuit()
             return {
                 "date_from": start, "date_to": end, "trigger": trigger, "stores": results,

@@ -8,25 +8,29 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 from pathlib import Path
 from typing import Any, Dict
 
 try:
-    from scripts.style_selector import load_json
-    from scripts.ozon_ecommerce_designer_contract import selected_skus
+    from scripts.ozon_ecommerce_designer_contract import normalize_creative_prompt_item, selected_skus
     from scripts.image_asset_boundaries import validate_generated_output, validate_product_reference
     from scripts.production_input_guard import validate_formal_product_input
 except ModuleNotFoundError:  # Allows direct execution as scripts/image_generator_contract.py.
-    from style_selector import load_json
-    from ozon_ecommerce_designer_contract import selected_skus
+    from ozon_ecommerce_designer_contract import normalize_creative_prompt_item, selected_skus
     from image_asset_boundaries import validate_generated_output, validate_product_reference
     from production_input_guard import validate_formal_product_input
+
+
+def load_json(path: Path) -> Dict[str, Any]:
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
 
 
 IMAGE_TYPE_REQUIREMENTS = {
     "main": {
         "decision_job": "Earn the click in three seconds by showing the real product, its core value and its usage context.",
-        "required_composition": "The real product is dominant; the usage context supports it; the core Russian sales message is immediately readable.",
+        "required_composition": "The real product is dominant; the usage context supports it; follow the designer's exact integrated ecommerce text. SKU/model/listing-title text must not become the whole visual idea or overpower the product.",
     },
     "benefit": {
         "decision_job": "Turn one verified product capability or use into one clear buyer benefit.",
@@ -67,6 +71,80 @@ IMAGE_TYPE_REQUIREMENTS = {
 }
 
 
+def _main_text_is_compact_proof(value: str) -> bool:
+    text = str(value or "").strip()
+    if not text:
+        return False
+    if text == "JLC GLOBAL":
+        return True
+    lowered = text.casefold()
+    if len(text) > 26:
+        return False
+    if any(token in lowered for token in ("модель", "model", "sku", "артикул")):
+        return False
+    broad_product_terms = (
+        "сканер", "держатель", "контейнер", "термос", "поднос", "органайзер",
+        "светильник", "бутыл", "сумк", "коврик", "полк", "набор",
+    )
+    if any(token in lowered for token in broad_product_terms):
+        return False
+    return any(
+        token in lowered
+        for token in (
+            "usb", "2d", "1d", "qr", "bluetooth", "wifi", "см", "мм", "мл", "л",
+            "цвет", "размер", "объем", "объём", "комплект", "касс", "логист",
+            "склад", "кухн", "ванн", "стол", "настен", "черн", "бел", "сер",
+        )
+    )
+
+
+def normalize_main_image_visible_text(item: Dict[str, Any]) -> None:
+    """Keep stale image plans from turning SKU mains into headline posters."""
+    if item.get("image_type") != "main":
+        return
+    compact: list[str] = []
+    for value in item.get("russian_text") or []:
+        text = str(value or "").strip()
+        if _main_text_is_compact_proof(text) and text not in compact and text != "JLC GLOBAL":
+            compact.append(text)
+        if len(compact) >= 2:
+            break
+    compact.append("JLC GLOBAL")
+    item["russian_text"] = compact
+    allowed = set(compact)
+    filtered_overlay = [
+        value
+        for value in item.get("overlay_plan") or []
+        if isinstance(value, dict) and str(value.get("text") or "").strip() in allowed
+    ]
+    if not any(str(value.get("text") or "").strip() == "JLC GLOBAL" for value in filtered_overlay if isinstance(value, dict)):
+        filtered_overlay.append({
+            "role": "brand_watermark",
+            "text": "JLC GLOBAL",
+            "box": [0.695, 0.925, 0.22, 0.035],
+            "font_size_ratio": 0.018,
+            "font_weight": "regular",
+            "text_color": "#FFFFFF",
+            "accent_color": "#FFFFFF",
+            "background_style": "translucent",
+            "background_color": "#111827",
+            "accent_style": "none",
+            "align": "center",
+            "vertical_align": "middle",
+            "priority": 99,
+        })
+    item["overlay_plan"] = filtered_overlay
+    prompt = str(item.get("prompt") or "")
+    prompt = re.sub(r'Text whitelist:[^\n]+', "", prompt)
+    item["prompt"] = (
+        prompt.strip()
+        + "\n\nMain image compact-text override: do not render a large title/SKU/model headline. "
+        + "Use only these visible strings if text is needed: "
+        + " | ".join(f'"{value}"' for value in compact)
+        + ". Product photo quality and factual shape are more important than text."
+    ).strip()
+
+
 def find_slot(plan: Dict[str, Any], slot: str) -> Dict[str, Any]:
     for key in ("main_images", "detail_images", "disclaimer_images"):
         for item in plan.get(key, []):
@@ -77,18 +155,13 @@ def find_slot(plan: Dict[str, Any], slot: str) -> Dict[str, Any]:
 
 def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
     validate_formal_product_input(product_dir)
-    profile = load_json(product_dir / "output/style-profile.json")
     plan = load_json(product_dir / "output/image-plan.json")
     source = load_json(product_dir / "input/source.json")
-    positioning_path = product_dir / "output/product-positioning.json"
-    positioning = load_json(positioning_path) if positioning_path.is_file() else {}
     item = find_slot(plan, slot)
-    expected_ref = f"products/{product_dir.name}/output/style-profile.json"
+    expected_design_ref = f"products/{product_dir.name}/output/ozon-ecommerce-design.json"
 
-    if plan["style_profile_ref"] != expected_ref:
-        raise ValueError("Image plan does not reference this product's style-profile.json")
-    if plan["style_family"] != profile["style_family"]:
-        raise ValueError("Image plan style family does not match style-profile.json")
+    if plan.get("ecommerce_design_ref") != expected_design_ref:
+        raise ValueError("Image plan does not reference this product's ecommerce design")
     if item["image_type"] not in plan.get("image_set_structure", []):
         raise ValueError("Image type is not allowed by the selected image plan")
     if len(plan.get("detail_images") or []) != 8:
@@ -115,26 +188,26 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
     russian_text = item.get("russian_text", [])
     if not russian_text or any(str(value).strip().lower() == "unknown" for value in russian_text):
         raise ValueError(f"Image slot {slot} is blocked: Russian image text is unknown")
+    normalize_creative_prompt_item(item)
+    normalize_main_image_visible_text(item)
+    russian_text = item.get("russian_text", [])
     art_direction = item.get("art_direction") or {}
     overlay_plan = item.get("overlay_plan") or []
-    if not art_direction or not overlay_plan:
+    overlay_text = [
+        str(value.get("text") or "").strip()
+        for value in overlay_plan
+        if isinstance(value, dict) and str(value.get("text") or "").strip()
+    ]
+    allowed_text = [str(value).strip() for value in russian_text if str(value).strip()]
+    if not art_direction or not overlay_text or any(text not in allowed_text for text in overlay_text):
         raise ValueError(f"Image slot {slot} has no product-specific art direction; fixed-template fallback is forbidden")
     slot_prompt = str(item.get("prompt") or item.get("prompt_brief") or "")
-    prompt_folded = slot_prompt.casefold()
-    forbidden_two_stage_markers = (
-        "text-free", "without lettering", "generate no text", "do not add text",
-        "no generated typography", "rendered later", "added after generation",
-        "无字底图", "后置叠字",
-    )
-    if any(marker in prompt_folded for marker in forbidden_two_stage_markers):
-        raise ValueError(f"Image slot {slot} requests a forbidden text-free or post-overlay workflow")
-    if any(str(text).strip() not in slot_prompt for text in russian_text):
-        raise ValueError(f"Image slot {slot} prompt must include every exact Russian text item")
-    if [str(value.get("text") or "").strip() for value in overlay_plan] != [str(value).strip() for value in russian_text]:
-        raise ValueError(f"Image slot {slot} overlay plan does not match its exact Russian text")
-    if not plan["generator_contract"].get("fixed_template_fallback_forbidden"):
-        raise ValueError("Image plan must explicitly forbid fixed-template fallback")
-    if plan["generator_contract"].get("overlay_strategy") != "single_pass_model_native_typography":
+    generator_contract = plan.get("generator_contract") or {}
+    if not generator_contract.get("must_follow_ecommerce_design"):
+        raise ValueError("Image plan must follow the unified ecommerce design")
+    if generator_contract.get("ecommerce_design_ref") != expected_design_ref:
+        raise ValueError("Image generator contract must point to this product's ecommerce design")
+    if generator_contract.get("overlay_strategy") != "single_pass_model_native_typography":
         raise ValueError("Image plan must use single-pass model-native typography")
 
     image_type_contract = IMAGE_TYPE_REQUIREMENTS[item["image_type"]]
@@ -149,26 +222,21 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
             "Примерные размеры" in str(value) for value in russian_text
         ):
             raise ValueError("Estimated size image must be labelled 'Примерные размеры'")
+    image_sales_strategy = {
+        "image_positioning": item.get("image_positioning") or plan.get("image_positioning") or "product-specific Ozon visual sales strategy",
+        "main_image_goal": item.get("main_image_goal") or plan.get("main_image_goal") or image_type_contract["decision_job"],
+        "visual_style": item.get("visual_style") or plan.get("visual_style") or "product-specific Ozon ecommerce visual style",
+        "need_model": bool(item.get("need_model", plan.get("need_model", False))),
+        "avoid_style": item.get("avoid_style") or plan.get("avoid_style") or "generic display-only product images",
+    }
 
     return {
         "product_id": product_dir.name,
         "slot": slot,
         "aspect_ratio": "3:4",
-        "style_family": profile["style_family"],
-        "style_direction": art_direction,
-        "creative_direction": profile.get("creative_direction") or plan.get("creative_direction") or {},
-        "ecommerce_creative_brief": load_json(product_dir / "output/ecommerce-creative-brief.json") if (product_dir / "output/ecommerce-creative-brief.json").is_file() else {},
-        "learned_image_preferences": plan.get("learned_image_preferences") or [],
-        "final_listing_context": plan.get("listing_context") or {},
-        "product_positioning": {
-            "market_positioning": positioning.get("market_positioning", "unknown"),
-            "target_customer": positioning.get("target_customer", "unknown"),
-            "purchase_motivation": positioning.get("purchase_motivation", "unknown"),
-            "customer_pain_points": positioning.get("customer_pain_points", ["unknown"]),
-            "core_sales_angle": positioning.get("core_sales_angle", "unknown"),
-            "emotional_trigger": positioning.get("emotional_trigger", "unknown"),
-            "competitive_advantage": positioning.get("competitive_advantage", "unknown"),
-        },
+        "image_sales_strategy": image_sales_strategy,
+        "visual_direction": art_direction,
+        "sku_identity": item.get("sku_identity") or "shared facts only",
         "image_intent": {
             "image_type": item["image_type"],
             "buyer_question": item["buyer_question"],
@@ -184,8 +252,12 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
             "measurement_annotation": measurement_annotation,
             "style_direction": item["style_direction"],
             "visual_direction": item["visual_direction"],
+            "image_positioning": image_sales_strategy["image_positioning"],
+            "main_image_goal": image_sales_strategy["main_image_goal"],
+            "visual_style": image_sales_strategy["visual_style"],
+            "need_model": image_sales_strategy["need_model"],
+            "avoid_style": image_sales_strategy["avoid_style"],
         },
-        "buyer_objections": plan.get("buyer_objections", ["unknown"]),
         "generation_contract": {
             **image_type_contract,
             "advisory_skills_applied": plan["generator_contract"].get("advisory_skills_required", []),
@@ -194,25 +266,35 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
             "image_slot_concurrency": plan["generator_contract"].get("image_slot_concurrency", 1),
             "image_qc_same_execution": plan["generator_contract"].get("image_qc_same_execution", False),
             "conversion_logic_required": True,
+            "dominant_product_area_required": True,
+            "text_background_high_contrast_required": True,
             "exact_russian_text": russian_text,
+            "visible_main_text_policy": (
+                "for main images, render at most one or two compact source-backed proof notes plus the small JLC GLOBAL watermark; "
+                "do not turn the listing title, SKU name or model into the main visual message"
+            ) if item["image_type"] == "main" else "render exact slot Russian text only",
             "operation": operation,
             "background_generation_only": False,
             "product_pixels_must_come_from_reference": operation == "compose_from_real_images",
+            "product_body_topology_lock_required": True,
             "composition_tool": (
                 "deterministic crop, mask and layout"
                 if operation == "compose_from_real_images"
+                else "built-in reference-guided generation"
+                if operation == "generate_from_reference"
                 else "built-in reference image editing"
             ),
             "single_pass_required": True,
             "post_generation_overlay_forbidden": True,
-            "fixed_template_fallback_forbidden": True,
+            "brand_watermark_required": "JLC GLOBAL small corner watermark",
             "forbidden_shortcuts": [
                 "plain white-background optimization only",
                 "fixed category template reused across different products",
                 "repeating the same composition with only a background change",
                 "generic product photography without a buyer decision purpose",
                 "unverified product features, parameters, accessories or certifications",
-                "Chinese source text, seller watermarks, or 1688 decorations in the final image",
+                "Chinese source text, seller/1688 watermarks, workbench product-id badges or 1688 decorations in the final image",
+                "SKU/model/listing-title text used as the main visual message",
                 "showing several selectable SKUs as if one order contains all of them",
             ],
             "main_images_first": True,
@@ -220,27 +302,23 @@ def build_prompt_packet(product_dir: Path, slot: str) -> Dict[str, Any]:
             "quality_gate": [
                 "wrong product or SKU",
                 "wrong color",
-                "invented accessory or function",
-                "obvious deformation",
+                "changed structure, size proportion, specification, quantity or set composition",
                 "Chinese or garbage text",
                 "unreadable Russian text",
-                "large blank placeholder box or empty bordered panel",
             ],
         },
         "reference_product_images": item["reference_product_images"],
-        "required_visual_signals": profile["generator_constraints"]["required_visual_signals"],
-        "forbidden_visual_signals": profile["generator_constraints"]["forbidden_visual_signals"],
-        "truthfulness_guardrails": profile["generator_constraints"]["truthfulness_guardrails"],
         "must_preserve": plan["must_preserve"],
         "must_not_change": plan["must_not_change"],
         "instruction": (
-            "Use deterministic crop, mask and layout from the real references; AI must not redraw the product. "
-            if operation == "compose_from_real_images"
-            else "Use the built-in image editor with the supplied real product references. Preserve product identity, color, structure, proportions, markings and accessories while creating the requested scene. "
-        ) + (
-            "Reject low-resolution thumbnails instead of enlarging them. In one built-in image-model call, create the final product scene and render every exact verified Russian text line from this slot's overlay_plan. Do not create a text-free intermediate and do not call any post-generation overlay script. "
-            "Use natural negative space instead of a blank rounded rectangle, empty text box, placeholder card, bordered panel or decorative empty frame. "
-            "Do not add a default header, badge, benefit rail, palette or card layout. Reject missing, garbled, misspelled or unreadable Russian, Chinese text and seller watermarks, and never imply that all selectable SKU variants are included in one order. Product type, color, visible structure, accessory count and believable overall proportions must stay correct; pixel-for-pixel identity is not required."
+            "Create this one final 3:4 Ozon image with the built-in image tool by EDITING the reference_product_images (image-to-image). "
+            "Keep the product's real structure, colour and proportions exactly as the references show — do not invent, add or remove any part, mechanism or accessory, and do not copy a different variant's structure from a mixed gallery. "
+            "Clean away everything that is NOT the product: the supplier promo background, Chinese text, seller logo/watermark, 3D-render/CGI look and any frame/banner. "
+            "Place that unchanged product into a clean, product-led ecommerce scene and infographic layout per slot_prompt. "
+            "Use a premium commercial photo feel: believable lens depth, soft shadows, material texture, clean reflections, real environment light and restrained color grading. "
+            "Text is secondary and must attach to product proof; render only the exact whitelisted Russian text, never a detached headline block. "
+            "Include one subtle JLC GLOBAL corner watermark as brand ownership; do not include product-id preview badges. "
+            "Save only the final image; do not create a text-free intermediate or use a local overlay script."
         ),
         "slot_prompt": slot_prompt,
     }

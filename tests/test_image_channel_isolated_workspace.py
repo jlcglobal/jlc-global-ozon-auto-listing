@@ -11,10 +11,61 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "ozon-uploader"))
 sys.path.insert(0, str(ROOT / "ozon-adapter"))
 
-from ozon_uploader.image_channels import ImageTunnelError, start_image_channel  # noqa: E402
+from ozon_uploader.image_channels import (  # noqa: E402
+    ImageTunnelError,
+    apply_public_urls,
+    start_image_channel,
+)
+from ozon_uploader.images import resolve_cloudflared_binary  # noqa: E402
 
 
 class ImageChannelIsolatedWorkspaceTest(unittest.TestCase):
+    def test_cloudflared_resolver_uses_homebrew_fallback_when_path_is_minimal(self):
+        with tempfile.TemporaryDirectory() as directory:
+            fake_bin = Path(directory) / "cloudflared"
+            fake_bin.write_text("#!/bin/sh\n", encoding="utf-8")
+            with patch.dict(os.environ, {"PATH": "/usr/bin:/bin"}, clear=False), \
+                 patch("ozon_uploader.images.shutil.which", return_value=None), \
+                 patch("ozon_uploader.images.CLOUDFLARED_FALLBACK_PATHS", (str(fake_bin),)):
+                self.assertEqual(resolve_cloudflared_binary(), str(fake_bin))
+
+    def test_known_local_tls_probe_error_keeps_the_running_channel_available(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P000001"
+            (product / "output").mkdir(parents=True)
+            manifest = {"images": [{"staged_name": "main.png", "sha256": "abc"}]}
+
+            with patch(
+                "ozon_uploader.image_channels.CloudflareImageTunnel._wait_until_public",
+                side_effect=ImageTunnelError("curl: (35) LibreSSL SSL_connect: SSL_ERROR_SYSCALL"),
+            ):
+                result = apply_public_urls(product, manifest, "https://temporary.example.test")
+
+            image = result["images"][0]
+            self.assertEqual(image["status"], "served")
+            self.assertEqual(image["public_url"], "https://temporary.example.test/main.png")
+            self.assertNotIn("public_validation", image)
+            self.assertNotIn("public_validation", result)
+            self.assertNotIn("local_tls_probe_unavailable_urls", result)
+            cache = json.loads((product / "output/image-public-validation-cache.json").read_text(encoding="utf-8"))
+            self.assertEqual(
+                cache["entries"]["abc|https://temporary.example.test/main.png"]["status"],
+                "local_tls_probe_unavailable",
+            )
+
+    def test_non_tls_public_probe_error_remains_a_hard_channel_failure(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P000001"
+            (product / "output").mkdir(parents=True)
+            manifest = {"images": [{"staged_name": "main.png", "sha256": "abc"}]}
+
+            with patch(
+                "ozon_uploader.image_channels.CloudflareImageTunnel._wait_until_public",
+                side_effect=ImageTunnelError("Public image returned HTTP 404"),
+            ):
+                with self.assertRaises(ImageTunnelError):
+                    apply_public_urls(product, manifest, "https://temporary.example.test")
+
     def test_worker_uses_source_tree_adapter_from_isolated_product(self):
         with tempfile.TemporaryDirectory() as directory:
             workspace = Path(directory)

@@ -371,7 +371,11 @@ def prepare_rules(
         is_aspect = bool(raw.get("is_aspect", False))
         dictionary_id = _positive_int(raw.get("dictionary_id"))
         values_path = cache_dir / f"attribute-{attribute_id}-values.json"
-        if dictionary_id and (required or is_aspect) and not values_path.is_file() and allow_fetch:
+        # A dictionary-backed optional attribute can still be the only Ozon
+        # accepted representation of a real product fact (for example product
+        # features).  Cache every dictionary for the selected category once;
+        # later stages must never need a second live metadata read to fill it.
+        if dictionary_id and not values_path.is_file() and allow_fetch:
             if client is None:
                 import sys
                 sys.path.insert(0, str(root / "ozon-adapter"))

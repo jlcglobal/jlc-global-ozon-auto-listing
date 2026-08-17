@@ -88,75 +88,136 @@ def start_image_channel(
     output = product_dir / "output"
     state_path = output / "image-channel-state.json"
     stop_path = output / "image-channel.stop"
-    if state_path.is_file():
-        state = load_json(state_path)
-        if state.get("status") == "running" and process_alive(state.get("worker_pid")):
-            try:
-                return apply_public_urls(product_dir, manifest, state["public_url"])
-            except Exception:
-                # A quick-tunnel URL can expire while its local worker still
-                # exists. Close it before a retry creates a replacement.
-                if not stop_image_channel(product_dir, reason="public_url_validation_failed", wait_seconds=10):
-                    raise ImageTunnelError("旧图片通道失效且未能安全退出，已阻止重复启动")
     workspace_root = product_dir.parent.parent
     source_root = Path(__file__).resolve().parents[2]
     if running_channel_count(workspace_root) >= concurrency_limit:
         raise ImageTunnelError(f"Image channel concurrency limit reached: {concurrency_limit}")
-    stop_path.unlink(missing_ok=True)
-    log_path = output / "image-channel.log"
-    command = [
-        sys.executable, "-m", "ozon_uploader.image_channel_worker",
-        "--directory", str(output / "ozon-image-staging"),
-        "--state", str(state_path), "--stop-file", str(stop_path),
-        "--max-seconds", str(max_hours * 3600),
-    ]
-    caffeinate = shutil.which("caffeinate")
-    if caffeinate:
-        command = [caffeinate, "-ims", *command]
-    env = dict(os.environ)
-    package_root = str(Path(__file__).resolve().parents[1])
-    # Store uploads run from an isolated copy under runtime/.  The uploader
-    # package itself still belongs to the real source tree, so its sibling
-    # ozon-adapter must come from that tree rather than from the isolated
-    # workspace (which intentionally contains product data only).
-    adapter_root = str(source_root / "ozon-adapter")
-    python_paths = [package_root, adapter_root]
-    if env.get("PYTHONPATH"):
-        python_paths.append(env["PYTHONPATH"])
-    env["PYTHONPATH"] = os.pathsep.join(python_paths)
-    with log_path.open("a", encoding="utf-8") as log:
-        subprocess.Popen(
-            command, cwd=source_root, env=env, stdout=log, stderr=subprocess.STDOUT,
-            start_new_session=True, close_fds=True,
-        )
-    deadline = time.monotonic() + 60
-    while time.monotonic() < deadline:
+    attempts = max(1, int(os.environ.get("OZON_IMAGE_CHANNEL_START_ATTEMPTS", "3")))
+    last_error: Exception | None = None
+    for attempt in range(1, attempts + 1):
         if state_path.is_file():
             state = load_json(state_path)
-            if state.get("status") == "running":
+            if state.get("status") == "running" and process_alive(state.get("worker_pid")):
                 try:
                     return apply_public_urls(product_dir, manifest, state["public_url"])
-                except Exception:
-                    stop_image_channel(product_dir, reason="public_url_validation_failed", wait_seconds=10)
-                    raise
-            if state.get("status") == "failed":
-                raise ImageTunnelError(str(state.get("reason") or "Image channel failed"))
-        time.sleep(1)
-    raise ImageTunnelError("Persistent image channel did not become ready within 60 seconds")
+                except Exception as exc:
+                    last_error = exc
+                    # A quick-tunnel URL can expire or be unreachable while its
+                    # local worker still exists. Close it and create a fresh URL.
+                    if not stop_image_channel(product_dir, reason="public_url_validation_failed", wait_seconds=10):
+                        raise ImageTunnelError("旧图片通道失效且未能安全退出，已阻止重复启动")
+                    if attempt >= attempts:
+                        break
+        stop_path.unlink(missing_ok=True)
+        log_path = output / "image-channel.log"
+        command = [
+            sys.executable, "-m", "ozon_uploader.image_channel_worker",
+            "--directory", str(output / "ozon-image-staging"),
+            "--state", str(state_path), "--stop-file", str(stop_path),
+            "--max-seconds", str(max_hours * 3600),
+        ]
+        caffeinate = shutil.which("caffeinate")
+        if caffeinate:
+            command = [caffeinate, "-ims", *command]
+        env = dict(os.environ)
+        package_root = str(Path(__file__).resolve().parents[1])
+        # Store uploads run from an isolated copy under runtime/.  The uploader
+        # package itself still belongs to the real source tree, so its sibling
+        # ozon-adapter must come from that tree rather than from the isolated
+        # workspace (which intentionally contains product data only).
+        adapter_root = str(source_root / "ozon-adapter")
+        python_paths = [package_root, adapter_root]
+        if env.get("PYTHONPATH"):
+            python_paths.append(env["PYTHONPATH"])
+        env["PYTHONPATH"] = os.pathsep.join(python_paths)
+        with log_path.open("a", encoding="utf-8") as log:
+            subprocess.Popen(
+                command, cwd=source_root, env=env, stdout=log, stderr=subprocess.STDOUT,
+                start_new_session=True, close_fds=True,
+            )
+        deadline = time.monotonic() + 60
+        while time.monotonic() < deadline:
+            if state_path.is_file():
+                state = load_json(state_path)
+                if state.get("status") == "running":
+                    try:
+                        return apply_public_urls(product_dir, manifest, state["public_url"])
+                    except Exception as exc:
+                        last_error = exc
+                        stop_image_channel(product_dir, reason="public_url_validation_failed", wait_seconds=10)
+                        break
+                if state.get("status") == "failed":
+                    last_error = ImageTunnelError(str(state.get("reason") or "Image channel failed"))
+                    break
+            time.sleep(1)
+        else:
+            last_error = ImageTunnelError("Persistent image channel did not become ready within 60 seconds")
+        if attempt < attempts:
+            continue
+    detail = f": {last_error}" if last_error else ""
+    raise ImageTunnelError(f"图片公网通道连续启动失败，已重试 {attempts} 次{detail}")
+
+
+def _is_local_tls_probe_failure(error: BaseException) -> bool:
+    """Return true only for the known local HTTPS probe failure.
+
+    A connected Cloudflare quick tunnel can be externally reachable while the
+    current Mac's curl/OpenSSL stack fails its own TLS handshake.  This is not
+    evidence that an image is missing.  HTTP errors, invalid tunnel responses
+    and every other probe failure remain hard failures and still trigger a
+    safe channel rebuild.
+    """
+    text = str(error).casefold()
+    markers = (
+        "ssl_error_syscall",
+        "libressl ssl_connect",
+        "openssl ssl_connect",
+        "tlsv1 alert internal error",
+    )
+    return any(marker in text for marker in markers)
 
 
 def apply_public_urls(product_dir: Path, manifest: Dict[str, Any], public_url: str) -> Dict[str, Any]:
     cache_path = product_dir / "output" / "image-public-validation-cache.json"
     cache = load_json(cache_path) if cache_path.is_file() else {"entries": {}}
+    provisional_urls: List[str] = []
     for item in manifest["images"]:
+        # These are local diagnostic fields from older channel attempts.  The
+        # final Ozon upload schema deliberately has no place for them: keep
+        # diagnostics in the local cache below rather than leaking them into
+        # the transport manifest/payload.
+        item.pop("public_validation", None)
         url = f"{public_url}/{urllib.parse.quote(item['staged_name'])}"
         key = f"{item['sha256']}|{url}"
         cached = cache["entries"].get(key)
         if not cached or cached.get("status") != "valid":
-            CloudflareImageTunnel._wait_until_public(url)
-            cache["entries"][key] = {"status": "valid", "validated_at": now()}
-        item.update({"public_url": url, "status": "served", "error": "unknown"})
-    manifest.update({"hosting_mode": "background_tunnel", "tunnel_url": public_url})
+            try:
+                CloudflareImageTunnel._wait_until_public(url)
+                cache["entries"][key] = {"status": "valid", "validated_at": now()}
+            except ImageTunnelError as exc:
+                if not _is_local_tls_probe_failure(exc):
+                    raise
+                # Keep the verified worker/tunnel alive for its fixed TTL and
+                # let Ozon fetch the exact HTTPS URL.  The local TLS probe is
+                # recorded for diagnosis, but must not turn into a manual
+                # image-transfer task or a false upload failure.
+                cache["entries"][key] = {
+                    "status": "local_tls_probe_unavailable",
+                    "validated_at": now(),
+                    "error": str(exc),
+                }
+                provisional_urls.append(url)
+        item.update({
+            "public_url": url,
+            "status": "served",
+            "error": "unknown",
+        })
+    manifest.pop("public_validation", None)
+    manifest.pop("local_tls_probe_unavailable_urls", None)
+    manifest.update({
+        "hosting_mode": "background_tunnel",
+        "tunnel_url": public_url,
+    })
     write_json_atomic(cache_path, cache)
     return manifest
 

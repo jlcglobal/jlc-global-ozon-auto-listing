@@ -172,14 +172,21 @@ def ensure_store_offer_ids(product_dir: Path) -> Dict[str, Any]:
         if not record.get("selected"):
             continue
         existing_records = list(record.get("sku_publications") or [])
-        if str(record.get("status") or "").upper() in {
+        remote_identity_exists = any(
+            not _unknown(sku.get("task_id")) or not _unknown(sku.get("ozon_product_id"))
+            for sku in existing_records
+        )
+        protected_status = str(record.get("status") or "").upper() in {
             "SUBMITTED", "QUEUED", "UPLOADING", "PENDING_REMOTE",
             "OZON_MODERATION", "HANDED_OFF_TO_OZON", "SUCCESS",
             "IMPORTED", "UPLOADED", "ACTIVE",
-        } or any(
-            not _unknown(sku.get("task_id")) or not _unknown(sku.get("ozon_product_id"))
-            for sku in existing_records
-        ):
+        }
+        stale_before_write = (
+            protected_status
+            and int(record.get("api_write_count") or 0) <= 0
+            and not remote_identity_exists
+        )
+        if (protected_status and not stale_before_write) or remote_identity_exists:
             # Never reshape a publication that may already have a remote
             # identity. This also preserves legacy rows if source data drifts.
             continue
@@ -264,7 +271,9 @@ def publication_summary(data: Dict[str, Any]) -> Dict[str, int]:
     records = list((data.get("stores") or {}).values())
     return {
         "selected": sum(bool(item.get("selected")) for item in records),
-        "success": sum(str(item.get("status")) in {"SUCCESS", "IMPORTED", "ACTIVE"} for item in records),
+        "success": sum(str(item.get("status")) in {
+            "SUCCESS", "IMPORTED", "ACTIVE", "CREATED", "UPLOADED", "HANDED_OFF_TO_OZON",
+        } for item in records),
         "pending": sum(str(item.get("status")) in {"QUEUED", "UPLOADING", "PENDING_REMOTE", "OZON_MODERATION"} for item in records),
         "failed": sum(str(item.get("status")) == "FAILED" for item in records),
         "skipped": sum(str(item.get("status")) == "SKIPPED" for item in records),
@@ -303,7 +312,7 @@ def update_store_result(
 
 def final_snapshot(product_dir: Path, store_ids: Iterable[str], batch_id: str) -> Dict[str, Any]:
     files = {}
-    for name in ("copy-ru.json", "ozon-category.json", "ozon-attributes.json", "pricing-result.json", "ozon-draft.json", "rich-content.json"):
+    for name in ("copy-ru.json", "ozon-category.json", "ozon-attributes.json", "ozon-attributes-final.json", "pricing-result.json", "ozon-draft.json", "rich-content.json"):
         path = product_dir / "output" / name
         if path.is_file():
             files[name] = hashlib.sha256(path.read_bytes()).hexdigest()

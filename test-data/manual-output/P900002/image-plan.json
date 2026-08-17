@@ -12,10 +12,8 @@
     "test-data/manual-input/P900002/sku-images/sku-5l.png",
     "test-data/manual-input/P900002/sku-images/sku-6l.png"
   ],
-  "style_profile_ref": "test-data/manual-output/P900002/style-profile.json",
   "creative_brief_ref": "test-data/manual-output/P900002/ecommerce-creative-brief.json",
   "ecommerce_design_ref": "test-data/manual-output/P900002/ozon-ecommerce-design.json",
-  "style_family": "fresh_fridge_organization",
   "image_structure_rule_ref": "manual-test:N-sku-mains-plus-8-shared-details",
   "image_set_structure": [
     "one_main_per_sku",
@@ -196,8 +194,6 @@
     "не изменён ли товар на рекламных изображениях"
   ],
   "generator_contract": {
-    "must_follow_style_profile": true,
-    "style_profile_ref": "test-data/manual-output/P900002/style-profile.json",
     "allowed_structure": [
       "one_main_per_sku",
       "exactly_eight_shared_details"

@@ -164,7 +164,7 @@ class ProductionInputBoundaryTests(unittest.TestCase):
             contract = json.loads((product / "output/image-asset-contract.json").read_text())
             self.assertEqual(entry["review_mode"], "manual")
             self.assertFalse(entry["auto_upload"])
-            self.assertTrue(contract["manual_confirmation_required"])
+            self.assertFalse(contract["manual_confirmation_required"])
             # A later global UI setting change cannot rewrite this frozen entry.
             saved_entry = json.loads(
                 (root / "batches" / batch["batch_id"] / "batch.json").read_text()

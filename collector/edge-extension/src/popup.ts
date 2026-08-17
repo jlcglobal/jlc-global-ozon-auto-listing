@@ -1,4 +1,9 @@
-const DEFAULT_FACTORY_URL = "http://127.0.0.1:8765";
+const DEFAULT_FACTORY_URL = "http://192.168.3.13:8765";
+const COMMAND_CENTER_QUERY_VERSION = "2026-08-01-ui-state-v1";
+const LEGACY_LOCAL_FACTORY_URLS = new Set([
+  "http://127.0.0.1:8765",
+  "http://localhost:8765"
+]);
 let factoryConfig = { baseUrl: DEFAULT_FACTORY_URL, deviceId: "" };
 
 async function ensureFactoryDeviceId() {
@@ -22,10 +27,36 @@ function normalizeFactoryUrl(value) {
   return `${url.protocol}//${url.host}`;
 }
 
+function workbenchEntryUrl(kind: "1688" | "ozon", extra: { product_id?: unknown; task_id?: unknown } = {}) {
+  const path = kind === "ozon" ? "/ozon-reference" : "/1688-collection";
+  const params = new URLSearchParams({ v: COMMAND_CENTER_QUERY_VERSION });
+  if (extra.product_id) params.set("product_id", String(extra.product_id));
+  if (extra.task_id) params.set("task_id", String(extra.task_id));
+  return `${factoryConfig.baseUrl}${path}?${params.toString()}`;
+}
+
+function cleanFactoryUrlText(value) {
+  return String(value || "").trim().replace(/\/+$/, "");
+}
+
+function isLegacyLocalFactoryUrl(value) {
+  return LEGACY_LOCAL_FACTORY_URLS.has(cleanFactoryUrlText(value));
+}
+
+function factoryUrlOrDefault(value) {
+  const text = cleanFactoryUrlText(value);
+  if (!text || isLegacyLocalFactoryUrl(text)) return DEFAULT_FACTORY_URL;
+  return text;
+}
+
 async function loadFactoryConfig() {
   const stored = await chrome.storage.local.get(["factoryBaseUrl"]);
+  const baseUrl = normalizeFactoryUrl(factoryUrlOrDefault(stored.factoryBaseUrl));
+  if (!cleanFactoryUrlText(stored.factoryBaseUrl) || isLegacyLocalFactoryUrl(stored.factoryBaseUrl)) {
+    await chrome.storage.local.set({ factoryBaseUrl: baseUrl });
+  }
   factoryConfig = {
-    baseUrl: normalizeFactoryUrl(stored.factoryBaseUrl || DEFAULT_FACTORY_URL),
+    baseUrl,
     deviceId: await ensureFactoryDeviceId()
   };
   return factoryConfig;
@@ -66,6 +97,7 @@ const els = {
 
 let latestCapture = null;
 let duplicateProductId = null;
+let activePageKind = "unsupported";
 
 function setResult(value) {
   els.result.textContent = typeof value === "string" ? value : JSON.stringify(value, null, 2);
@@ -127,14 +159,37 @@ async function waitForSkuSelection(tabId, capture, previousSelectedSkuIds = []) 
 async function loadPreview() {
   try {
     const tab = await getActiveTab();
-    if (!tab || !tab.url || !/https:\/\/[^/]*1688\.com\//.test(tab.url)) {
-      els.status.textContent = "当前页面不是可采集的1688商品页";
+    const is1688Page = Boolean(tab?.url && /https:\/\/[^/]*1688\.com\//.test(tab.url));
+    const isOzonPage = Boolean(tab?.url && /https:\/\/[^/]*ozon\.ru\/product\//.test(tab.url));
+    if (!tab || !tab.url || (!is1688Page && !isOzonPage)) {
+      activePageKind = "unsupported";
+      els.status.textContent = "当前页面不是可采集的1688商品页或Ozon商品页";
       return;
     }
-    latestCapture = await sendToTab(tab.id, { type: "COLLECTOR_PREVIEW" });
+    activePageKind = isOzonPage ? "ozon" : "1688";
+    latestCapture = await sendToTab(tab.id, { type: isOzonPage ? "COLLECTOR_OZON_PREVIEW" : "COLLECTOR_PREVIEW" });
     if (!latestCapture || !latestCapture.is_collectable) {
       els.status.textContent = latestCapture?.reason || "当前页面不可采集";
       setResult(latestCapture || {});
+      return;
+    }
+    if (isOzonPage) {
+      els.status.textContent = "可采集Ozon参考页（浏览器已打开，绕开307重定向）";
+      els.title.textContent = latestCapture.title || latestCapture.title_ru || "unknown";
+      els.mainCount.textContent = latestCapture.image_urls?.length || latestCapture.main_images?.length || 0;
+      els.skuCount.textContent = 1;
+      els.detailCount.textContent = latestCapture.detail_images?.length || 0;
+      els.capture.textContent = "采集当前Ozon参考页";
+      els.capture.disabled = false;
+      els.previewToggle.disabled = false;
+      els.debugExport.disabled = true;
+      renderPreview(latestCapture);
+      setResult({
+        source_url: latestCapture.source_url,
+        title: latestCapture.title,
+        image_count: latestCapture.image_urls?.length || 0,
+        warnings: latestCapture.capture_warnings,
+      });
       return;
     }
     const skuCheck = skuImagePreflight(latestCapture);
@@ -231,7 +286,27 @@ async function postCapture(capture, allowNewVersion = false) {
   return result;
 }
 
+async function postOzonReferencePage(capture) {
+  const response = await factoryFetch("/api/collector/ozon-reference-page", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(capture)
+  });
+  const result = await response.json();
+  if (!response.ok) {
+    const error = new Error(result.detail?.message || result.detail || `HTTP ${response.status}`);
+    error.status = response.status;
+    error.body = result;
+    throw error;
+  }
+  return result;
+}
+
 async function captureCurrentProduct(allowNewVersion = false) {
+  if (activePageKind === "ozon") {
+    await captureCurrentOzonReference();
+    return;
+  }
   els.capture.disabled = true;
   els.duplicate.hidden = true;
   els.progress.textContent = "读取页面数据...";
@@ -260,6 +335,30 @@ async function captureCurrentProduct(allowNewVersion = false) {
   }
 }
 
+async function captureCurrentOzonReference() {
+  els.capture.disabled = true;
+  els.duplicate.hidden = true;
+  els.progress.textContent = "正在读取当前Ozon页面...";
+  try {
+    const tab = await getActiveTab();
+    const capture = await sendToTab(tab.id, { type: "COLLECTOR_OZON_CAPTURE" });
+    if (!capture?.is_collectable) throw new Error(capture?.reason || "当前页面不是Ozon商品页");
+    els.progress.textContent = "正在提交到共享工作台...";
+    const result = await postOzonReferencePage(capture);
+    els.progress.textContent = result.status === "waiting_ai_design"
+      ? "Ozon参考页已采集，已进入AI商品卡生成"
+      : "Ozon参考页已采集，正在打开工作台";
+    setResult(result);
+    await loadFactoryConfig();
+    chrome.tabs.create({ url: workbenchEntryUrl("ozon", { task_id: result.task?.task_id }), active: true });
+  } catch (error) {
+    els.progress.textContent = "Ozon参考页采集失败";
+    setResult(error.message);
+  } finally {
+    els.capture.disabled = false;
+  }
+}
+
 els.capture.addEventListener("click", () => captureCurrentProduct(false));
 els.previewToggle.addEventListener("click", () => {
   els.preview.hidden = !els.preview.hidden;
@@ -268,7 +367,10 @@ els.debugExport.addEventListener("click", exportSkuDebug);
 els.openInbox.addEventListener("click", async () => {
   try {
     await loadFactoryConfig();
-    chrome.tabs.create({ url: `${factoryConfig.baseUrl}/workbench` });
+    const target = activePageKind === "ozon"
+      ? workbenchEntryUrl("ozon")
+      : workbenchEntryUrl("1688");
+    chrome.tabs.create({ url: target });
   } catch (error) {
     els.connectionResult.textContent = `工作台地址无效：${error.message}`;
   }

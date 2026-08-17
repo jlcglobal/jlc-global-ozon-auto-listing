@@ -6,7 +6,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 from fastapi import HTTPException
-from scripts.pipeline_runtime import mark_hard_failure
+from scripts.pipeline_runtime import mark_needs_attention
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -56,7 +56,7 @@ class WorkbenchOwnershipTest(unittest.IsolatedAsyncioTestCase):
         self.root = Path(self.temp.name)
         (self.root / "products").mkdir(parents=True)
         make_product(self.root, "P000001", "alice")
-        make_product(self.root, "P000002", "bob", "FAILED_HARD_BLOCKER")
+        make_product(self.root, "P000002", "bob", "NEEDS_ATTENTION")
         self.patches = (
             patch.object(workbench, "ROOT", self.root),
             patch.object(workbench, "PRODUCTS_DIR", self.root / "products"),
@@ -150,19 +150,18 @@ class CriticalQuestionCreationTest(unittest.TestCase):
             "task_authorized": True, "batch_id": "B-TEST", "warnings": [], "steps": [], "history": [],
         })
 
-    def test_only_critical_identity_ambiguity_creates_question(self):
+    def test_authorized_critical_identity_failure_does_not_create_waiting_question(self):
         with tempfile.TemporaryDirectory() as directory:
             product = Path(directory) / "P000001"
             self.make_status(product)
-            mark_hard_failure(product, "variant_rules", "SKU mapping ambiguous: 无法确认颜色对应")
-            question = json.loads((product / "input/pending-question.json").read_text())
-            self.assertEqual(question["status"], "OPEN")
+            mark_needs_attention(product, "variant_rules", "SKU mapping ambiguous: 无法确认颜色对应")
+            self.assertFalse((product / "input/pending-question.json").exists())
 
     def test_optional_unknown_does_not_interrupt_user(self):
         with tempfile.TemporaryDirectory() as directory:
             product = Path(directory) / "P000001"
             self.make_status(product)
-            mark_hard_failure(product, "field_completion", "optional material is unknown")
+            mark_needs_attention(product, "field_completion", "optional material is unknown")
             self.assertFalse((product / "input/pending-question.json").exists())
 
 

@@ -1,129 +1,23 @@
 {
   "$schema": "https://json-schema.org/draft/2020-12/schema",
   "$id": "https://local.crossborder-ai-factory/templates/qc-report.schema.json",
-  "title": "Product QC Report",
+  "title": "Current Product QC Report",
   "type": "object",
-  "additionalProperties": false,
-  "required": [
-    "schema_version",
-    "product_id",
-    "checked_at",
-    "status",
-    "summary",
-    "style_profile_ref",
-    "selected_style_family",
-    "style_alignment",
-    "checks",
-    "failures",
-    "retryable_steps",
-    "manual_review_required"
-  ],
+  "additionalProperties": true,
+  "required": ["schema_version", "product_id", "checked_at", "status", "summary", "checks", "failures"],
   "properties": {
-    "schema_version": { "type": "string", "const": "1.0.0" },
-    "product_id": { "$ref": "#/$defs/productId" },
-    "checked_at": { "$ref": "#/$defs/unknownableString" },
+    "schema_version": { "type": "string", "minLength": 1 },
+    "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
+    "checked_at": { "type": ["string", "null"], "minLength": 1 },
     "status": { "type": "string", "enum": ["not_started", "pass", "review_required", "fail"] },
     "summary": { "type": "string", "minLength": 1 },
-    "style_profile_ref": { "type": "string", "minLength": 1 },
-    "selected_style_family": { "$ref": "#/$defs/styleFamily" },
-    "style_alignment": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["style_family", "overall_status", "checks"],
-      "properties": {
-        "style_family": { "$ref": "#/$defs/styleFamily" },
-        "overall_status": { "type": "string", "enum": ["pass", "review_required", "fail", "not_applicable"] },
-        "checks": { "type": "array", "minItems": 5, "items": { "$ref": "#/$defs/styleCheck" } }
-      }
-    },
-    "checks": { "type": "array", "items": { "$ref": "#/$defs/check" } },
-    "failures": { "type": "array", "items": { "$ref": "#/$defs/failure" } },
+    "source_refs": { "type": "array", "items": { "type": "string", "minLength": 1 } },
+    "checks": { "type": "array", "items": { "type": "object" } },
+    "failures": { "type": "array", "items": { "type": "object" } },
     "retryable_steps": { "type": "array", "items": { "type": "string" } },
-    "manual_review_required": { "type": "boolean" }
-    ,
+    "manual_review_required": { "type": "boolean" },
     "score": { "type": "integer", "minimum": 0, "maximum": 100 },
-    "image_scores": {
-      "type": "array",
-      "items": {
-        "type": "object",
-        "additionalProperties": false,
-        "required": ["slot", "score", "status", "message"],
-        "properties": {
-          "slot": { "type": "string", "minLength": 1 },
-          "score": { "type": "integer", "minimum": 0, "maximum": 100 },
-          "status": { "type": "string", "enum": ["pass", "review_required", "fail"] },
-          "message": { "type": "string", "minLength": 1 }
-        }
-      }
-    },
-    "ozon_sales_logic": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["status", "message"],
-      "properties": {
-        "status": { "type": "string", "enum": ["pass", "review_required", "fail"] },
-        "message": { "type": "string", "minLength": 1 }
-      }
-    }
-  },
-  "$defs": {
-    "productId": { "type": "string", "pattern": "^P[0-9]{6}$" },
-    "styleFamily": {
-      "type": "string",
-      "enum": [
-        "electronics_clean_tech",
-        "outdoor_rugged_lifestyle",
-        "kitchen_warm_home",
-        "home_minimal_organized",
-        "pet_friendly_lifestyle",
-        "beauty_clean_premium",
-        "baby_safe_soft",
-        "auto_practical_performance",
-        "portable_kitchen_appliance_fresh",
-        "unknown"
-      ]
-    },
-    "unknownableString": { "type": ["string", "null"], "minLength": 1 },
-    "styleCheck": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["check", "status", "message", "evidence"],
-      "properties": {
-        "check": {
-          "type": "string",
-          "enum": [
-            "selected_style_match",
-            "electronics_not_overly_home",
-            "outdoor_has_outdoor_scene",
-            "kitchen_has_kitchen_home_feel",
-            "style_product_conflict"
-          ]
-        },
-        "status": { "type": "string", "enum": ["pass", "review_required", "fail", "not_applicable"] },
-        "message": { "type": "string", "minLength": 1 },
-        "evidence": { "type": "array", "items": { "type": "string" } }
-      }
-    },
-    "check": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["area", "status", "message", "evidence"],
-      "properties": {
-        "area": { "type": "string", "enum": ["copy", "images", "style", "sku", "data_truthfulness", "ozon_draft", "status", "unknown"] },
-        "status": { "type": "string", "enum": ["pass", "review_required", "fail", "unknown", "not_started"] },
-        "message": { "type": "string", "minLength": 1 },
-        "evidence": { "type": "array", "items": { "type": "string" } }
-      }
-    },
-    "failure": {
-      "type": "object",
-      "additionalProperties": false,
-      "required": ["step", "reason", "retryable"],
-      "properties": {
-        "step": { "type": "string", "minLength": 1 },
-        "reason": { "type": "string", "minLength": 1 },
-        "retryable": { "type": "boolean" }
-      }
-    }
+    "image_scores": { "type": "array", "items": { "type": "object" } },
+    "ozon_sales_logic": { "type": "object" }
   }
 }

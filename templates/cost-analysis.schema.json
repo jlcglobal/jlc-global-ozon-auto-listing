@@ -49,7 +49,7 @@
       "additionalProperties": false,
       "required": ["value", "unit", "source", "source_ref", "confidence", "estimated", "profile", "validation"],
       "properties": {
-        "value": {"type": "number", "exclusiveMinimum": 0},
+        "value": {"type": "integer", "minimum": 1},
         "unit": {"const": "g"},
         "source": {"enum": ["1688", "product_analysis", "sku_specification", "estimated"]},
         "source_ref": {"type": "string", "minLength": 1},

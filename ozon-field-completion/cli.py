@@ -26,7 +26,7 @@ def main() -> int:
     value = Path(args.product)
     product_dir = value if value.is_dir() else ROOT / "products" / args.product
     if args.pre_image:
-        for name in ("rich-content.json", "final-upload-check.json"):
+        for name in ("rich-content.json",):
             (product_dir / "output" / name).unlink(missing_ok=True)
     package = build_package(product_dir, pre_image=args.pre_image)
     summary = {
@@ -38,7 +38,6 @@ def main() -> int:
         "rich_content": package.get("rich-content.json", {}).get("status", "deferred_until_images"),
         "color_variants": package["color-variants.json"]["summary"],
         "color_policy": package["color-variant-policy.json"]["status"],
-        "upload_allowed": package.get("final-upload-check.json", {}).get("upload_allowed", False),
     }
     print(json.dumps(summary, ensure_ascii=False, indent=2))
     return 0

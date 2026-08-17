@@ -5,7 +5,6 @@
     "products/P900001/input/source.json",
     "products/P900001/output/product-analysis.json",
     "products/P900001/output/product-positioning.json",
-    "products/P900001/output/style-profile.json",
     "products/P900001/output/copy-ru.json",
     "products/P900001/output/ozon-attributes-final.json"
   ],
@@ -135,7 +134,6 @@
     ]
   },
   "visual_style": {
-    "style_family": "professional_food_service",
     "style_direction": "把它表现为可靠的分餐运输工具，而不是普通家居收纳盒。",
     "mood": "清爽、可靠、专业但不冷硬",
     "palette": "银灰主体配深海军蓝信息色和少量暖橙强调，不套用食品储藏罐的米色厨房风格。",

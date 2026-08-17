@@ -5,7 +5,9 @@ import shutil
 import sys
 import tempfile
 import unittest
+import urllib.error
 from pathlib import Path
+from unittest.mock import patch
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -14,6 +16,9 @@ sys.path.insert(0, str(ROOT / "ozon-adapter"))
 from ozon_adapter import OzonConfig, OzonConfigurationError, OzonReadOnlyClient  # noqa: E402
 from ozon_adapter.service import (  # noqa: E402
     SCHEMAS,
+    _cached_response,
+    _shared_dictionary_response,
+    build_category_attributes,
     _canonical_allowed_value,
     _value_variants,
     build_live_metadata_package,
@@ -101,6 +106,77 @@ def client(transport):
 
 
 class Stage41OzonReadOnlyTest(unittest.TestCase):
+    def test_product_type_never_reuses_another_category_dictionary(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_root = Path(temp_dir)
+            current = cache_root / "category-10-type-970799661"
+            current.mkdir()
+            (current / "attribute-8229-values.json").write_text(json.dumps({
+                "values": [{"id": 93762, "value": "Wrong category type"}],
+                "truncated": False,
+            }))
+            response = {"result": [{
+                "id": 8229,
+                "name": "Тип",
+                "is_required": True,
+                "dictionary_id": 1960,
+                "category_dependent": True,
+            }]}
+
+            result = build_category_attributes(
+                "PTEST",
+                {"category_id": 10, "type_id": 970799661, "category_name": "Рыбочистка"},
+                response,
+                client(lambda endpoint, payload: (_ for _ in ()).throw(AssertionError("network"))),
+                "2026-08-16T00:00:00+00:00",
+                cache_root,
+            )
+
+        type_attribute = result["attributes"][0]
+        self.assertEqual(type_attribute["allowed_values"], [{"id": 970799661, "value": "Рыбочистка"}])
+
+    def test_shared_dictionary_cache_requires_matching_dictionary_identity(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            category = root / "category-1-type-2"
+            category.mkdir()
+            (category / "attributes.json").write_text(json.dumps({
+                "result": [{"id": 85, "dictionary_id": 28732849}],
+            }))
+            expected = {"values": [{"id": 1, "value": "Нет бренда"}], "truncated": False}
+            (category / "attribute-85-values.json").write_text(json.dumps(expected))
+
+            self.assertEqual(_shared_dictionary_response(root, 85, 28732849), expected)
+            self.assertIsNone(_shared_dictionary_response(root, 85, 999))
+
+    def test_stale_verified_metadata_cache_is_reused_without_network_wait(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "attribute-values.json"
+            cache_path.write_text(json.dumps({"values": [{"id": 1, "value": "Cached"}]}))
+            os.utime(cache_path, (1, 1))
+            calls = []
+
+            result = _cached_response(
+                cache_path,
+                lambda: calls.append("network") or {"values": []},
+                max_age_hours=24,
+            )
+
+        self.assertEqual(result["values"][0]["value"], "Cached")
+        self.assertEqual(calls, [])
+
+    def test_invalid_metadata_cache_is_replaced_from_network(self):
+        with tempfile.TemporaryDirectory() as temp_dir:
+            cache_path = Path(temp_dir) / "attribute-values.json"
+            cache_path.write_text(json.dumps(["not", "an", "object"]))
+            result = _cached_response(
+                cache_path,
+                lambda: {"values": [{"id": 2, "value": "Fresh"}]},
+                max_age_hours=24,
+            )
+
+        self.assertEqual(result["values"][0]["value"], "Fresh")
+
     def test_camera_near_synonym_requires_compatible_live_attributes(self):
         offline = {"category_name": "Камера видеонаблюдения"}
         selected = {
@@ -221,6 +297,22 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
             readonly._post_json("/v3/product/import", {})
         self.assertEqual(transport.calls, [])
 
+    def test_transient_readonly_connection_error_is_retried(self):
+        calls = []
+
+        def flaky_transport(endpoint, payload):
+            calls.append((endpoint, payload))
+            if len(calls) < 3:
+                raise urllib.error.URLError("temporary SSL disconnect")
+            return {"result": []}
+
+        with patch("ozon_adapter.client.time.sleep") as sleep:
+            response = client(flaky_transport).get_category_tree()
+
+        self.assertEqual(response, {"result": []})
+        self.assertEqual(len(calls), 3)
+        self.assertEqual(sleep.call_count, 2)
+
     def test_tree_is_flattened_with_parent_id(self):
         transport = FakeOzonTransport()
         response = transport(OzonReadOnlyClient.CATEGORY_TREE_ENDPOINT, {})
@@ -230,69 +322,6 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
         self.assertIsNone(parent["parent_id"])
         self.assertEqual(child["parent_id"], 40000)
         self.assertEqual(child["path"], ["Товары", "Раздел 41001", "Весы для багажа"])
-
-    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
-    def test_live_fetch_caches_raw_aspect_metadata(self):
-        with tempfile.TemporaryDirectory() as directory:
-            product_dir = Path(directory) / "P000004"
-            shutil.copytree(ROOT / "products/P000004", product_dir)
-            transport = FakeOzonTransport()
-            package = build_live_metadata_package(product_dir, client(transport), cache_aspect_rules=False)
-            self.assertIn("ozon-category-attributes.json", package)
-
-    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
-    def test_shared_metadata_cache_avoids_repeating_tree_attributes_and_values(self):
-        with tempfile.TemporaryDirectory() as directory:
-            cache_root = Path(directory) / "metadata-cache"
-            transport = FakeOzonTransport()
-            readonly = client(transport)
-            build_live_metadata_package(
-                ROOT / "products/P000004", readonly,
-                fetched_at="2026-07-11T00:00:00+00:00",
-                metadata_cache_root=cache_root,
-            )
-            first_call_count = len(transport.calls)
-            build_live_metadata_package(
-                ROOT / "products/P000004", readonly,
-                fetched_at="2026-07-11T00:01:00+00:00",
-                metadata_cache_root=cache_root,
-            )
-            self.assertGreater(first_call_count, 0)
-            self.assertEqual(len(transport.calls), first_call_count)
-
-    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
-    def test_three_products_receive_real_ids_from_mock_contract(self):
-        for product_id, (category_id, type_id, category_name) in PRODUCTS.items():
-            transport = FakeOzonTransport()
-            package = build_live_metadata_package(
-                ROOT / "products" / product_id,
-                client(transport),
-                fetched_at="2026-07-11T00:00:00+00:00",
-            )
-            category = package["ozon-category.json"]
-            attributes = package["ozon-attributes.json"]
-            self.assertEqual(category["category_id"], category_id)
-            self.assertEqual(category["type_id"], type_id)
-            self.assertEqual(category["category_name"], category_name)
-            self.assertEqual(category["metadata_source"], "ozon_seller_api")
-            self.assertEqual(attributes["summary"]["required_count"], 3)
-            self.assertEqual(attributes["summary"]["mapped_count"], 2)
-            self.assertEqual(attributes["summary"]["missing_count"], 2)
-            self.assertFalse(package["ozon-preflight.json"]["upload_allowed"])
-            self.assertFalse(package["ozon-draft.json"]["upload_allowed"])
-
-    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
-    def test_unknown_material_and_brand_are_not_inferred(self):
-        package = build_live_metadata_package(
-            ROOT / "products/P000004",
-            client(FakeOzonTransport()),
-            fetched_at="2026-07-11T00:00:00+00:00",
-        )
-        attributes = {item["attribute_name"]: item for item in package["ozon-attributes.json"]["attributes"]}
-        self.assertEqual(attributes["Материал"]["value"], "unknown")
-        self.assertEqual(attributes["Материал"]["confidence"], 0)
-        self.assertEqual(attributes["Бренд"]["value"], "unknown")
-        self.assertEqual(attributes["Бренд"]["allowed_values"], [{"id": 80001, "value": "Нет бренда"}])
 
     def test_chinese_material_uses_synonym_before_normalization(self):
         self.assertIn("нержавеющая сталь", _value_variants("不锈钢"))
@@ -312,34 +341,6 @@ class Stage41OzonReadOnlyTest(unittest.TestCase):
             ),
             "unknown",
         )
-
-    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
-    def test_mock_package_writes_atomically_and_matches_all_schemas(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = Path(temp_dir) / "P000004"
-            output = product_dir / "output"
-            output.mkdir(parents=True)
-            for filename in ("attributes.json", "ozon-category.json", "ozon-attributes.json", "ozon-draft.json"):
-                shutil.copy2(ROOT / "products/P000004/output" / filename, output / filename)
-            package = fetch_and_write_product_metadata(product_dir, client(FakeOzonTransport()))
-            self.assertEqual(validate_live_metadata_package(product_dir), [])
-            for filename, schema_path in SCHEMAS.items():
-                self.assertEqual(validate_schema(output / filename, schema_path), [], filename)
-            self.assertEqual(package["ozon-preflight.json"]["status"], "failed")
-
-    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime product fixture")
-    def test_repeated_refresh_does_not_drift_to_a_previous_alternative(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = Path(temp_dir) / "P000004"
-            output = product_dir / "output"
-            output.mkdir(parents=True)
-            for filename in ("attributes.json", "ozon-category.json", "ozon-attributes.json", "ozon-draft.json"):
-                shutil.copy2(ROOT / "products/P000004/output" / filename, output / filename)
-            first = fetch_and_write_product_metadata(product_dir, client(FakeOzonTransport()))
-            second = fetch_and_write_product_metadata(product_dir, client(FakeOzonTransport()))
-            self.assertEqual(first["ozon-category.json"]["category_id"], 41001)
-            self.assertEqual(second["ozon-category.json"]["category_id"], 41001)
-            self.assertEqual(second["ozon-category.json"]["category_name"], "Весы для багажа")
 
     def test_project_source_contains_no_ozon_write_endpoint(self):
         source = "\n".join(

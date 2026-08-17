@@ -6,6 +6,7 @@ import difflib
 import hashlib
 import json
 import re
+import sys
 import tempfile
 import unicodedata
 from datetime import datetime, timezone
@@ -22,6 +23,12 @@ ASPECT_RULE_ROOT = DEFAULT_METADATA_ROOT / "live-aspect-rules"
 SCHEMA_PATH = ROOT / "templates" / "variant-decision.schema.json"
 GROUPING_SCHEMA_PATH = ROOT / "templates" / "variant-grouping-result.schema.json"
 PLATFORM_GROUPING_SCHEMA_PATH = ROOT / "templates" / "platform-grouping-result.schema.json"
+
+try:
+    from scripts.russian_color_rules import normalize_russian_color_name
+except ModuleNotFoundError:  # direct package execution
+    sys.path.insert(0, str(ROOT / "scripts"))
+    from russian_color_rules import normalize_russian_color_name
 
 
 class RuleDatabaseError(ValueError):
@@ -127,7 +134,7 @@ _COLOR_VALUE_TOKENS = (
     "黑曜石", "曜石黑", "奶油白", "米白", "暖白", "象牙白", "酒红", "酒红色",
     "砖红", "玫红", "粉红", "藏青", "墨绿", "深绿", "浅绿", "淡绿", "深蓝", "浅蓝",
     "透明", "银色", "金色", "黑色", "白色", "红色", "蓝色", "绿色", "灰色", "棕色",
-    "咖啡色", "卡其色", "粉色", "黄色", "橙色", "紫色", "褐色", "乳白",
+    "咖啡色", "卡其色", "卡其", "军绿色", "军绿", "橄榄绿", "橄榄色", "粉色", "黄色", "橙色", "紫色", "褐色", "乳白",
     "черн", "бел", "красн", "син", "зелен", "серебр", "золот", "сер", "коричн",
     "беж", "бордов", "винн", "кремов", "прозрач",
 )
@@ -192,6 +199,48 @@ def difference_kind(source_name: str, values: List[str]) -> str:
     if any(token in combined for token in ("型号", "款式", "版本")):
         return "model_or_style"
     return "unknown"
+
+
+_EXPLICIT_CAPACITY_RE = re.compile(
+    r"(?<![\d.])(\d+(?:[.,]\d+)?)\s*(毫升|ml|мл|升|l|л)",
+    re.IGNORECASE,
+)
+
+
+def _capacity_signature(value: Any) -> Optional[str]:
+    """Return a normalized capacity marker only for explicit volume labels."""
+    text = unicodedata.normalize("NFKC", str(value or ""))
+    match = _EXPLICIT_CAPACITY_RE.search(text)
+    if not match:
+        jin = re.search(r"(\d+(?:\.\d+)?)\s*斤装", text)
+        if not jin:
+            return None
+        return f"{float(jin.group(1)) * 625:g}ml_estimated"
+    amount = float(match.group(1).replace(",", "."))
+    unit = match.group(2).casefold()
+    amount_ml = amount if unit in {"毫升", "ml", "мл"} else amount * 1000
+    return f"{amount_ml:g}ml"
+
+
+def _all_values_have_color(values: List[str]) -> bool:
+    return bool(values) and all(normalize_russian_color_name(value) for value in values)
+
+
+def _varying_capacity(values: List[str]) -> bool:
+    signatures = [_capacity_signature(value) for value in values]
+    return all(signatures) and len(set(signatures)) > 1
+
+
+def split_compound_difference_kinds(source_name: str, values: List[str]) -> List[str]:
+    """Split packed SKU labels such as ``500毫升（透明）`` into real aspects.
+
+    1688 often stores capacity and color inside one ``规格`` value.  Ozon must
+    receive every real SKU difference as an official aspect; otherwise same
+    color variants with different capacities are treated as duplicate products.
+    """
+    if _all_values_have_color(values) and _varying_capacity(values):
+        return ["color", "size_or_measurement"]
+    return [difference_kind(source_name, values)]
 
 
 def field_matches(
@@ -262,15 +311,15 @@ def detect_differences(skus: List[Dict[str, Any]], allowed: List[Dict[str, Any]]
                 f"Preserved {name} as a per-SKU specification; it is not a separate Ozon variant aspect."
             )
             continue
-        kind = difference_kind(name, values)
-        matches = field_matches(kind, allowed, name, values)
-        differences.append({
-            "source_field": name,
-            "source_values": values,
-            "difference_kind": kind,
-            "mapped_variant_fields": matches,
-            "compatible": bool(matches),
-        })
+        for kind in split_compound_difference_kinds(name, values):
+            matches = field_matches(kind, allowed, name, values)
+            differences.append({
+                "source_field": name,
+                "source_values": values,
+                "difference_kind": kind,
+                "mapped_variant_fields": matches,
+                "compatible": bool(matches),
+            })
 
     # The seller's structured SKU metadata is stronger evidence than the
     # generic UI label (often just ``规格1``).  When all selected SKUs expose
@@ -686,7 +735,9 @@ def build_grouping_result(
                     if field["attribute_id"] == 4384 else source_value
                 )
                 if difference["difference_kind"] == "color" and field["attribute_id"] in {10096, 10097}:
-                    value = color_config.get(sku_id, source_value)
+                    value = color_config.get(sku_id) or normalize_russian_color_name(source_value)
+                    if not value:
+                        continue
                 attribute_value = {
                     "attribute_id": field["attribute_id"],
                     "attribute_name": field["attribute_name"],

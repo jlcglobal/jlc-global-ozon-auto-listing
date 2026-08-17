@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import json
+import math
+import re
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -49,6 +51,26 @@ def write_json_atomic(path: Path, value: Any) -> None:
     temporary.replace(path)
 
 
+def _captured_shared_purchase_price_cny(source: Dict[str, Any]) -> float | None:
+    """Pick a safe product-level CNY price when SKU rows do not carry prices."""
+    values: List[float] = []
+    for item in (source.get("price_information") or {}).get("price_ranges") or []:
+        if not isinstance(item, dict):
+            continue
+        price = item.get("price_cny")
+        if not isinstance(price, (int, float)) or price <= 0:
+            continue
+        raw_text = str(item.get("raw_text") or "")
+        if "库存" in raw_text or "价格比较" in raw_text or "活动前价格" in raw_text:
+            continue
+        if not re.search(r"(?:¥|￥|价格\s*¥|价格\s*￥)", raw_text):
+            continue
+        if price > 10000:
+            continue
+        values.append(float(price))
+    return max(values) if values else None
+
+
 def utc_now() -> str:
     return datetime.now(timezone.utc).isoformat(timespec="seconds")
 
@@ -83,15 +105,12 @@ def _purchase_cost(sku: Dict[str, Any], source: Dict[str, Any], analysis: Dict[s
             "source_ref": f"product-analysis.facts.skus[{sku['sku_id']}].price_cny",
             "confidence": 90,
         }
-    ranges = [
-        item.get("price_cny") for item in source.get("price_information", {}).get("price_ranges", [])
-        if isinstance(item.get("price_cny"), (int, float)) and item["price_cny"] > 0
-    ]
-    if ranges:
+    shared_price = _captured_shared_purchase_price_cny(source)
+    if shared_price is not None:
         return {
-            "value_cny": float(max(ranges)),
+            "value_cny": float(shared_price),
             "source": "price_range_conservative",
-            "source_ref": "source.price_information.price_ranges.max",
+            "source_ref": "source.price_information.price_ranges.valid_cny.max",
             "confidence": 70,
         }
     return {
@@ -211,8 +230,8 @@ def _apply_manual_measurements(
         **{key: float(package_dimensions[key]) for key in ("length", "width", "height")},
         "unit": "cm", **common,
     }
-    product_weight_value = {"value": float(product_weight["value_g"]), "unit": "g", **common}
-    package_weight_value = {"value": float(package_weight["value_g"]), "unit": "g", **common}
+    product_weight_value = {"value": int(math.ceil(float(product_weight["value_g"]))), "unit": "g", **common}
+    package_weight_value = {"value": int(math.ceil(float(package_weight["value_g"]))), "unit": "g", **common}
     for item in (product_dimensions_value, package_dimensions_value, product_weight_value, package_weight_value):
         item["validation"] = {
             "status": "valid",
@@ -293,6 +312,12 @@ def _price_sku(
             commission["value"],
             rub_per_cny,
         )
+        calculated = _fit_price_to_route_value_floor(
+            calculated,
+            rules["shipping"]["routes"][route_name],
+            rules["pricing"],
+            rub_per_cny,
+        )
         value_by_route[route_name] = calculated["selling_price_rub"]
         pricing_by_route[route_name] = calculated
 
@@ -347,6 +372,43 @@ def _price_sku(
         "errors": profit["issues"],
     }
     return pricing, {"sku_id": sku_id, **profit}
+
+
+def _fit_price_to_route_value_floor(
+    calculated: Dict[str, Any],
+    route_constraints: Dict[str, Any],
+    pricing_rules: Dict[str, Any],
+    rub_per_cny: float,
+) -> Dict[str, Any]:
+    """Raise the selling price to the route's minimum value band when needed.
+
+    RETS routes use exclusive lower value boundaries. A product can otherwise
+    calculate to exactly 1500 RUB and be rejected from both the <=1500 and >1500
+    bands. This is a deterministic price formatting correction, not a manual
+    review gate.
+    """
+    minimum = route_constraints.get("min_value_rub_exclusive")
+    natural_rub = float(calculated["selling_price_rub"])
+    if minimum is None or natural_rub > minimum:
+        return calculated
+    step = float(pricing_rules["rounding_step_cny"])
+    minimum_cny = (float(minimum) + 1.0) / float(rub_per_cny)
+    selling_cny = math.ceil(minimum_cny / step) * step
+    if selling_cny <= float(calculated["selling_price_cny"]):
+        return calculated
+    adjusted_rub = selling_cny * rub_per_cny
+    uplift_rub = adjusted_rub - natural_rub
+    if uplift_rub > natural_rub * 0.05 and uplift_rub > 100.0:
+        return calculated
+    adjusted = dict(calculated)
+    total_rate = float(adjusted["total_percentage_fee_rate"])
+    variable_fees = selling_cny * total_rate
+    profit = selling_cny - float(adjusted["base_cost_cny"]) - variable_fees
+    adjusted["selling_price_cny"] = round(selling_cny, 2)
+    adjusted["selling_price_rub"] = round(adjusted_rub, 2)
+    adjusted["estimated_variable_fees_cny"] = round(variable_fees, 2)
+    adjusted["estimated_profit_cny"] = round(profit, 2)
+    return adjusted
 
 
 def build_pricing_package(product_dir: Path, generated_at: str | None = None) -> Dict[str, Dict[str, Any]]:

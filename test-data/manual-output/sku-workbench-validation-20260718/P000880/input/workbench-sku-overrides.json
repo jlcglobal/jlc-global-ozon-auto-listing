@@ -1,0 +1,75 @@
+{
+  "schema_version": "1.0.0",
+  "product_id": "P000880",
+  "collection_id": "C-LOCAL-SKU-VALIDATION",
+  "source_kind": "workbench_collection",
+  "updated_at": "2026-07-18T22:26:54+08:00",
+  "overrides": [
+    {
+      "product_id": "P000880",
+      "collection_id": "C-LOCAL-SKU-VALIDATION",
+      "sku_id": "SKU-A",
+      "field_name": "color",
+      "canonical_value": "синий",
+      "canonical_unit": "text",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:26:54+08:00"
+    },
+    {
+      "product_id": "P000880",
+      "collection_id": "C-LOCAL-SKU-VALIDATION",
+      "sku_id": "SKU-A",
+      "field_name": "product_height_mm",
+      "canonical_value": 66,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:26:54+08:00"
+    },
+    {
+      "product_id": "P000880",
+      "collection_id": "C-LOCAL-SKU-VALIDATION",
+      "sku_id": "SKU-A",
+      "field_name": "product_length_mm",
+      "canonical_value": 155,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:26:54+08:00"
+    },
+    {
+      "product_id": "P000880",
+      "collection_id": "C-LOCAL-SKU-VALIDATION",
+      "sku_id": "SKU-A",
+      "field_name": "product_weight_g",
+      "canonical_value": 777,
+      "canonical_unit": "g",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:26:54+08:00"
+    },
+    {
+      "product_id": "P000880",
+      "collection_id": "C-LOCAL-SKU-VALIDATION",
+      "sku_id": "SKU-A",
+      "field_name": "product_width_mm",
+      "canonical_value": 88,
+      "canonical_unit": "mm",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:26:54+08:00"
+    },
+    {
+      "product_id": "P000880",
+      "collection_id": "C-LOCAL-SKU-VALIDATION",
+      "sku_id": "SKU-A",
+      "field_name": "specification_text",
+      "canonical_value": "ручной тест A",
+      "canonical_unit": "text",
+      "source_kind": "workbench_collection",
+      "mapping_method": "manual_workbench_edit",
+      "updated_at": "2026-07-18T22:26:54+08:00"
+    }
+  ]
+}

@@ -4,7 +4,7 @@
   "title": "Ozon Upload Dry Run Payload",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "product_id", "product_name_cn", "upload_mode", "api_writes_performed", "generated_at", "shop_name", "category", "product_group", "title", "description", "images", "attributes", "variants", "price", "final_upload_check", "product_exists_check", "production_blockers", "api_request_template"],
+  "required": ["schema_version", "product_id", "product_name_cn", "upload_mode", "api_writes_performed", "generated_at", "shop_name", "category", "product_group", "title", "description", "images", "attributes", "variants", "price", "image_upload_gate", "product_exists_check", "production_blockers", "api_request_template"],
   "properties": {
     "schema_version": {"type": "string", "const": "1.0.0"},
     "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
@@ -40,7 +40,12 @@
     "title": {"type": "string", "minLength": 1},
     "description": {"type": "string", "minLength": 1},
     "images": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": true}},
-    "attributes": {"type": "array", "minItems": 1, "items": {"type": "object", "additionalProperties": true}},
+    "attributes": {"type": "array", "items": {"type": "object", "additionalProperties": true}},
+    "attributes_by_sku": {
+      "type": "object",
+      "additionalProperties": {"type": "array", "items": {"type": "object", "additionalProperties": true}}
+    },
+    "sku_measurements": {"type": "object", "additionalProperties": true},
     "variants": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/variant"}},
     "price": {
       "type": "object", "additionalProperties": false,
@@ -50,16 +55,7 @@
         "source": {"type": "string", "minLength": 1}
       }
     },
-    "stock": {
-      "type": "object", "additionalProperties": false,
-      "required": ["available", "warehouse", "strategy"],
-      "properties": {
-        "available": {"type": "integer", "const": 0},
-        "warehouse": {"type": "string"},
-        "strategy": {"type": "string", "const": "on_demand"}
-      }
-    },
-    "final_upload_check": {"type": "object", "additionalProperties": true},
+    "image_upload_gate": {"type": "object", "additionalProperties": true},
     "product_exists_check": {"type": "object", "additionalProperties": true},
     "production_blockers": {"type": "array", "items": {"type": "string", "minLength": 1}},
     "api_request_template": {"type": "object", "additionalProperties": true}
@@ -75,7 +71,6 @@
         "display_name_ru": {"type": "string", "minLength": 1},
         "price": {"type": "string", "pattern": "^[0-9]+(\\.[0-9]{1,2})?$"},
         "currency_code": {"type": "string", "minLength": 3},
-        "stock": {"type": "integer", "const": 0},
         "color": {"type": "string", "minLength": 1},
         "color_image": {"type": "string", "minLength": 1},
         "attributes": {"type": "array", "items": {"type": "object", "additionalProperties": true}},

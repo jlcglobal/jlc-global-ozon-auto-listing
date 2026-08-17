@@ -5,7 +5,6 @@
     "products/P900001/input/source.json",
     "products/P900001/output/product-analysis.json",
     "products/P900001/output/product-positioning.json",
-    "products/P900001/output/style-profile.json",
     "products/P900001/output/ecommerce-creative-brief.json",
     "products/P900001/output/title-ru.json",
     "products/P900001/output/description-ru.json",
@@ -14,9 +13,7 @@
     "products/P900001/output/pricing-result.json",
     "products/P900001/output/platform-grouping-result.json"
   ],
-  "style_profile_ref": "products/P900001/output/style-profile.json",
   "creative_brief_ref": "products/P900001/output/ecommerce-creative-brief.json",
-  "style_family": "professional_food_service",
   "image_structure_rule_ref": "dynamic:product-specific-buyer-decision-sequence",
   "image_set_structure": [
     "main",
@@ -144,8 +141,6 @@
     "upload_strategy": "single_card_variants"
   },
   "generator_contract": {
-    "must_follow_style_profile": true,
-    "style_profile_ref": "products/P900001/output/style-profile.json",
     "allowed_structure": [
       "main",
       "benefit",

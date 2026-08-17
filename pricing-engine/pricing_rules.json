@@ -88,7 +88,7 @@
   },
   "package_estimation": {
     "weight_multiplier": 1.15,
-    "minimum_extra_weight_g": 30,
+    "minimum_extra_weight_g": 300,
     "dimension_multiplier": 1.05,
     "minimum_extra_dimension_cm": 1,
     "confidence_cap": 65
@@ -155,6 +155,30 @@
         "length": 30,
         "width": 20,
         "height": 15
+      },
+      "confidence": 60
+    },
+    {
+      "name": "luggage_suitcase",
+      "keywords": [
+        "行李箱",
+        "拉杆箱",
+        "旅行箱",
+        "登机箱",
+        "托运箱",
+        "皮箱",
+        "suitcase",
+        "luggage"
+      ],
+      "weight_g": {
+        "min": 1200,
+        "max": 12000,
+        "estimate": 3300
+      },
+      "dimensions_cm": {
+        "length": 46,
+        "width": 26,
+        "height": 66
       },
       "confidence": 60
     },

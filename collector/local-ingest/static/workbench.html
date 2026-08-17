@@ -3,28 +3,29 @@
   <head>
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width,initial-scale=1">
-    <title>crossborder-ai-factory 工作台</title>
-    <link rel="icon" href="data:,">
+    <title>JLC Global 嘉联创</title>
+    <link rel="icon" href="/brand/jlc-global-logo.png">
+    <style>
+      html, body { margin: 0; min-height: 100%; background: #03120c; color: #f4f6ee; }
+      body { min-width: 320px; }
+      .app-shell, .workspace, #view-root { background: #06150f; }
+    </style>
     <link rel="stylesheet" href="/icons/phosphor.css">
-    <link rel="stylesheet" href="/workbench.css?v=20260714-future-workbench-finance-1">
-    <link rel="stylesheet" href="/workbench-future.css?v=20260714-future-workbench-1">
+    <link rel="stylesheet" href="/workbench.css?v=20260727-jlc-perf-1">
+    <link rel="stylesheet" href="/workbench-future.css?v=20260727-jlc-perf-1">
   </head>
   <body>
     <div class="app-shell">
       <aside class="sidebar" id="sidebar">
-        <div class="brand" title="跨境AI工厂 · 商品生产审核台">
-          <span class="brand-mark">CF</span>
-          <div class="brand-copy"><strong>跨境AI工厂</strong><small>商品生产审核台</small></div>
+        <div class="brand" title="JLC Global 嘉联创 · 商品生产控制台">
+          <span class="brand-logo"><img src="/brand/jlc-global-logo.png" alt="JLC Global"></span>
+          <div class="brand-copy"><strong>JLC Global</strong><small>嘉联创商品控制台</small></div>
         </div>
         <nav id="primary-nav" aria-label="主导航">
-          <button class="nav-item active" data-view="inbox" data-label="工作室商品"><span class="nav-icon ph ph-package"></span><span class="nav-label">工作室商品</span></button>
-          <button class="nav-item" data-view="market" data-label="选品与关键词"><span class="nav-icon ph ph-chart-line-up"></span><span class="nav-label">选品与关键词</span></button>
-          <button class="nav-item" data-view="attention" data-label="需要我处理"><span class="nav-icon ph ph-warning-circle"></span><span class="nav-label">需要我处理</span><i id="attention-nav-count"></i></button>
-          <button class="nav-item" data-view="listed" data-label="已上架商品"><span class="nav-icon ph ph-shopping-bag-open"></span><span class="nav-label">已上架商品</span></button>
-          <button class="nav-item" data-view="finance" data-label="财务中心"><span class="nav-icon ph ph-wallet"></span><span class="nav-label">财务中心</span></button>
-          <div class="nav-separator owner-only" data-owner-only></div>
-          <button class="nav-item owner-only" data-owner-only data-view="shops" data-label="店铺设置"><span class="nav-icon ph ph-storefront"></span><span class="nav-label">店铺设置</span></button>
-          <button class="nav-item owner-only" data-owner-only data-view="settings" data-label="系统设置"><span class="nav-icon ph ph-gear-six"></span><span class="nav-label">系统设置</span></button>
+          <button class="nav-item active" data-view="inbox" data-label="采集箱"><span class="nav-icon ph ph-package"></span><span class="nav-label">采集箱</span></button>
+          <button class="nav-item" data-view="batches" data-label="处理中"><span class="nav-icon ph ph-spinner-gap"></span><span class="nav-label">处理中</span></button>
+          <button class="nav-item" data-view="waiting" data-label="等待上传"><span class="nav-icon ph ph-storefront"></span><span class="nav-label">等待上传</span></button>
+          <button class="nav-item" data-view="attention" data-label="需要处理"><span class="nav-icon ph ph-warning-circle"></span><span class="nav-label">需要处理</span><i id="attention-nav-count"></i></button>
         </nav>
         <div class="sidebar-foot" title="本地服务运行中"><span class="service-dot"></span><span class="ph ph-users-three" aria-hidden="true"></span><span class="sidebar-foot-label">识别设备中</span></div>
       </aside>
@@ -32,7 +33,7 @@
       <div class="workspace">
         <header class="topbar">
           <button class="icon-button" id="toggle-sidebar" title="收起导航" aria-label="收起导航"><span class="ph ph-list" aria-hidden="true"></span></button>
-          <div class="page-heading"><h1 id="page-title">工作室商品</h1><span id="page-subtitle">所有电脑共享商品与任务</span></div>
+          <div class="page-heading"><h1 id="page-title">采集箱</h1><span id="page-subtitle">本次采集、生成和上传入口</span></div>
           <label class="search-box"><span class="ph ph-magnifying-glass" aria-hidden="true"></span><input id="global-search" type="search" placeholder="搜索商品、SKU、任务号"></label>
           <button class="secondary-button topbar-icon-action" id="refresh-all" title="刷新当前页面" aria-label="刷新当前页面"><span class="ph ph-arrow-clockwise" aria-hidden="true"></span><span class="button-label">刷新</span></button>
           <button class="notification-button" id="enable-notifications" title="开启电脑通知" aria-label="开启电脑通知"><span class="ph ph-bell" aria-hidden="true"></span><span class="button-label">通知</span><span id="notification-count">0</span></button>
@@ -41,7 +42,7 @@
             <span><strong id="global-mode-label">手动检查</strong><small id="global-mode-note">自动模式已关闭</small></span>
             <input type="checkbox" id="global-auto-mode">
           </label>
-          <button class="icon-button owner-only" data-owner-only id="safe-exit-workbench" title="安全退出AI Factory" aria-label="安全退出AI Factory"><span class="ph ph-power" aria-hidden="true"></span></button>
+          <button class="icon-button owner-only" data-owner-only id="safe-exit-workbench" title="安全退出 JLC Global" aria-label="安全退出 JLC Global"><span class="ph ph-power" aria-hidden="true"></span></button>
           <div class="operator"><strong id="operator-name">正在识别电脑</strong><small id="operator-role">共享工作台</small></div>
         </header>
 
@@ -118,6 +119,6 @@
       </div>
       <div class="form-dialog-actions"><button type="button" class="secondary-button" data-close-dialog="category-dialog">取消</button><button type="button" class="danger-confirm" id="confirm-category-change" disabled>确认修改并使旧结果失效</button></div>
     </dialog>
-    <script src="/workbench.js?v=20260714-future-workbench-finance-2"></script>
+    <script src="/workbench.js?v=20260727-jlc-perf-1"></script>
   </body>
 </html>

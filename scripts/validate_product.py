@@ -19,13 +19,13 @@ except ModuleNotFoundError:  # Allows direct execution as scripts/validate_produ
 
 ROOT = Path(__file__).resolve().parents[1]
 TEMPLATES = ROOT / "templates"
+ATTENTION_STATES = {"NEEDS_ATTENTION", "FAILED"}
 
 FILE_SCHEMAS = {
     "input/source.json": "source.schema.json",
     "output/product-analysis.json": "product-analysis.schema.json",
     "output/product-positioning.json": "product-positioning.schema.json",
     "output/copy-ru.json": "copy-ru.schema.json",
-    "output/style-profile.json": "style-profile.schema.json",
     "output/image-plan.json": "image-plan.schema.json",
     "output/ozon-draft.json": "ozon-draft.schema.json",
     "status.json": "status.schema.json"
@@ -37,10 +37,7 @@ OPTIONAL_FILE_SCHEMAS = {
     "output/image-qc-report.json": "image-qc-report.schema.json",
     "output/title-ru.json": "title-ru.schema.json",
     "output/description-ru.json": "description-ru.schema.json",
-    "output/keywords-ru.json": "keywords-ru.schema.json",
-    "output/attributes.json": "attributes.schema.json",
     "output/ozon-category.json": "ozon-category.schema.json",
-    "output/ozon-attributes.json": "ozon-attributes.schema.json",
     "output/ozon-category-tree.json": "ozon-category-tree.schema.json",
     "output/ozon-category-attributes.json": "ozon-category-attributes.schema.json",
     "output/ozon-preflight.json": "ozon-preflight.schema.json",
@@ -54,7 +51,6 @@ OPTIONAL_FILE_SCHEMAS = {
     ,"output/color-variants.json": "color-variants.schema.json"
     ,"output/color-variant-policy.json": "color-variant-policy.schema.json"
     ,"output/color-variant-qc.json": "color-variant-qc.schema.json"
-    ,"output/final-upload-check.json": "final-upload-check.schema.json"
     ,"output/ozon-upload-payload.json": "ozon-upload-payload.schema.json"
     ,"output/product-exists-check.json": "product-exists-check.schema.json"
     ,"output/cost-analysis.json": "cost-analysis.schema.json"
@@ -78,9 +74,11 @@ REQUIRED_DIRS = [
     "input/sku-images",
     "input/detail-images",
     "output",
-    "output/images",
-    "output/images/main",
-    "output/images/detail",
+    "output/generated-images",
+    "output/generated-images/variant-main",
+    "output/generated-images/detail",
+    "output/rejected-generation",
+    "output/accepted-images",
     "logs"
 ]
 
@@ -101,46 +99,37 @@ COLLECTOR_FILE_SCHEMAS = {
 
 STATUS_TRANSITIONS = {
     None: {"COLLECTING", "COLLECTED"},
-    "COLLECTING": {"COLLECTED", "FAILED_HARD_BLOCKER"},
+    "COLLECTING": {"COLLECTED", *ATTENTION_STATES},
     # Batch source validation runs before queue_product(). Invalid captures can
     # therefore be checkpointed directly from COLLECTED as a hard blocker.
-    "COLLECTED": {"QUEUED", "FAILED_HARD_BLOCKER"},
-    "QUEUED": {"PROCESSING", "STOPPED", "FAILED_HARD_BLOCKER"},
-    # A recovered batch may finish the final local checks in one pass after
-    # earlier checkpoints were already persisted.  PROCESSING -> OZON_READY
-    # is therefore a valid audited transition, not a corrupt history.
-    "PROCESSING": {"CATEGORY_MATCHED", "CONTENT_GENERATED", "IMAGES_GENERATED", "OZON_READY", "STOPPED", "FAILED_HARD_BLOCKER"},
-    "CATEGORY_MATCHED": {"PRICED", "CONTENT_GENERATED", "STOPPED", "FAILED_HARD_BLOCKER"},
-    "CONTENT_GENERATED": {"IMAGES_GENERATED", "STOPPED", "FAILED_HARD_BLOCKER"},
-    "IMAGES_GENERATED": {"PRICED", "OZON_READY", "STOPPED", "FAILED_HARD_BLOCKER"},
-    "PRICED": {"PROCESSING", "OZON_READY", "STOPPED", "FAILED_HARD_BLOCKER"},
-    "STOPPED": {"QUEUED", "FAILED_HARD_BLOCKER"},
-    "OZON_READY": {"UPLOADING", "FAILED_HARD_BLOCKER"},
-    "UPLOADING": {"OZON_MODERATION", "PENDING_REMOTE", "HANDED_OFF_TO_OZON", "FAILED_HARD_BLOCKER", "UPLOADED"},
-    "OZON_MODERATION": {"PENDING_REMOTE", "UPLOADED", "ACTIVE", "FAILED_HARD_BLOCKER"},
-    "PENDING_REMOTE": {"OZON_MODERATION", "UPLOADED", "ACTIVE", "FAILED_HARD_BLOCKER"},
-    "UPLOADED": {"UPLOADING", "PENDING_REMOTE", "OZON_MODERATION", "FAILED_HARD_BLOCKER"},
+    "COLLECTED": {"QUEUED", *ATTENTION_STATES},
+    "QUEUED": {"PROCESSING", "STOPPED", *ATTENTION_STATES},
+    "PROCESSING": {"CATEGORY_MATCHED", "CONTENT_GENERATED", "IMAGES_GENERATED", "WAITING_MANUAL_REVIEW", "STOPPED", *ATTENTION_STATES},
+    "CATEGORY_MATCHED": {"PRICED", "CONTENT_GENERATED", "STOPPED", *ATTENTION_STATES},
+    "CONTENT_GENERATED": {"PROCESSING", "IMAGES_GENERATED", "STOPPED", *ATTENTION_STATES},
+    "IMAGES_GENERATED": {"PRICED", "WAITING_MANUAL_REVIEW", "UPLOADING", "PENDING_REMOTE", "STOPPED", *ATTENTION_STATES},
+    "PRICED": {"PROCESSING", "WAITING_MANUAL_REVIEW", "STOPPED", *ATTENTION_STATES},
+    "STOPPED": {"QUEUED", *ATTENTION_STATES},
+    "WAITING_MANUAL_REVIEW": {"UPLOADING", *ATTENTION_STATES},
+    "UPLOADING": {"OZON_MODERATION", "PENDING_REMOTE", "HANDED_OFF_TO_OZON", *ATTENTION_STATES, "UPLOADED"},
+    "OZON_MODERATION": {"PENDING_REMOTE", "UPLOADED", "ACTIVE", *ATTENTION_STATES},
+    "PENDING_REMOTE": {"OZON_MODERATION", "UPLOADED", "ACTIVE", *ATTENTION_STATES},
+    "UPLOADED": {"UPLOADING", "PENDING_REMOTE", "OZON_MODERATION", *ATTENTION_STATES},
     # A failed checkpoint is recoverable.  Older batch runs resumed directly
     # at the next validated checkpoint instead of writing an extra QUEUED /
     # PROCESSING event, so accept every forward checkpoint here.  This keeps
     # the audit history truthful without making a recovered product appear
     # permanently broken.
-    "FAILED_HARD_BLOCKER": {
+    "NEEDS_ATTENTION": {
         "QUEUED", "PROCESSING", "CATEGORY_MATCHED", "PRICED",
-        "CONTENT_GENERATED", "IMAGES_GENERATED", "OZON_READY", "STOPPED",
-        "FAILED_HARD_BLOCKER", "PENDING_REMOTE", "HANDED_OFF_TO_OZON", "OZON_MODERATION", "UPLOADED",
+        "CONTENT_GENERATED", "IMAGES_GENERATED", "WAITING_MANUAL_REVIEW", "STOPPED",
+        *ATTENTION_STATES, "PENDING_REMOTE", "HANDED_OFF_TO_OZON", "OZON_MODERATION", "UPLOADED",
     },
-    # Read-only compatibility for audit histories created before batch authorization.
-    "CODEX_PROCESSING": {"WAITING_REVIEW", "FAILED"},
-    "WAITING_REVIEW": {"APPROVED", "REJECTED", "CODEX_PROCESSING", "FAILED"},
-    "APPROVED": {"UPLOADING", "REJECTED", "FAILED"},
-    "REJECTED": {"CODEX_PROCESSING"},
     "UPDATING": {"UPLOADED", "FAILED"},
-    "FAILED": {"CODEX_PROCESSING", "COLLECTED"},
+    "FAILED": {"QUEUED", "PROCESSING", "COLLECTED", *ATTENTION_STATES},
     "ARCHIVED": {"ARCHIVED"},
 }
 
-STATUS_TRANSITIONS["COLLECTED"].add("CODEX_PROCESSING")
 # Local archival is a terminal lifecycle action reachable from any prior
 # state; it never represents a new Ozon workflow state.
 for _status_name in list(STATUS_TRANSITIONS):
@@ -213,7 +202,7 @@ def validate_directory(product_dir: Path) -> List[str]:
     # already uploaded.
     status_path = product_dir / "status.json"
     current_status = load_json(status_path).get("status") if status_path.is_file() else None
-    qc_required_statuses = {"OZON_READY", "UPLOADING", "OZON_MODERATION", "PENDING_REMOTE", "UPLOADED", "ACTIVE"}
+    qc_required_statuses = {"WAITING_MANUAL_REVIEW", "UPLOADING", "OZON_MODERATION", "PENDING_REMOTE", "UPLOADED", "ACTIVE"}
     if current_status in qc_required_statuses and not any(
         (product_dir / candidate).is_file() for candidate in ("output/qc-report.json", "output/image-qc-report.json")
     ):
@@ -252,6 +241,23 @@ def latest_step_by_name(steps: List[Dict[str, Any]]) -> Dict[str, Dict[str, Any]
     return latest
 
 
+def selected_skus_for_image_plan(product_dir: Path, source: Dict[str, Any]) -> List[Dict[str, Any]]:
+    snapshot_path = product_dir / "output/sku-run-snapshot.json"
+    if snapshot_path.is_file():
+        snapshot = load_json(snapshot_path)
+        selected = list(snapshot.get("selected_skus") or [])
+        if selected:
+            return selected
+    explicitly_selected = [
+        item for item in source.get("skus") or []
+        if item.get("selected") is True or item.get("is_selected") is True
+    ]
+    if explicitly_selected:
+        return explicitly_selected
+    # Current workbench captures persist only the SKUs chosen for this run.
+    return list(source.get("skus") or [])
+
+
 def has_history_to(status: Dict[str, Any], target: str) -> bool:
     return any(item.get("to") == target for item in status.get("history", []))
 
@@ -283,11 +289,11 @@ def validate_status_integrity(status: Dict[str, Any], product_dir: Path) -> List
     latest_steps = latest_step_by_name(steps)
     ozon = status["ozon"]
 
-    if current_status == "FAILED_HARD_BLOCKER":
+    if current_status in ATTENTION_STATES:
         failed_steps = [step for step in steps if step["status"] == "failed"]
         status_errors = ozon.get("errors", [])
         if not failed_steps and not status_errors:
-            errors.append(f"{display_path(product_dir)}/status.json: FAILED_HARD_BLOCKER requires a failed step or Ozon error")
+            errors.append(f"{display_path(product_dir)}/status.json: NEEDS_ATTENTION requires a failed step or Ozon error")
         for step in failed_steps:
             if not step.get("error") or not step["error"].get("reason"):
                 errors.append(
@@ -295,14 +301,18 @@ def validate_status_integrity(status: Dict[str, Any], product_dir: Path) -> List
                 )
 
     upload_completed = (
-        current_status in {"OZON_READY", "UPLOADING", "PENDING_REMOTE", "OZON_MODERATION", "UPLOADED", "ACTIVE"}
+        current_status in {"WAITING_MANUAL_REVIEW", "UPLOADING", "PENDING_REMOTE", "OZON_MODERATION", "UPLOADED", "ACTIVE"}
         and latest_steps.get("ozon_upload", {}).get("status") == "completed"
     )
+    pending_steps = set(status.get("pending_steps") or [])
+    recovered_failure = str(status.get("failed_step") or "unknown") == "unknown"
     for name, step in latest_steps.items():
         # A product can have a stale failed checkpoint from an earlier retry.
         # Once a later upload checkpoint completed, that failure is historical
         # rather than a reason to hide an already usable product.
-        if step["status"] == "failed" and current_status != "FAILED_HARD_BLOCKER" and not upload_completed:
+        if recovered_failure and name in pending_steps:
+            continue
+        if step["status"] == "failed" and current_status not in ATTENTION_STATES and not upload_completed:
             errors.append(
                 f"{display_path(product_dir)}/status.json: latest step {name} failed but product status is "
                 f"{current_status}"
@@ -321,7 +331,7 @@ def validate_status_integrity(status: Dict[str, Any], product_dir: Path) -> List
 
 
 def can_start_upload(status: Dict[str, Any]) -> bool:
-    return status.get("task_authorized") is True and status["status"] == "OZON_READY"
+    return status.get("task_authorized") is True and status["status"] == "WAITING_MANUAL_REVIEW"
 
 
 def validate_positioning_integrity(product_dir: Path) -> List[str]:
@@ -374,71 +384,44 @@ def validate_positioning_integrity(product_dir: Path) -> List[str]:
     return errors
 
 
-def validate_style_integrity(product_dir: Path) -> List[str]:
+def validate_image_plan_integrity(product_dir: Path) -> List[str]:
     errors = []
-    style_profile = load_json(product_dir / "output/style-profile.json")
     image_plan = load_json(product_dir / "output/image-plan.json")
-    legacy_qc_path = product_dir / "output/qc-report.json"
-    qc_report = load_json(legacy_qc_path) if legacy_qc_path.is_file() else None
-    expected_ref = f"products/{product_dir.name}/output/style-profile.json"
     expected_positioning_ref = f"products/{product_dir.name}/output/product-positioning.json"
+    expected_design_ref = f"products/{product_dir.name}/output/ozon-ecommerce-design.json"
 
-    if style_profile.get("positioning_ref") != expected_positioning_ref:
-        errors.append(
-            f"{display_path(product_dir)}/output/style-profile.json: positioning_ref must be {expected_positioning_ref}"
-        )
     if expected_positioning_ref not in image_plan["source_refs"]:
         errors.append(
             f"{display_path(product_dir)}/output/image-plan.json: source_refs must include product-positioning.json"
         )
 
-    if image_plan["style_profile_ref"] != expected_ref:
-        errors.append(f"{display_path(product_dir)}/output/image-plan.json: style_profile_ref must be {expected_ref}")
-    if image_plan["style_family"] != style_profile["style_family"]:
-        errors.append(f"{display_path(product_dir)}/output/image-plan.json: style_family does not match style-profile.json")
-    creative_ref = image_plan.get("creative_brief_ref")
-    modern_plan = bool(creative_ref)
-    expected_structure = list(style_profile["image_set_structure"])
-    if modern_plan and len(expected_structure) - 1 < 8:
-        expected_structure.append("disclaimer")
-    if image_plan["image_set_structure"] != expected_structure:
-        errors.append(f"{display_path(product_dir)}/output/image-plan.json: image_set_structure does not match selected style structure")
-    if modern_plan:
-        brief_path = product_dir / "output/ecommerce-creative-brief.json"
-        if not brief_path.is_file():
-            errors.append(f"{display_path(product_dir)}/output/ecommerce-creative-brief.json: missing creative hand-off")
-        if len(image_plan.get("detail_images") or []) != 8:
-            errors.append(f"{display_path(product_dir)}/output/image-plan.json: modern plan requires exactly 8 detail images")
+    if image_plan.get("ecommerce_design_ref") != expected_design_ref:
+        errors.append(f"{display_path(product_dir)}/output/image-plan.json: ecommerce_design_ref must be {expected_design_ref}")
+
+    source = load_json(product_dir / "input/source.json")
+    selected_skus = selected_skus_for_image_plan(product_dir, source)
+    expected_main_count = len(selected_skus)
+    if expected_main_count < 1:
+        errors.append(f"{display_path(product_dir)}/input/source.json: current contract requires at least one selected SKU")
+    if len(image_plan.get("main_images") or []) != expected_main_count:
+        errors.append(
+            f"{display_path(product_dir)}/output/image-plan.json: main image count must equal selected SKU count"
+        )
+    if len(image_plan.get("detail_images") or []) != 8:
+        errors.append(f"{display_path(product_dir)}/output/image-plan.json: current plan requires exactly 8 shared detail images")
+    expected_structure = [
+        *(["main"] if expected_main_count else []),
+        *[str(item.get("image_type") or "detail") for item in image_plan.get("detail_images") or []],
+    ]
+    if image_plan.get("image_set_structure") != expected_structure:
+        errors.append(f"{display_path(product_dir)}/output/image-plan.json: image_set_structure must be derived from ecommerce design slots")
     contract = image_plan["generator_contract"]
-    if contract["style_profile_ref"] != expected_ref:
-        errors.append(f"{display_path(product_dir)}/output/image-plan.json: generator contract has wrong style profile")
+    if contract.get("ecommerce_design_ref") != expected_design_ref:
+        errors.append(f"{display_path(product_dir)}/output/image-plan.json: generator contract has wrong ecommerce design")
+    if contract.get("must_follow_ecommerce_design") is not True:
+        errors.append(f"{display_path(product_dir)}/output/image-plan.json: generator contract must follow ecommerce design")
     if contract["allowed_structure"] != image_plan["image_set_structure"]:
         errors.append(f"{display_path(product_dir)}/output/image-plan.json: generator contract structure mismatch")
-    # New image production writes image-qc-report.json. Legacy style checks
-    # remain applicable only when the earlier qc-report.json exists.
-    if qc_report is None:
-        return errors
-    if qc_report["style_profile_ref"] != expected_ref:
-        errors.append(f"{display_path(product_dir)}/output/qc-report.json: style_profile_ref must be {expected_ref}")
-    if qc_report["selected_style_family"] != style_profile["style_family"]:
-        errors.append(f"{display_path(product_dir)}/output/qc-report.json: selected style does not match style-profile.json")
-    if qc_report["style_alignment"]["style_family"] != style_profile["style_family"]:
-        errors.append(f"{display_path(product_dir)}/output/qc-report.json: style alignment family mismatch")
-
-    required_style_checks = {
-        "selected_style_match",
-        "electronics_not_overly_home",
-        "outdoor_has_outdoor_scene",
-        "kitchen_has_kitchen_home_feel",
-        "style_product_conflict",
-    }
-    actual_checks = {item["check"] for item in qc_report["style_alignment"]["checks"]}
-    missing_checks = required_style_checks - actual_checks
-    if missing_checks:
-        errors.append(
-            f"{display_path(product_dir)}/output/qc-report.json: missing style checks: "
-            + ", ".join(sorted(missing_checks))
-        )
     return errors
 
 
@@ -469,7 +452,7 @@ def validate_product(product_dir: Path) -> List[str]:
     errors.extend(validate_positioning_integrity(product_dir))
     errors.extend(validate_history(status, product_dir))
     errors.extend(validate_status_integrity(status, product_dir))
-    errors.extend(validate_style_integrity(product_dir))
+    errors.extend(validate_image_plan_integrity(product_dir))
     return errors
 
 
@@ -492,7 +475,7 @@ def validate_collector_product(product_dir: Path) -> List[str]:
     errors.extend(validate_source_truthfulness(source, product_dir))
     errors.extend(validate_history(status, product_dir))
     errors.extend(validate_status_integrity(status, product_dir))
-    if status["status"] not in {"COLLECTED", "FAILED_HARD_BLOCKER", "COLLECTING"}:
+    if status["status"] not in {"COLLECTED", "COLLECTING", *ATTENTION_STATES}:
         errors.append(f"{display_path(product_dir)}/status.json: collector stage cannot finish with {status['status']}")
     return errors
 

@@ -18,7 +18,9 @@ def make_product(root: Path, product_id: str) -> Path:
         "category_name_zh": "食品储存罐", "category_path_zh": ["家居", "厨房", "食品储存罐"],
     })
     write(product / "output/copy-ru.json", {"title_ru": "Старый заголовок"})
-    write(product / "output/style-profile.json", {"style_family": "kitchen_warm_home"})
+    write(product / "output/ozon-ecommerce-design.json", {
+        "visual_system": {"visual_family": "kitchen_warm_home"},
+    })
     write(product / "output/product-analysis.json", {"product_type": "食品储藏罐"})
     return product
 

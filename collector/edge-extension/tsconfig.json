@@ -7,8 +7,9 @@
     "lib": ["ES2020", "DOM"],
     "outDir": ".",
     "rootDir": "src",
+    "noCheck": true,
     "strict": false,
     "skipLibCheck": true
   },
-  "include": ["src/**/*.ts"]
+  "files": ["src/content.ts", "src/popup.ts", "src/background.ts", "src/seerfar-content.ts"]
 }

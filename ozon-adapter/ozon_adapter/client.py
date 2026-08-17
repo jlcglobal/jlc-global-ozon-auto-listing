@@ -3,6 +3,9 @@
 from __future__ import annotations
 
 import json
+import socket
+import ssl
+import time
 import urllib.error
 import urllib.request
 from typing import Any, Callable, Dict, Optional
@@ -35,6 +38,8 @@ class OzonReadOnlyClient:
         CATEGORY_ATTRIBUTES_ENDPOINT,
         ATTRIBUTE_VALUES_ENDPOINT,
     })
+    NETWORK_ATTEMPTS = 4
+    RETRYABLE_HTTP_STATUS_CODES = frozenset({408, 425, 429, 500, 502, 503, 504})
 
     def __init__(self, config: OzonConfig, transport: Optional[Transport] = None):
         if config.base_url.rstrip("/") != self.BASE_URL:
@@ -42,14 +47,43 @@ class OzonReadOnlyClient:
         self.config = config
         self._transport = transport
 
+    @staticmethod
+    def _retry_delay_seconds(attempt: int) -> float:
+        return min(4.0, 0.5 * (2 ** max(0, attempt - 1)))
+
+    @staticmethod
+    def _is_transient_network_error(exc: Any) -> bool:
+        if isinstance(exc, str):
+            text = exc.casefold()
+            return any(token in text for token in (
+                "timeout", "timed out", "ssl", "handshake", "eof", "connection", "temporar"
+            ))
+        if isinstance(exc, (TimeoutError, socket.timeout, ssl.SSLError, ConnectionError)):
+            return True
+        if isinstance(exc, urllib.error.URLError):
+            return OzonReadOnlyClient._is_transient_network_error(exc.reason)
+        if isinstance(exc, OSError):
+            return True
+        return False
+
+    def _pause_before_retry(self, attempt: int) -> None:
+        time.sleep(self._retry_delay_seconds(attempt))
+
     def _post_json(self, endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         if endpoint not in self.ALLOWED_ENDPOINTS:
             raise ValueError(f"Endpoint is not in the read-only allowlist: {endpoint}")
         if self._transport is not None:
-            response = self._transport(endpoint, payload)
-            if not isinstance(response, dict):
-                raise OzonApiError(endpoint, "response must be a JSON object")
-            return response
+            for attempt in range(1, self.NETWORK_ATTEMPTS + 1):
+                try:
+                    response = self._transport(endpoint, payload)
+                except Exception as exc:
+                    if self._is_transient_network_error(exc) and attempt < self.NETWORK_ATTEMPTS:
+                        self._pause_before_retry(attempt)
+                        continue
+                    raise OzonApiError(endpoint, str(exc)) from exc
+                if not isinstance(response, dict):
+                    raise OzonApiError(endpoint, "response must be a JSON object")
+                return response
 
         request = urllib.request.Request(
             f"{self.BASE_URL}{endpoint}",
@@ -57,18 +91,29 @@ class OzonReadOnlyClient:
             headers=self.config.headers(),
             method="POST",
         )
-        try:
-            with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as response:
-                body = response.read().decode("utf-8")
-        except urllib.error.HTTPError as exc:
-            body = exc.read().decode("utf-8", errors="replace")
+        for attempt in range(1, self.NETWORK_ATTEMPTS + 1):
             try:
-                message = json.loads(body).get("message", "Ozon API rejected the request")
-            except json.JSONDecodeError:
-                message = "Ozon API rejected the request"
-            raise OzonApiError(endpoint, str(message), exc.code) from exc
-        except urllib.error.URLError as exc:
-            raise OzonApiError(endpoint, str(exc.reason)) from exc
+                with urllib.request.urlopen(request, timeout=self.config.timeout_seconds) as response:
+                    body = response.read().decode("utf-8")
+                break
+            except urllib.error.HTTPError as exc:
+                if exc.code in self.RETRYABLE_HTTP_STATUS_CODES and attempt < self.NETWORK_ATTEMPTS:
+                    self._pause_before_retry(attempt)
+                    continue
+                body = exc.read().decode("utf-8", errors="replace")
+                try:
+                    message = json.loads(body).get("message", "Ozon API rejected the request")
+                except json.JSONDecodeError:
+                    message = "Ozon API rejected the request"
+                raise OzonApiError(endpoint, str(message), exc.code) from exc
+            except Exception as exc:
+                if self._is_transient_network_error(exc) and attempt < self.NETWORK_ATTEMPTS:
+                    self._pause_before_retry(attempt)
+                    continue
+                if self._is_transient_network_error(exc):
+                    message = str(exc.reason) if isinstance(exc, urllib.error.URLError) else str(exc)
+                    raise OzonApiError(endpoint, message) from exc
+                raise
         try:
             result = json.loads(body)
         except json.JSONDecodeError as exc:

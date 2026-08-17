@@ -81,6 +81,32 @@ class CodexOutagePauseTest(unittest.TestCase):
             self.assertTrue(runner.codex_worker_unavailable(log))
             self.assertFalse(runner.codex_worker_unavailable(log, offset))
 
+    def test_usage_limit_waits_without_consuming_product_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = self.make_product(root)
+            log = root / "full-pipeline.log"
+            log.write_text(
+                "ERROR: You've hit your usage limit. Purchase more credits or try again later.\n",
+                encoding="utf-8",
+            )
+
+            self.assertTrue(runner.codex_worker_unavailable(log))
+            self.assertTrue(runner.codex_usage_limit_reached(log))
+            status = runner.mark_codex_service_waiting(
+                product,
+                "product_analysis",
+                {"codex_usage_limit_retry_seconds": 600},
+                "usage_limit",
+            )
+
+            self.assertEqual(status["status"], "PROCESSING")
+            self.assertEqual(status["next_action"], "product_analysis")
+            self.assertEqual(status["retry_count_by_step"], {})
+            self.assertEqual(status["error_code"], "AI_SERVICE_CAPACITY_WAIT")
+            self.assertEqual(status["ai_service_reason"], "codex_usage_limit")
+            self.assertIn("10分钟", status["error_message"])
+
     def test_local_fallback_is_removed_and_workbench_explains_the_wait(self):
         root = Path(__file__).resolve().parents[1]
         script = (root / "collector/local-ingest/static/workbench.js").read_text(encoding="utf-8")
@@ -88,6 +114,8 @@ class CodexOutagePauseTest(unittest.TestCase):
         self.assertFalse((root / "scripts/local_analysis_fallback.py").exists())
         self.assertNotIn("write_source_only_analysis", runner.__dict__)
         self.assertIn("等待联网大模型恢复", script)
+        self.assertIn("AI额度等待中", script)
+        self.assertIn("codex_usage_limit", script)
         self.assertIn("不会使用本地备用分析", script)
         self.assertIn("ai_service_retry_after", script)
 

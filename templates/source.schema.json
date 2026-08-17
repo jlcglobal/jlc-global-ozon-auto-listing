@@ -151,6 +151,7 @@
       ],
       "properties": {
         "sku_id": { "$ref": "#/$defs/unknownableString" },
+        "sku_identity_type": { "type": "string", "enum": ["1688_sku", "single_specification", "visible_variant"] },
         "sku_name": { "$ref": "#/$defs/unknownableString" },
         "option_values": { "type": "array", "items": { "$ref": "#/$defs/sourceAttribute" } },
         "price": { "type": ["number", "null"], "minimum": 0 },

@@ -21,6 +21,7 @@ from ozon_uploader import (  # noqa: E402
     build_upload_payload,
     execute_upload,
     prepare_upload,
+    recover_remote_import,
     repair_uploaded_images,
     upload_mode,
 )
@@ -34,6 +35,7 @@ def main() -> int:
     parser.add_argument("product_dir", help="Path to products/{product_id}")
     parser.add_argument("--prepare", action="store_true", help="Deprecated alias for the safe dry run")
     parser.add_argument("--execute", action="store_true", help="Run according to UPLOAD_MODE (dry-run by default)")
+    parser.add_argument("--recover", action="store_true", help="Read-only sync of an accepted Ozon import task")
     parser.add_argument("--repair-images", action="store_true", help="Re-submit and verify images for an uploaded product")
     parser.add_argument("--force-image-resubmit", action="store_true", help="Force one controlled image UPDATE for end-to-end validation")
     parser.add_argument("--shop", default="zhonglian1", help="Configured Ozon shop name")
@@ -45,6 +47,13 @@ def main() -> int:
     )
     args = parser.parse_args()
     product_dir = Path(args.product_dir).resolve()
+    if args.recover and not (product_dir / "output/ozon-result.json").is_file():
+        workspace_product_dir = (
+            ROOT / "runtime/store-upload-workspaces" / product_dir.name
+            / args.shop / "products" / product_dir.name
+        ).resolve()
+        if (workspace_product_dir / "output/ozon-result.json").is_file():
+            product_dir = workspace_product_dir
     try:
         if args.prepare:
             preview = build_upload_payload(product_dir, mode="dry-run")
@@ -77,6 +86,11 @@ def main() -> int:
             )
             print(json.dumps(result, ensure_ascii=False))
             return 0 if result["status"] in {"submitted", "created", "updated", "skipped"} else 1
+        if args.recover:
+            config = OzonConfig.from_shop(args.shop, SHOP_REGISTRY)
+            result = recover_remote_import(product_dir, OzonWriteClient(config))
+            print(json.dumps(result, ensure_ascii=False))
+            return 0 if result["status"] in {"submitted", "created", "updated", "failed"} else 1
         if args.repair_images:
             config = OzonConfig.from_shop(args.shop, SHOP_REGISTRY)
             result = repair_uploaded_images(

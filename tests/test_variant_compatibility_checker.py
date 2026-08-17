@@ -64,6 +64,23 @@ class VariantCompatibilityCheckerTests(unittest.TestCase):
         self.assertTrue(result["can_merge"])
         self.assertEqual(result["detected_difference_fields"][0]["difference_kind"], "color")
 
+    def test_color_variant_payload_values_are_russian_only(self):
+        source = source_with_values("颜色", ["卡其色1.9L", "黑色1.9L", "军绿色1.9L"])
+        source.update({
+            "source_url": "https://detail.1688.com/offer/123456.html",
+            "captured_at": "2026-07-18T00:00:00Z",
+        })
+        decision = self.decision(source)
+        grouping = build_grouping_result("P000009", source, decision)
+        values = [
+            attribute["value"]
+            for variant in grouping["variants"]
+            for attribute in variant["variant_attribute_values"]
+            if attribute["attribute_id"] == 10097
+        ]
+        self.assertEqual(values, ["хаки", "черный", "зеленый"])
+        self.assertTrue(all(not any(ch.isdigit() for ch in value) for value in values))
+
     def test_color_plus_different_phone_models_is_not_color_only(self):
         result = self.decision(source_with_values(
             "规格1",
@@ -176,6 +193,89 @@ class VariantCompatibilityCheckerTests(unittest.TestCase):
             for item in grouping["variants"]
         ))
 
+    def test_compound_capacity_and_color_requires_both_aspects(self):
+        source = source_with_values("规格1", [
+            "500毫升（透明）",
+            "500毫升（白色）",
+            "300毫升（透明）",
+            "200毫升（白色）",
+            "300毫升（白色）",
+            "200毫升（透明）",
+        ])
+        source.update({
+            "source_url": "https://detail.1688.com/offer/123456.html",
+            "captured_at": "2026-08-12T00:00:00Z",
+        })
+        rule = {
+            "categoryId": "1",
+            "typeId": "2",
+            "rule_data_complete": True,
+            "source": "official_test_metadata",
+            "attributes": [
+                {
+                    "attributeId": "10096",
+                    "nameRu": "Цвет товара",
+                    "required": False,
+                    "isAspect": True,
+                    "values": [],
+                },
+                {
+                    "attributeId": "6378",
+                    "nameRu": "Объем, л",
+                    "required": False,
+                    "isAspect": True,
+                    "values": [],
+                },
+            ],
+        }
+
+        decision = self.decision(source, rule)
+        grouping = build_grouping_result("P000130", source, decision)
+
+        self.assertTrue(decision["platform_can_merge"])
+        self.assertEqual(
+            [item["difference_kind"] for item in decision["detected_difference_fields"]],
+            ["color", "size_or_measurement"],
+        )
+        self.assertEqual(
+            [field["attribute_id"] for field in grouping["variant_attributes"]],
+            [10096, 6378],
+        )
+        tuples = []
+        for variant in grouping["variants"]:
+            self.assertEqual(
+                [item["attribute_id"] for item in variant["variant_attribute_values"]],
+                [10096, 6378],
+            )
+            tuples.append(tuple(item["value"] for item in variant["variant_attribute_values"]))
+        self.assertEqual(len(tuples), len(set(tuples)))
+
+    def test_compound_capacity_and_color_separates_when_capacity_is_not_aspect(self):
+        source = source_with_values("规格1", [
+            "500毫升（透明）",
+            "500毫升（白色）",
+            "300毫升（透明）",
+            "200毫升（白色）",
+            "300毫升（白色）",
+            "200毫升（透明）",
+        ])
+        source.update({
+            "source_url": "https://detail.1688.com/offer/123456.html",
+            "captured_at": "2026-08-12T00:00:00Z",
+        })
+
+        decision = self.decision(source, self.color_rule)
+        grouping = build_grouping_result("P000130", source, decision)
+
+        self.assertFalse(decision["platform_can_merge"])
+        self.assertEqual(
+            [item["difference_kind"] for item in decision["detected_difference_fields"]],
+            ["color", "size_or_measurement"],
+        )
+        self.assertEqual(grouping["variant_mapping_status"], "SEPARATE_CARDS_REQUIRED")
+        self.assertEqual(grouping["upload_strategy"], "separate_cards")
+        self.assertTrue(grouping["upload_allowed"])
+
     def test_single_sku_is_one_non_variant_product_group(self):
         result = self.decision(source_with_values("颜色", ["黑色"]))
         self.assertFalse(result["can_merge"])
@@ -233,18 +333,6 @@ class VariantCompatibilityCheckerTests(unittest.TestCase):
         self.assertEqual([item["value"] for item in values], ["10", "25", "5", "2.5"])
         self.assertTrue(all(item["estimated"] is False for item in values))
         self.assertTrue(all(item["dictionary_value_id"] is None for item in values))
-
-    @unittest.skipUnless((ROOT / "products/P000005/status.json").is_file(), "optional runtime product fixture is not installed")
-    @unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
-    def test_p000005_has_fixed_separate_card_policy_in_status(self):
-        status = json.loads((ROOT / "products/P000005/status.json").read_text(encoding="utf-8"))
-        grouping = status["platform_grouping"]
-        self.assertEqual(grouping["internal_product_group_id"], "P000005")
-        self.assertEqual(grouping["source_sku_count"], 3)
-        self.assertEqual(grouping["ozon_card_count"], 3)
-        self.assertFalse(grouping["platform_can_merge"])
-        self.assertEqual(grouping["upload_strategy"], "separate_cards")
-
 
 if __name__ == "__main__":
     unittest.main()

@@ -5,26 +5,46 @@ from __future__ import annotations
 import re
 from typing import Any, Dict
 
+from .source_measurements import max_source_sku_dimension_summary
 from .weight_estimator import select_profile
 
 
 def _parse_dimensions(value: Any) -> tuple[float, float, float] | None:
     match = re.search(
-        r"(\d+(?:\.\d+)?)\s*[x×*]\s*(\d+(?:\.\d+)?)\s*[x×*]\s*"
-        r"(\d+(?:\.\d+)?)\s*(mm|毫米|cm|厘米)",
+        r"(\d+(?:[.,]\d+)?)\s*(mm|毫米|cm|厘米)?\s*[x×*]\s*"
+        r"(\d+(?:[.,]\d+)?)\s*(mm|毫米|cm|厘米)?\s*[x×*]\s*"
+        r"(\d+(?:[.,]\d+)?)\s*(mm|毫米|cm|厘米)?",
         str(value or ""),
         re.I,
     )
     if not match:
         return None
-    factor = 0.1 if match.group(4).casefold() in {"mm", "毫米"} else 1.0
-    return tuple(float(match.group(index)) * factor for index in (1, 2, 3))
+    units = [match.group(index) for index in (2, 4, 6) if match.group(index)]
+    if not units:
+        return None
+    normalized_units = {
+        "mm" if unit.casefold() in {"mm", "毫米"} else "cm" for unit in units
+    }
+    if len(normalized_units) != 1:
+        return None
+    factor = 0.1 if "mm" in normalized_units else 1.0
+    return tuple(
+        float(match.group(index).replace(",", ".")) * factor
+        for index in (1, 3, 5)
+    )
 
 
 def _source_product_dimensions(source: Dict[str, Any]) -> tuple[float, float, float] | None:
-    names = {"尺寸", "产品尺寸", "商品尺寸", "规格尺寸", "长宽高"}
+    names = {
+        "尺寸", "产品尺寸", "商品尺寸", "规格尺寸", "长宽高",
+        "规格长宽高", "产品规格长宽高", "商品规格长宽高",
+    }
+
+    def normalize_name(value: Any) -> str:
+        return re.sub(r"[^a-z0-9\u4e00-\u9fff]", "", str(value or "").casefold())
+
     for item in source.get("product_attributes") or []:
-        if str(item.get("name_cn") or "").strip() in names:
+        if normalize_name(item.get("name_cn")) in names:
             parsed = _parse_dimensions(item.get("value_cn"))
             if parsed:
                 return parsed
@@ -37,6 +57,7 @@ def estimate_product_dimensions(
     profile = select_profile(source, analysis, profiles)
     profile_name = profile["name"]
     source_values = _source_product_dimensions(source)
+    source_sku_values = max_source_sku_dimension_summary(source)
     facts = analysis.get("facts", {}).get("dimensions", {})
     facts = facts if isinstance(facts, dict) else {}
     fact_values = (facts.get("length_cm"), facts.get("width_cm"), facts.get("height_cm"))
@@ -44,6 +65,16 @@ def estimate_product_dimensions(
         length, width, height = source_values
         source_name, source_ref, confidence, estimated = (
             "1688", "source.product_attributes.product_dimensions", 100, False
+        )
+    elif source_sku_values:
+        length, width, height = (
+            float(source_sku_values[key]) for key in ("length", "width", "height")
+        )
+        source_name, source_ref, confidence, estimated = (
+            "estimated" if source_sku_values.get("estimated") else "1688",
+            str(source_sku_values.get("source_ref") or "source.product_attributes.sku_measurement_table"),
+            int(source_sku_values.get("confidence", 100)),
+            bool(source_sku_values.get("estimated")),
         )
     elif isinstance(facts.get("by_sku_cm"), dict) and facts["by_sku_cm"]:
         sku_dimensions = [
@@ -137,7 +168,13 @@ def estimate_package_dimensions(
     else:
         multiplier = float(package_rules["dimension_multiplier"])
         minimum_extra = float(package_rules["minimum_extra_dimension_cm"])
-        values = [round(max(value + minimum_extra, value * multiplier), 2) for value in product_values]
+        if (
+            product_dimensions.get("source") == "1688"
+            and "sku_measurement_table" in str(product_dimensions.get("source_ref") or "")
+        ):
+            values = [round(value + minimum_extra, 2) for value in product_values]
+        else:
+            values = [round(max(value + minimum_extra, value * multiplier), 2) for value in product_values]
         source_name, source_ref = "estimated", "pricing_rules.package_estimation"
         confidence = min(int(product_dimensions["confidence"]), int(package_rules["confidence_cap"]))
         estimated = True

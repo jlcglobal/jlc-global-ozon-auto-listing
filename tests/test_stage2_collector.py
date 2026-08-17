@@ -196,7 +196,7 @@ class Stage2CollectorTest(unittest.TestCase):
         self.products_patch.stop()
         self.tmp.cleanup()
 
-    def fake_download(self, url, timeout=20):
+    def fake_download(self, url, timeout=20, **_kwargs):
         if "fail" in url:
             raise OSError("network down")
         if "detail-a" in url:
@@ -230,6 +230,22 @@ class Stage2CollectorTest(unittest.TestCase):
         self.assertEqual(source["skus"][0]["price"], 12.5)
         self.assertEqual(source["skus"][0]["price_source"], "sku_specific_price")
         self.assertFalse(source["skus"][0]["sku_image_missing"])
+
+    def test_unknown_diagnostic_strategy_does_not_discard_sku_capture(self):
+        payload = sample_payload()
+        payload["field_diagnostics"].append({
+            "field": "sku_images",
+            "strategy": "unknown",
+            "hit": False,
+            "failure_reason": "not found",
+            "candidate_count": 0,
+        })
+        with patch.object(local_ingest_app, "download_url", self.fake_download):
+            result = local_ingest_app.ingest_capture(payload)
+        product_dir = self.products_dir / result["product_id"]
+        source = json.loads((product_dir / "input/source.json").read_text(encoding="utf-8"))
+        self.assertEqual(source["field_diagnostics"][-1]["strategy"], "local_ingest")
+        self.assertTrue((product_dir / "input/raw-snapshot.json").is_file())
 
     def test_missing_fields_are_unknown_or_empty_with_warnings(self):
         payload = sample_payload()
@@ -335,6 +351,82 @@ class Stage2CollectorTest(unittest.TestCase):
         self.assertEqual(err.exception.status_code, 422)
         self.assertIn("请至少选择1个SKU", str(err.exception.detail))
 
+    def test_genuine_single_specification_offer_is_materialized(self):
+        payload = sample_payload()
+        payload["skus"] = []
+        payload["selected_sku_ids"] = []
+        payload["sku_property_groups"] = []
+        payload["raw_snapshot"]["all_raw_skus"] = []
+        payload["sku_selection"] = {
+            "original_sku_count": 0,
+            "available_sku_count": 0,
+            "selected_sku_count": 0,
+            "unselected_sku_count": 0,
+            "selected_sku_ids": [],
+            "selected_at": "2026-07-10T12:01:00+08:00",
+        }
+
+        with patch.object(local_ingest_app, "download_url", self.fake_download):
+            result = local_ingest_app.ingest_capture(payload)
+
+        source = json.loads((self.products_dir / result["product_id"] / "input/source.json").read_text(encoding="utf-8"))
+        self.assertEqual(len(source["skus"]), 1)
+        self.assertEqual(source["skus"][0]["sku_id"], "local-spec-single-offer-key-123456789")
+        self.assertEqual(source["skus"][0]["sku_identity_type"], "single_specification")
+
+    def test_visible_variant_with_its_own_image_is_kept_without_hidden_1688_sku_id(self):
+        payload = sample_payload()
+        visual_variant = {
+            "sku_id": "local-spec-variant-offer-key-123456789-a1b2c3",
+            "sku_identity_type": "visible_variant",
+            "sku_name": "枪灰-双功能（无顶喷）",
+            "option_values": [{
+                "name_cn": "规格",
+                "value_cn": "枪灰-双功能（无顶喷）",
+                "source": "dom_semantic",
+                "source_text": "枪灰-双功能（无顶喷）",
+            }],
+            "purchase_price": 198.0,
+            "price_source": "sku_specific_price",
+            "image_url": "https://img.example.com/variant-gunmetal.png",
+            "sku_image_missing": False,
+            "availability": "unknown",
+            "source_data": {
+                "source": "dom_sku_groups",
+                "identity_source": "visible_sku_option",
+                "has_real_sku_id": False,
+            },
+        }
+        payload["skus"] = [visual_variant]
+        payload["selected_sku_ids"] = [visual_variant["sku_id"]]
+        payload["raw_snapshot"]["all_raw_skus"] = [copy.deepcopy(visual_variant)]
+        payload["sku_property_groups"] = [{
+            "prop_id": "dom-prop-1",
+            "prop_name": "规格",
+            "values": [{"name": "枪灰-双功能（无顶喷）", "image_url": visual_variant["image_url"]}],
+        }]
+
+        with patch.object(local_ingest_app, "download_url", self.fake_download):
+            result = local_ingest_app.ingest_capture(payload)
+
+        source = json.loads((self.products_dir / result["product_id"] / "input/source.json").read_text(encoding="utf-8"))
+        self.assertEqual(source["skus"][0]["sku_identity_type"], "visible_variant")
+        self.assertEqual(source["skus"][0]["sku_name"], "枪灰-双功能（无顶喷）")
+        self.assertFalse(source["skus"][0]["sku_image_missing"])
+        self.assertEqual(source["skus"][0]["image_url"], visual_variant["image_url"])
+
+    def test_variant_evidence_without_a_real_sku_is_not_single_specification(self):
+        payload = sample_payload()
+        payload["skus"] = []
+        payload["selected_sku_ids"] = []
+        payload["sku_property_groups"] = [{"name_cn": "颜色", "values": ["红色", "蓝色"]}]
+        payload["raw_snapshot"]["all_raw_skus"] = []
+
+        with self.assertRaises(HTTPException) as err:
+            local_ingest_app.ingest_capture(payload)
+        self.assertEqual(err.exception.status_code, 422)
+        self.assertIn("请至少选择1个SKU", str(err.exception.detail))
+
     def test_more_than_ten_selected_skus_is_rejected(self):
         payload = many_sku_payload(total=12, selected=11)
         with self.assertRaises(HTTPException) as err:
@@ -353,12 +445,46 @@ class Stage2CollectorTest(unittest.TestCase):
     def test_generated_sku_id_is_rejected(self):
         payload = sample_payload()
         payload["skus"][0]["sku_id"] = "script-sku-1"
+        payload["skus"][0]["source_data"]["skuId"] = "script-sku-1"
         payload["selected_sku_ids"] = ["script-sku-1"]
         payload["raw_snapshot"]["all_raw_skus"][0]["sku_id"] = "script-sku-1"
+        payload["raw_snapshot"]["all_raw_skus"][0]["source_data"] = {"skuId": "script-sku-1"}
         with self.assertRaises(HTTPException) as err:
             local_ingest_app.ingest_capture(payload)
         self.assertEqual(err.exception.status_code, 422)
-        self.assertIn("真实1688 sku_id", str(err.exception.detail))
+        self.assertIn("未解析到真实 1688 SKU", str(err.exception.detail))
+
+    def test_fake_sku_fragment_is_discarded_before_ingest(self):
+        payload = sample_payload()
+        fake = {
+            "sku_id": "unknown",
+            "sku_name": "SKU列表 / ¥199 / 库存6791套",
+            "option_values": [{"name_cn": "规格", "value_cn": "SKU列表 ¥199 库存6791套"}],
+            "image_url": "https://img.example.com/not-a-sku.png",
+            "source_data": {},
+        }
+        payload["skus"].append(copy.deepcopy(fake))
+        payload["raw_snapshot"]["all_raw_skus"].append(copy.deepcopy(fake))
+        with patch.object(local_ingest_app, "download_url", self.fake_download):
+            result = local_ingest_app.ingest_capture(payload)
+        source = json.loads((self.products_dir / result["product_id"] / "input/source.json").read_text(encoding="utf-8"))
+        raw = json.loads((self.products_dir / result["product_id"] / "input/raw-snapshot.json").read_text(encoding="utf-8"))
+        self.assertEqual([item["sku_id"] for item in source["skus"]], ["sku-1"])
+        self.assertEqual([item["sku_id"] for item in raw["sku_raw_data"]], ["sku-1"])
+
+    def test_only_fake_sku_fragments_show_recapture_message(self):
+        payload = sample_payload()
+        payload["skus"] = [{
+            "sku_id": "unknown",
+            "sku_name": "SKU列表 / ¥199 / 库存6791套",
+            "option_values": [{"name_cn": "规格", "value_cn": "套起批"}],
+            "source_data": {},
+        }]
+        payload["raw_snapshot"]["all_raw_skus"] = copy.deepcopy(payload["skus"])
+        with self.assertRaises(HTTPException) as err:
+            local_ingest_app.ingest_capture(payload)
+        self.assertEqual(err.exception.status_code, 422)
+        self.assertEqual(err.exception.detail["message"], "未解析到真实 1688 SKU，请重新采集。")
 
     def test_shared_price_tier_matching_moq_is_applied_to_all_skus(self):
         payload = many_sku_payload(total=3, selected=3)

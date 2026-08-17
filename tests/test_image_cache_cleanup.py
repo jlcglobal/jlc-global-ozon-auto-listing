@@ -40,7 +40,7 @@ class ImageCacheCleanupTests(unittest.TestCase):
         write(product / "input/source.json", {"product_id": product_id, "captured_at": at})
         write(product / "status.json", {
             "status": status, "last_run_at": at,
-            "completed_steps": ["image_generation", "image_qc", "marketplace_content"],
+            "completed_steps": ["ecommerce_design", "image_generation", "image_qc"],
             "pending_steps": [],
         })
         image(product / "input/main-images/main.jpg", 10)
@@ -58,7 +58,8 @@ class ImageCacheCleanupTests(unittest.TestCase):
         product = self.product("P000001", "COLLECTED", 11)
         result = cleanup_images(self.root, self.settings, current_time=NOW, force=True)
         self.assertEqual(result["deleted_product_count"], 1)
-        self.assertFalse((product / "input/main-images").exists())
+        self.assertTrue((product / "input/main-images/main.jpg").is_file())
+        self.assertTrue((product / "input/sku-images/sku.jpg").is_file())
         self.assertFalse((product / "output/generated-images").exists())
         self.assertTrue((product / "input/source.json").is_file())
         self.assertTrue((product / "output/product-analysis.json").is_file())
@@ -93,7 +94,7 @@ class ImageCacheCleanupTests(unittest.TestCase):
         self.assertTrue((product / "output/image-cleanup-report.json").is_file())
 
     def test_failed_product_retry_is_invalidated_after_cleanup(self):
-        product = self.product("P000007", "FAILED_HARD_BLOCKER", 11)
+        product = self.product("P000007", "NEEDS_ATTENTION", 11)
         write(product / "output/pipeline-cache.json", {
             "steps": {"image_generation": {}, "image_qc": {}, "product_analysis": {}},
         })

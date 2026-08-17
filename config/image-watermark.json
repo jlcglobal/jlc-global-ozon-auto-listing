@@ -1,0 +1,14 @@
+{
+  "enabled": true,
+  "logo_path": "config/brand-assets/jlc-global-watermark.png",
+  "position": "bottom_right",
+  "opacity": 0.24,
+  "max_width_ratio": 0.18,
+  "margin_ratio": 0.035,
+  "apply_to_roles": [
+    "variant_main",
+    "main",
+    "detail",
+    "color"
+  ]
+}

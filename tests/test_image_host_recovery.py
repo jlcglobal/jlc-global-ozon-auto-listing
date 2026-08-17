@@ -60,7 +60,7 @@ class ImageHostRecoveryTest(unittest.TestCase):
             self.assertEqual(request["failed_slots"], ["detail-001"])
             self.assertTrue(request["preserve_passed_images"])
 
-    def test_second_interruption_requires_attention(self):
+    def test_second_interruption_requeues_same_slot_without_attention(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             product = self.make_product(root)
@@ -71,11 +71,12 @@ class ImageHostRecoveryTest(unittest.TestCase):
                 result = runner.recover_interrupted_image_generation(
                     product, {"step_retry_limit": 1}, "自动修复后仍卡住", "image_generation_stalled",
                 )
-            self.assertEqual(result["outcome"], "failed")
+            self.assertEqual(result["outcome"], "retry")
             status = json.loads((product / "status.json").read_text(encoding="utf-8"))
-            self.assertEqual(status["status"], "FAILED_HARD_BLOCKER")
-            self.assertEqual(status["host_recovery_state"], "needs_attention")
-            notify.assert_called_once()
+            self.assertEqual(status["status"], "PROCESSING")
+            self.assertEqual(status["host_recovery_state"], "recovering")
+            self.assertEqual(status["image_slot_retry_count_by_slot"]["detail-001"], 2)
+            notify.assert_not_called()
 
     def test_second_host_window_continues_when_new_images_were_completed(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -94,9 +95,24 @@ class ImageHostRecoveryTest(unittest.TestCase):
             self.assertEqual(second["outcome"], "retry")
             self.assertEqual(second["failed_slots"], [])
             status = json.loads((product / "status.json").read_text(encoding="utf-8"))
-            self.assertEqual(status["retry_count_by_step"]["image_generation"], 1)
-            self.assertNotEqual(status["status"], "FAILED_HARD_BLOCKER")
+            self.assertEqual(status["retry_count_by_step"]["image_generation"], 0)
+            self.assertEqual(status["image_slot_retry_count_by_slot"]["detail-001"], 1)
+            self.assertNotEqual(status["status"], "NEEDS_ATTENTION")
             notify.assert_not_called()
+
+    def test_service_waits_are_visible_without_consuming_image_retry(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            product = self.make_product(root)
+            with patch.object(runner, "ROOT", root):
+                runner.update_image_plan_from_results(product, [{
+                    "slot": "detail-001",
+                    "status": "service_unavailable",
+                    "attempt": 1,
+                }])
+            status = json.loads((product / "status.json").read_text(encoding="utf-8"))
+            self.assertEqual(status["image_slot_retry_count_by_slot"]["detail-001"], 0)
+            self.assertEqual(status["image_slot_service_wait_count_by_slot"]["detail-001"], 1)
 
     def test_registered_image_worker_is_stopped_after_stall_window(self):
         with tempfile.TemporaryDirectory() as directory:
@@ -123,7 +139,7 @@ class ImageHostRecoveryTest(unittest.TestCase):
             status_path = product / "status.json"
             status = json.loads(status_path.read_text(encoding="utf-8"))
             status.update({
-                "status": "FAILED_HARD_BLOCKER",
+                "status": "NEEDS_ATTENTION",
                 "host_recovery_state": "needs_attention",
                 "host_recovery_reason": "old timeout",
             })

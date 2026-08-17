@@ -374,22 +374,146 @@
         "product_scale_percent": 58,
         "product_position": "нижний центр",
         "background": "реальный светлый интерьер холодильника с мягкой глубиной",
-        "palette": ["#FAF6EE", "#182027", "#B8692B", "#FFB000"],
+        "palette": [
+          "#FAF6EE",
+          "#182027",
+          "#B8692B",
+          "#FFB000"
+        ],
         "lighting": "чистый рассеянный холодный свет с естественными бликами на прозрачном пластике",
         "typography": "крупный графитовый гротеск, компактные спецификации и один янтарный SKU-якорь",
         "iconography": "тонкие доказательные отметки только рядом с тремя проверенными фактами",
-        "information_hierarchy": ["название и назначение", "объём 3 л", "точный размер", "три проверенных свойства"],
+        "information_hierarchy": [
+          "название и назначение",
+          "объём 3 л",
+          "точный размер",
+          "три проверенных свойства"
+        ],
         "negative_space": "верхняя четверть и нижняя узкая полоса свободны от ключевых частей товара",
         "value_signal": "аккуратная редакционная верстка, чистый холодильник и хорошо читаемая прозрачная конструкция",
         "slot_differentiation": "единственная главная карточка квадратного компактного SKU; не повторяет сцены и доказательные крупные планы деталей"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА", "box": [0.05, 0.04, 0.62, 0.15], "font_size_ratio": 0.052, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "none", "background_color": "#FAF6EE", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "sku_badge", "text": "3 Л", "box": [0.78, 0.05, 0.17, 0.10], "font_size_ratio": 0.056, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "pill", "background_color": "#FFB000", "accent_style": "none", "align": "center", "vertical_align": "middle", "priority": 2},
-        {"role": "specification", "text": "14,5 × 14,5 × 12 СМ", "box": [0.70, 0.17, 0.25, 0.07], "font_size_ratio": 0.023, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "underline", "align": "center", "vertical_align": "middle", "priority": 3},
-        {"role": "benefit", "text": "ПРОЗРАЧНЫЙ КОРПУС", "box": [0.05, 0.85, 0.28, 0.10], "font_size_ratio": 0.024, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 4},
-        {"role": "benefit", "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА", "box": [0.36, 0.85, 0.37, 0.10], "font_size_ratio": 0.021, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 5},
-        {"role": "notice", "text": "1 ШТ.", "box": [0.77, 0.85, 0.18, 0.10], "font_size_ratio": 0.025, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 6}
+        {
+          "role": "headline",
+          "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+          "box": [
+            0.05,
+            0.04,
+            0.62,
+            0.15
+          ],
+          "font_size_ratio": 0.052,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "none",
+          "background_color": "#FAF6EE",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "sku_badge",
+          "text": "3 Л",
+          "box": [
+            0.78,
+            0.05,
+            0.17,
+            0.1
+          ],
+          "font_size_ratio": 0.056,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "pill",
+          "background_color": "#FFB000",
+          "accent_style": "none",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "specification",
+          "text": "14,5 × 14,5 × 12 СМ",
+          "box": [
+            0.7,
+            0.17,
+            0.25,
+            0.07
+          ],
+          "font_size_ratio": 0.023,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 3
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.05,
+            0.85,
+            0.28,
+            0.1
+          ],
+          "font_size_ratio": 0.024,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 4
+        },
+        {
+          "role": "benefit",
+          "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.36,
+            0.85,
+            0.37,
+            0.1
+          ],
+          "font_size_ratio": 0.021,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 5
+        },
+        {
+          "role": "notice",
+          "text": "1 ШТ.",
+          "box": [
+            0.77,
+            0.85,
+            0.18,
+            0.1
+          ],
+          "font_size_ratio": 0.025,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 6
+        }
       ]
     },
     {
@@ -433,22 +557,146 @@
         "product_scale_percent": 62,
         "product_position": "центр с лёгким смещением вправо",
         "background": "светлый интерьер холодильника с видимой глубиной длинной полки",
-        "palette": ["#FAF6EE", "#182027", "#B8692B", "#FFB000"],
+        "palette": [
+          "#FAF6EE",
+          "#182027",
+          "#B8692B",
+          "#FFB000"
+        ],
         "lighting": "мягкий боковой свет подчёркивает длину и прозрачные стенки без искусственного свечения",
         "typography": "редакционный графитовый заголовок и компактный янтарный маркер варианта",
         "iconography": "небольшие отметки подтверждают корпус, крышку, ручку и одну единицу",
-        "information_hierarchy": ["назначение", "объём 5 л", "размер длинного SKU", "видимые свойства"],
+        "information_hierarchy": [
+          "назначение",
+          "объём 5 л",
+          "размер длинного SKU",
+          "видимые свойства"
+        ],
         "negative_space": "верхняя четверть свободна, нижняя полоса не закрывает ручку",
         "value_signal": "чистая полка, понятная длина товара и сдержанная типографика создают ощущение организованного хранения",
         "slot_differentiation": "главная карточка длинного низкого SKU отличается формой и ракурсом от квадратного и высокого вариантов"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА", "box": [0.05, 0.04, 0.62, 0.15], "font_size_ratio": 0.052, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "none", "background_color": "#FAF6EE", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "sku_badge", "text": "5 Л", "box": [0.78, 0.05, 0.17, 0.10], "font_size_ratio": 0.056, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "pill", "background_color": "#FFB000", "accent_style": "none", "align": "center", "vertical_align": "middle", "priority": 2},
-        {"role": "specification", "text": "29 × 15,5 × 12 СМ", "box": [0.70, 0.17, 0.25, 0.07], "font_size_ratio": 0.023, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "underline", "align": "center", "vertical_align": "middle", "priority": 3},
-        {"role": "benefit", "text": "ПРОЗРАЧНЫЙ КОРПУС", "box": [0.05, 0.85, 0.28, 0.10], "font_size_ratio": 0.024, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 4},
-        {"role": "benefit", "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА", "box": [0.36, 0.85, 0.37, 0.10], "font_size_ratio": 0.021, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 5},
-        {"role": "notice", "text": "1 ШТ.", "box": [0.77, 0.85, 0.18, 0.10], "font_size_ratio": 0.025, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 6}
+        {
+          "role": "headline",
+          "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+          "box": [
+            0.05,
+            0.04,
+            0.62,
+            0.15
+          ],
+          "font_size_ratio": 0.052,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "none",
+          "background_color": "#FAF6EE",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "sku_badge",
+          "text": "5 Л",
+          "box": [
+            0.78,
+            0.05,
+            0.17,
+            0.1
+          ],
+          "font_size_ratio": 0.056,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "pill",
+          "background_color": "#FFB000",
+          "accent_style": "none",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "specification",
+          "text": "29 × 15,5 × 12 СМ",
+          "box": [
+            0.7,
+            0.17,
+            0.25,
+            0.07
+          ],
+          "font_size_ratio": 0.023,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 3
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.05,
+            0.85,
+            0.28,
+            0.1
+          ],
+          "font_size_ratio": 0.024,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 4
+        },
+        {
+          "role": "benefit",
+          "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.36,
+            0.85,
+            0.37,
+            0.1
+          ],
+          "font_size_ratio": 0.021,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 5
+        },
+        {
+          "role": "notice",
+          "text": "1 ШТ.",
+          "box": [
+            0.77,
+            0.85,
+            0.18,
+            0.1
+          ],
+          "font_size_ratio": 0.025,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 6
+        }
       ]
     },
     {
@@ -492,22 +740,146 @@
         "product_scale_percent": 64,
         "product_position": "центр ниже середины",
         "background": "глубокая нижняя полка холодильника без других похожих контейнеров",
-        "palette": ["#FAF6EE", "#182027", "#B8692B", "#FFB000"],
+        "palette": [
+          "#FAF6EE",
+          "#182027",
+          "#B8692B",
+          "#FFB000"
+        ],
         "lighting": "мягкий верхне-боковой свет подчёркивает высокие прозрачные стенки",
         "typography": "графитовый заголовок и компактные точные характеристики с янтарным акцентом",
         "iconography": "три небольшие отметки для подтверждённых особенностей и количества",
-        "information_hierarchy": ["назначение", "объём 6 л", "увеличенная высота", "общие свойства"],
+        "information_hierarchy": [
+          "назначение",
+          "объём 6 л",
+          "увеличенная высота",
+          "общие свойства"
+        ],
         "negative_space": "верхняя четверть и нижняя безопасная полоса не пересекают корпус и ручку",
         "value_signal": "выраженная глубина сцены, точный ракурс и чистые материалы показывают вместительность без дешёвых эффектов",
         "slot_differentiation": "единственная главная карточка высокого SKU с низким ракурсом; не повторяет плоскую подачу варианта 5 л"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА", "box": [0.05, 0.04, 0.62, 0.15], "font_size_ratio": 0.052, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "none", "background_color": "#FAF6EE", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "sku_badge", "text": "6 Л", "box": [0.78, 0.05, 0.17, 0.10], "font_size_ratio": 0.056, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "pill", "background_color": "#FFB000", "accent_style": "none", "align": "center", "vertical_align": "middle", "priority": 2},
-        {"role": "specification", "text": "29 × 15,5 × 15,5 СМ", "box": [0.69, 0.17, 0.26, 0.07], "font_size_ratio": 0.022, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "underline", "align": "center", "vertical_align": "middle", "priority": 3},
-        {"role": "benefit", "text": "ПРОЗРАЧНЫЙ КОРПУС", "box": [0.05, 0.85, 0.28, 0.10], "font_size_ratio": 0.024, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 4},
-        {"role": "benefit", "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА", "box": [0.36, 0.85, 0.37, 0.10], "font_size_ratio": 0.021, "font_weight": "bold", "text_color": "#182027", "accent_color": "#B8692B", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 5},
-        {"role": "notice", "text": "1 ШТ.", "box": [0.77, 0.85, 0.18, 0.10], "font_size_ratio": 0.025, "font_weight": "bold", "text_color": "#182027", "accent_color": "#FFB000", "background_style": "translucent", "background_color": "#FAF6EE", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 6}
+        {
+          "role": "headline",
+          "text": "ОРГАНАЙЗЕР ДЛЯ ХОЛОДИЛЬНИКА",
+          "box": [
+            0.05,
+            0.04,
+            0.62,
+            0.15
+          ],
+          "font_size_ratio": 0.052,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "none",
+          "background_color": "#FAF6EE",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "sku_badge",
+          "text": "6 Л",
+          "box": [
+            0.78,
+            0.05,
+            0.17,
+            0.1
+          ],
+          "font_size_ratio": 0.056,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "pill",
+          "background_color": "#FFB000",
+          "accent_style": "none",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "specification",
+          "text": "29 × 15,5 × 15,5 СМ",
+          "box": [
+            0.69,
+            0.17,
+            0.26,
+            0.07
+          ],
+          "font_size_ratio": 0.022,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 3
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.05,
+            0.85,
+            0.28,
+            0.1
+          ],
+          "font_size_ratio": 0.024,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 4
+        },
+        {
+          "role": "benefit",
+          "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.36,
+            0.85,
+            0.37,
+            0.1
+          ],
+          "font_size_ratio": 0.021,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#B8692B",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 5
+        },
+        {
+          "role": "notice",
+          "text": "1 ШТ.",
+          "box": [
+            0.77,
+            0.85,
+            0.18,
+            0.1
+          ],
+          "font_size_ratio": 0.025,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#FFB000",
+          "background_style": "translucent",
+          "background_color": "#FAF6EE",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 6
+        }
       ]
     }
   ],
@@ -546,19 +918,85 @@
         "product_scale_percent": 52,
         "product_position": "правый нижний сектор",
         "background": "чистая широкая полка холодильника с небольшим количеством продуктов",
-        "palette": ["#F4F1E8", "#21352A", "#182027", "#D8A43A"],
+        "palette": [
+          "#F4F1E8",
+          "#21352A",
+          "#182027",
+          "#D8A43A"
+        ],
         "lighting": "естественный свет холодильника с мягкими тенями и ясной прозрачностью",
         "typography": "контрастный тёмно-зелёный заголовок и компактные графитовые выгоды",
         "iconography": "две простые отметки порядка без декоративных карточек",
-        "information_hierarchy": ["порядок", "видимость содержимого", "разделение по зонам"],
+        "information_hierarchy": [
+          "порядок",
+          "видимость содержимого",
+          "разделение по зонам"
+        ],
         "negative_space": "левая треть оставлена спокойной для текста, товар не перекрывается",
         "value_signal": "реальный организованный результат и чистая композиция выглядят полезнее универсального рекламного плаката",
         "slot_differentiation": "единственная общая обзорная сцена порядка; остальные детали показывают конструкцию, отдельные SKU или выбор"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ПОРЯДОК В ХОЛОДИЛЬНИКЕ", "box": [0.05, 0.06, 0.48, 0.15], "font_size_ratio": 0.05, "font_weight": "bold", "text_color": "#21352A", "accent_color": "#D8A43A", "background_style": "none", "background_color": "#F4F1E8", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "benefit", "text": "СОДЕРЖИМОЕ ВИДНО СРАЗУ", "box": [0.05, 0.27, 0.38, 0.12], "font_size_ratio": 0.028, "font_weight": "bold", "text_color": "#182027", "accent_color": "#21352A", "background_style": "none", "background_color": "#F4F1E8", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 2},
-        {"role": "benefit", "text": "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ", "box": [0.05, 0.43, 0.40, 0.13], "font_size_ratio": 0.026, "font_weight": "bold", "text_color": "#182027", "accent_color": "#D8A43A", "background_style": "none", "background_color": "#F4F1E8", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 3}
+        {
+          "role": "headline",
+          "text": "ПОРЯДОК В ХОЛОДИЛЬНИКЕ",
+          "box": [
+            0.05,
+            0.06,
+            0.48,
+            0.15
+          ],
+          "font_size_ratio": 0.05,
+          "font_weight": "bold",
+          "text_color": "#21352A",
+          "accent_color": "#D8A43A",
+          "background_style": "none",
+          "background_color": "#F4F1E8",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "benefit",
+          "text": "СОДЕРЖИМОЕ ВИДНО СРАЗУ",
+          "box": [
+            0.05,
+            0.27,
+            0.38,
+            0.12
+          ],
+          "font_size_ratio": 0.028,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#21352A",
+          "background_style": "none",
+          "background_color": "#F4F1E8",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ",
+          "box": [
+            0.05,
+            0.43,
+            0.4,
+            0.13
+          ],
+          "font_size_ratio": 0.026,
+          "font_weight": "bold",
+          "text_color": "#182027",
+          "accent_color": "#D8A43A",
+          "background_style": "none",
+          "background_color": "#F4F1E8",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 3
+        }
       ]
     },
     {
@@ -596,19 +1034,85 @@
         "product_scale_percent": 68,
         "product_position": "правый центр и верх",
         "background": "мягко размытый холодильник без других контейнеров",
-        "palette": ["#EEF2ED", "#24452F", "#17211B", "#CFAE62"],
+        "palette": [
+          "#EEF2ED",
+          "#24452F",
+          "#17211B",
+          "#CFAE62"
+        ],
         "lighting": "боковой контровой свет показывает прозрачную кромку без чрезмерных бликов",
         "typography": "узкая вертикальная колонка тёмного текста с зелёными акцентами",
         "iconography": "тонкие линии-указатели к видимой крышке и стенке",
-        "information_hierarchy": ["плотное закрытие", "меньше смешивания запахов", "прозрачность"],
+        "information_hierarchy": [
+          "плотное закрытие",
+          "меньше смешивания запахов",
+          "прозрачность"
+        ],
         "negative_space": "левая треть и небольшие зоны около кромки свободны для доказательных подписей",
         "value_signal": "макро-деталь реального изделия и спокойные точные подписи создают доверие",
         "slot_differentiation": "единственный макрокадр крышки; не повторяет общий вид и крупный план передней ручки"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО", "box": [0.05, 0.07, 0.39, 0.16], "font_size_ratio": 0.041, "font_weight": "bold", "text_color": "#17211B", "accent_color": "#24452F", "background_style": "translucent", "background_color": "#EEF2ED", "accent_style": "left_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "benefit", "text": "МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ", "box": [0.05, 0.31, 0.37, 0.14], "font_size_ratio": 0.027, "font_weight": "bold", "text_color": "#17211B", "accent_color": "#CFAE62", "background_style": "none", "background_color": "#EEF2ED", "accent_style": "left_line", "align": "left", "vertical_align": "middle", "priority": 2},
-        {"role": "callout", "text": "ПРОЗРАЧНАЯ КОНСТРУКЦИЯ", "box": [0.05, 0.51, 0.35, 0.12], "font_size_ratio": 0.026, "font_weight": "bold", "text_color": "#17211B", "accent_color": "#24452F", "background_style": "none", "background_color": "#EEF2ED", "accent_style": "underline", "align": "left", "vertical_align": "middle", "priority": 3}
+        {
+          "role": "headline",
+          "text": "КРЫШКА ЗАКРЫВАЕТСЯ ПЛОТНО",
+          "box": [
+            0.05,
+            0.07,
+            0.39,
+            0.16
+          ],
+          "font_size_ratio": 0.041,
+          "font_weight": "bold",
+          "text_color": "#17211B",
+          "accent_color": "#24452F",
+          "background_style": "translucent",
+          "background_color": "#EEF2ED",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "benefit",
+          "text": "МЕНЬШЕ СМЕШИВАНИЯ ЗАПАХОВ",
+          "box": [
+            0.05,
+            0.31,
+            0.37,
+            0.14
+          ],
+          "font_size_ratio": 0.027,
+          "font_weight": "bold",
+          "text_color": "#17211B",
+          "accent_color": "#CFAE62",
+          "background_style": "none",
+          "background_color": "#EEF2ED",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "callout",
+          "text": "ПРОЗРАЧНАЯ КОНСТРУКЦИЯ",
+          "box": [
+            0.05,
+            0.51,
+            0.35,
+            0.12
+          ],
+          "font_size_ratio": 0.026,
+          "font_weight": "bold",
+          "text_color": "#17211B",
+          "accent_color": "#24452F",
+          "background_style": "none",
+          "background_color": "#EEF2ED",
+          "accent_style": "underline",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 3
+        }
       ]
     },
     {
@@ -645,18 +1149,65 @@
         "product_scale_percent": 72,
         "product_position": "центр",
         "background": "нейтральная светлая полка с минимальной глубиной",
-        "palette": ["#F6F7F4", "#1F3340", "#3F7B63", "#D2A94A"],
+        "palette": [
+          "#F6F7F4",
+          "#1F3340",
+          "#3F7B63",
+          "#D2A94A"
+        ],
         "lighting": "ровный мягкий свет подчёркивает прозрачные грани и форму ручки",
         "typography": "короткие графитовые подписи с тонкими зелёными направляющими",
         "iconography": "линии и точки привязаны только к реально видимым частям",
-        "information_hierarchy": ["прозрачный корпус", "крышка", "передняя ручка"],
+        "information_hierarchy": [
+          "прозрачный корпус",
+          "крышка",
+          "передняя ручка"
+        ],
         "negative_space": "небольшие угловые зоны оставлены для подписей вокруг центрального товара",
         "value_signal": "точная предметная съёмка и ясная привязка текста к деталям создают инженерное доверие",
         "slot_differentiation": "единственная анатомическая схема фронтальной конструкции; не повторяет макро крышки"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ПРОЗРАЧНЫЙ КОРПУС", "box": [0.06, 0.05, 0.45, 0.11], "font_size_ratio": 0.044, "font_weight": "bold", "text_color": "#1F3340", "accent_color": "#D2A94A", "background_style": "none", "background_color": "#F6F7F4", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "callout", "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА", "box": [0.56, 0.18, 0.37, 0.12], "font_size_ratio": 0.026, "font_weight": "bold", "text_color": "#1F3340", "accent_color": "#3F7B63", "background_style": "translucent", "background_color": "#F6F7F4", "accent_style": "left_line", "align": "left", "vertical_align": "middle", "priority": 2}
+        {
+          "role": "headline",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.06,
+            0.05,
+            0.45,
+            0.11
+          ],
+          "font_size_ratio": 0.044,
+          "font_weight": "bold",
+          "text_color": "#1F3340",
+          "accent_color": "#D2A94A",
+          "background_style": "none",
+          "background_color": "#F6F7F4",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "callout",
+          "text": "КРЫШКА И ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.56,
+            0.18,
+            0.37,
+            0.12
+          ],
+          "font_size_ratio": 0.026,
+          "font_weight": "bold",
+          "text_color": "#1F3340",
+          "accent_color": "#3F7B63",
+          "background_style": "translucent",
+          "background_color": "#F6F7F4",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        }
       ]
     },
     {
@@ -693,19 +1244,85 @@
         "product_scale_percent": 74,
         "product_position": "правый центр с макро-фрагментом кромки",
         "background": "матовый молочно-бежевый фон без холодильной сцены и без карточек интерфейса",
-        "palette": ["#F4EFE5", "#1E2B31", "#A86632", "#789285"],
+        "palette": [
+          "#F4EFE5",
+          "#1E2B31",
+          "#A86632",
+          "#789285"
+        ],
         "lighting": "жёсткий боковой контур и мягкий заполняющий свет подчёркивают прозрачность без искусственного свечения",
         "typography": "контрастный графитовый гротеск с одним медным акцентом PP5",
         "iconography": "никаких сертификатов; только тонкие линии к реально видимым элементам",
-        "information_hierarchy": ["материал PP5", "прозрачность", "назначение для хранения продуктов"],
+        "information_hierarchy": [
+          "материал PP5",
+          "прозрачность",
+          "назначение для хранения продуктов"
+        ],
         "negative_space": "левая треть остаётся ровной и светлой для трёх коротких сообщений",
         "value_signal": "макро-фактура, чистые блики и отсутствие лишних обещаний создают ощущение добротного товара",
         "slot_differentiation": "единственный материал-доказательство без холодильной сцены, размеров и SKU-различий"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "МАТЕРИАЛ PP5", "box": [0.05, 0.08, 0.38, 0.13], "font_size_ratio": 0.050, "font_weight": "bold", "text_color": "#1E2B31", "accent_color": "#A86632", "background_style": "none", "background_color": "#F4EFE5", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "callout", "text": "ПРОЗРАЧНЫЙ КОРПУС", "box": [0.05, 0.31, 0.36, 0.11], "font_size_ratio": 0.027, "font_weight": "bold", "text_color": "#1E2B31", "accent_color": "#789285", "background_style": "none", "background_color": "#F4EFE5", "accent_style": "left_line", "align": "left", "vertical_align": "middle", "priority": 2},
-        {"role": "benefit", "text": "ДЛЯ ХРАНЕНИЯ ПРОДУКТОВ", "box": [0.05, 0.48, 0.38, 0.12], "font_size_ratio": 0.026, "font_weight": "bold", "text_color": "#1E2B31", "accent_color": "#A86632", "background_style": "translucent", "background_color": "#F4EFE5", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 3}
+        {
+          "role": "headline",
+          "text": "МАТЕРИАЛ PP5",
+          "box": [
+            0.05,
+            0.08,
+            0.38,
+            0.13
+          ],
+          "font_size_ratio": 0.05,
+          "font_weight": "bold",
+          "text_color": "#1E2B31",
+          "accent_color": "#A86632",
+          "background_style": "none",
+          "background_color": "#F4EFE5",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "callout",
+          "text": "ПРОЗРАЧНЫЙ КОРПУС",
+          "box": [
+            0.05,
+            0.31,
+            0.36,
+            0.11
+          ],
+          "font_size_ratio": 0.027,
+          "font_weight": "bold",
+          "text_color": "#1E2B31",
+          "accent_color": "#789285",
+          "background_style": "none",
+          "background_color": "#F4EFE5",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "benefit",
+          "text": "ДЛЯ ХРАНЕНИЯ ПРОДУКТОВ",
+          "box": [
+            0.05,
+            0.48,
+            0.38,
+            0.12
+          ],
+          "font_size_ratio": 0.026,
+          "font_weight": "bold",
+          "text_color": "#1E2B31",
+          "accent_color": "#A86632",
+          "background_style": "translucent",
+          "background_color": "#F4EFE5",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 3
+        }
       ]
     },
     {
@@ -741,18 +1358,64 @@
         "product_scale_percent": 63,
         "product_position": "центр с направлением движения к нижнему краю",
         "background": "реальная полка холодильника с мягко размытыми закрытыми упаковками на заднем плане",
-        "palette": ["#EEF2EF", "#20362E", "#4F8069", "#D39A3E"],
+        "palette": [
+          "#EEF2EF",
+          "#20362E",
+          "#4F8069",
+          "#D39A3E"
+        ],
         "lighting": "контрастный холодный свет холодильника и тёплый отблеск на передней ручке",
         "typography": "короткий тёмно-зелёный заголовок и одна крупная поясняющая строка",
         "iconography": "одна тонкая стрелка движения, без руки и универсальных пиктограмм",
-        "information_hierarchy": ["передняя ручка", "выдвижение с полки"],
+        "information_hierarchy": [
+          "передняя ручка",
+          "выдвижение с полки"
+        ],
         "negative_space": "верхняя левая четверть свободна, ручка и передний край ничем не перекрыты",
         "value_signal": "реальное действие, крупная ручка и чистый холодильник показывают удобство без рекламной абстракции",
         "slot_differentiation": "единственная динамичная сцена движения; нет объёма, размера или SKU-специфичного обещания"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ПЕРЕДНЯЯ РУЧКА", "box": [0.05, 0.07, 0.43, 0.12], "font_size_ratio": 0.049, "font_weight": "bold", "text_color": "#20362E", "accent_color": "#D39A3E", "background_style": "none", "background_color": "#EEF2EF", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "benefit", "text": "УДОБНО ВЫДВИГАТЬ С ПОЛКИ", "box": [0.05, 0.25, 0.42, 0.13], "font_size_ratio": 0.029, "font_weight": "bold", "text_color": "#20362E", "accent_color": "#4F8069", "background_style": "translucent", "background_color": "#EEF2EF", "accent_style": "left_line", "align": "left", "vertical_align": "middle", "priority": 2}
+        {
+          "role": "headline",
+          "text": "ПЕРЕДНЯЯ РУЧКА",
+          "box": [
+            0.05,
+            0.07,
+            0.43,
+            0.12
+          ],
+          "font_size_ratio": 0.049,
+          "font_weight": "bold",
+          "text_color": "#20362E",
+          "accent_color": "#D39A3E",
+          "background_style": "none",
+          "background_color": "#EEF2EF",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "benefit",
+          "text": "УДОБНО ВЫДВИГАТЬ С ПОЛКИ",
+          "box": [
+            0.05,
+            0.25,
+            0.42,
+            0.13
+          ],
+          "font_size_ratio": 0.029,
+          "font_weight": "bold",
+          "text_color": "#20362E",
+          "accent_color": "#4F8069",
+          "background_style": "translucent",
+          "background_color": "#EEF2EF",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        }
       ]
     },
     {
@@ -788,18 +1451,65 @@
         "product_scale_percent": 57,
         "product_position": "левый центр с глубиной полки вправо",
         "background": "светлый современный холодильник с контролируемой глубиной и без визуального беспорядка",
-        "palette": ["#EFF3EE", "#1F342C", "#78944D", "#D9A03D", "#A63F3D"],
+        "palette": [
+          "#EFF3EE",
+          "#1F342C",
+          "#78944D",
+          "#D9A03D",
+          "#A63F3D"
+        ],
         "lighting": "яркий направленный свет с глубокими тенями на заднем плане создаёт высокий контраст без неона",
         "typography": "крупный тёмно-зелёный заголовок и две короткие строки с янтарными акцентами",
         "iconography": "две тонкие разделительные отметки зон, не имитирующие внутренние перегородки",
-        "information_hierarchy": ["варианты продуктов", "разделение по зонам"],
+        "information_hierarchy": [
+          "варианты продуктов",
+          "разделение по зонам"
+        ],
         "negative_space": "верхняя правая треть спокойная и контрастная; товар и продукты не перекрываются текстом",
         "value_signal": "насыщенные натуральные цвета, реальная глубина холодильника и ясная организация создают дорогой живой кадр",
         "slot_differentiation": "единственная широкая продуктовая сцена с цветовым контрастом; не сообщает конкретный объём или размер"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК", "box": [0.55, 0.07, 0.39, 0.17], "font_size_ratio": 0.038, "font_weight": "bold", "text_color": "#1F342C", "accent_color": "#D9A03D", "background_style": "none", "background_color": "#EFF3EE", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "benefit", "text": "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ", "box": [0.58, 0.33, 0.35, 0.13], "font_size_ratio": 0.027, "font_weight": "bold", "text_color": "#1F342C", "accent_color": "#78944D", "background_style": "translucent", "background_color": "#EFF3EE", "accent_style": "left_line", "align": "left", "vertical_align": "middle", "priority": 2}
+        {
+          "role": "headline",
+          "text": "ДЛЯ ОВОЩЕЙ, ФРУКТОВ И УПАКОВОК",
+          "box": [
+            0.55,
+            0.07,
+            0.39,
+            0.17
+          ],
+          "font_size_ratio": 0.038,
+          "font_weight": "bold",
+          "text_color": "#1F342C",
+          "accent_color": "#D9A03D",
+          "background_style": "none",
+          "background_color": "#EFF3EE",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "benefit",
+          "text": "ПРОДУКТЫ РАЗДЕЛЕНЫ ПО ЗОНАМ",
+          "box": [
+            0.58,
+            0.33,
+            0.35,
+            0.13
+          ],
+          "font_size_ratio": 0.027,
+          "font_weight": "bold",
+          "text_color": "#1F342C",
+          "accent_color": "#78944D",
+          "background_style": "translucent",
+          "background_color": "#EFF3EE",
+          "accent_style": "left_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        }
       ]
     },
     {
@@ -840,20 +1550,106 @@
         "product_scale_percent": 70,
         "product_position": "три равных сектора по центру",
         "background": "молочно-серый доказательный фон с тонкими разделителями",
-        "palette": ["#F5F3EE", "#202A30", "#496A57", "#D29A3A"],
+        "palette": [
+          "#F5F3EE",
+          "#202A30",
+          "#496A57",
+          "#D29A3A"
+        ],
         "lighting": "исходный свет реальных SKU выравнивается без перерисовки товара",
         "typography": "крупный общий заголовок и три одинаково оформленные спецификации",
         "iconography": "без иконок; только реальные товары, подписи и тонкая сравнительная сетка",
-        "information_hierarchy": ["выбор объёма", "3 л и размер", "5 л и размер", "6 л и размер"],
+        "information_hierarchy": [
+          "выбор объёма",
+          "3 л и размер",
+          "5 л и размер",
+          "6 л и размер"
+        ],
         "negative_space": "верхняя полоса и зоны под каждым SKU оставлены для текста",
         "value_signal": "честное сравнение реальных вариантов снижает риск ошибки и возврата",
         "slot_differentiation": "единственная многотоварная схема; не используется как стиль других изображений"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ВЫБЕРИТЕ ПОДХОДЯЩИЙ ОБЪЁМ", "box": [0.08, 0.05, 0.84, 0.12], "font_size_ratio": 0.046, "font_weight": "bold", "text_color": "#202A30", "accent_color": "#D29A3A", "background_style": "none", "background_color": "#F5F3EE", "accent_style": "top_line", "align": "center", "vertical_align": "middle", "priority": 1},
-        {"role": "specification", "text": "3 л: 14,5 × 14,5 × 12 см", "box": [0.04, 0.80, 0.29, 0.10], "font_size_ratio": 0.022, "font_weight": "bold", "text_color": "#202A30", "accent_color": "#496A57", "background_style": "translucent", "background_color": "#F5F3EE", "accent_style": "underline", "align": "center", "vertical_align": "middle", "priority": 2},
-        {"role": "specification", "text": "5 л: 29 × 15,5 × 12 см", "box": [0.355, 0.80, 0.29, 0.10], "font_size_ratio": 0.022, "font_weight": "bold", "text_color": "#202A30", "accent_color": "#D29A3A", "background_style": "translucent", "background_color": "#F5F3EE", "accent_style": "underline", "align": "center", "vertical_align": "middle", "priority": 3},
-        {"role": "specification", "text": "6 л: 29 × 15,5 × 15,5 см", "box": [0.67, 0.80, 0.29, 0.10], "font_size_ratio": 0.021, "font_weight": "bold", "text_color": "#202A30", "accent_color": "#496A57", "background_style": "translucent", "background_color": "#F5F3EE", "accent_style": "underline", "align": "center", "vertical_align": "middle", "priority": 4}
+        {
+          "role": "headline",
+          "text": "ВЫБЕРИТЕ ПОДХОДЯЩИЙ ОБЪЁМ",
+          "box": [
+            0.08,
+            0.05,
+            0.84,
+            0.12
+          ],
+          "font_size_ratio": 0.046,
+          "font_weight": "bold",
+          "text_color": "#202A30",
+          "accent_color": "#D29A3A",
+          "background_style": "none",
+          "background_color": "#F5F3EE",
+          "accent_style": "top_line",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "specification",
+          "text": "3 л: 14,5 × 14,5 × 12 см",
+          "box": [
+            0.04,
+            0.8,
+            0.29,
+            0.1
+          ],
+          "font_size_ratio": 0.022,
+          "font_weight": "bold",
+          "text_color": "#202A30",
+          "accent_color": "#496A57",
+          "background_style": "translucent",
+          "background_color": "#F5F3EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "specification",
+          "text": "5 л: 29 × 15,5 × 12 см",
+          "box": [
+            0.355,
+            0.8,
+            0.29,
+            0.1
+          ],
+          "font_size_ratio": 0.022,
+          "font_weight": "bold",
+          "text_color": "#202A30",
+          "accent_color": "#D29A3A",
+          "background_style": "translucent",
+          "background_color": "#F5F3EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 3
+        },
+        {
+          "role": "specification",
+          "text": "6 л: 29 × 15,5 × 15,5 см",
+          "box": [
+            0.67,
+            0.8,
+            0.29,
+            0.1
+          ],
+          "font_size_ratio": 0.021,
+          "font_weight": "bold",
+          "text_color": "#202A30",
+          "accent_color": "#496A57",
+          "background_style": "translucent",
+          "background_color": "#F5F3EE",
+          "accent_style": "underline",
+          "align": "center",
+          "vertical_align": "middle",
+          "priority": 4
+        }
       ]
     },
     {
@@ -889,19 +1685,85 @@
         "product_scale_percent": 43,
         "product_position": "левый нижний сектор",
         "background": "светлый нейтральный холодильник с большой спокойной областью справа",
-        "palette": ["#F4F2EC", "#253039", "#536D5A", "#C9983E"],
+        "palette": [
+          "#F4F2EC",
+          "#253039",
+          "#536D5A",
+          "#C9983E"
+        ],
         "lighting": "ровный доверительный свет без рекламного блеска",
         "typography": "спокойная тёмная информационная колонка и золотистые отметки",
         "iconography": "две одинаковые небольшие отметки проверки",
-        "information_hierarchy": ["перед покупкой", "один товар", "проверка размера"],
+        "information_hierarchy": [
+          "перед покупкой",
+          "один товар",
+          "проверка размера"
+        ],
         "negative_space": "правая половина оставлена для информационной колонки",
         "value_signal": "ясные условия заказа и отсутствие скрытой комплектации создают доверие",
         "slot_differentiation": "единственная финальная памятка с одним товаром и вертикальным списком"
       },
       "overlay_plan": [
-        {"role": "headline", "text": "ПЕРЕД ПОКУПКОЙ", "box": [0.53, 0.08, 0.40, 0.12], "font_size_ratio": 0.047, "font_weight": "bold", "text_color": "#253039", "accent_color": "#C9983E", "background_style": "none", "background_color": "#F4F2EC", "accent_style": "top_line", "align": "left", "vertical_align": "middle", "priority": 1},
-        {"role": "notice", "text": "1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ", "box": [0.53, 0.29, 0.40, 0.12], "font_size_ratio": 0.027, "font_weight": "bold", "text_color": "#253039", "accent_color": "#536D5A", "background_style": "none", "background_color": "#F4F2EC", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 2},
-        {"role": "notice", "text": "ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ", "box": [0.53, 0.46, 0.41, 0.14], "font_size_ratio": 0.025, "font_weight": "bold", "text_color": "#253039", "accent_color": "#C9983E", "background_style": "none", "background_color": "#F4F2EC", "accent_style": "check_icon", "align": "left", "vertical_align": "middle", "priority": 3}
+        {
+          "role": "headline",
+          "text": "ПЕРЕД ПОКУПКОЙ",
+          "box": [
+            0.53,
+            0.08,
+            0.4,
+            0.12
+          ],
+          "font_size_ratio": 0.047,
+          "font_weight": "bold",
+          "text_color": "#253039",
+          "accent_color": "#C9983E",
+          "background_style": "none",
+          "background_color": "#F4F2EC",
+          "accent_style": "top_line",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 1
+        },
+        {
+          "role": "notice",
+          "text": "1 ОРГАНАЙЗЕР В КОМПЛЕКТЕ",
+          "box": [
+            0.53,
+            0.29,
+            0.4,
+            0.12
+          ],
+          "font_size_ratio": 0.027,
+          "font_weight": "bold",
+          "text_color": "#253039",
+          "accent_color": "#536D5A",
+          "background_style": "none",
+          "background_color": "#F4F2EC",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 2
+        },
+        {
+          "role": "notice",
+          "text": "ПРОВЕРЬТЕ РАЗМЕР ПЕРЕД ПОКУПКОЙ",
+          "box": [
+            0.53,
+            0.46,
+            0.41,
+            0.14
+          ],
+          "font_size_ratio": 0.025,
+          "font_weight": "bold",
+          "text_color": "#253039",
+          "accent_color": "#C9983E",
+          "background_style": "none",
+          "background_color": "#F4F2EC",
+          "accent_style": "check_icon",
+          "align": "left",
+          "vertical_align": "middle",
+          "priority": 3
+        }
       ]
     }
   ],
@@ -917,13 +1779,55 @@
   ],
   "decision_trace": {
     "steps": [
-      {"name": "product_evidence", "status": "completed", "evidence": ["Три изолированные SKU-фотографии и подтверждённые размеры"]},
-      {"name": "buyer_analysis", "status": "completed", "evidence": ["Покупателю нужно понять назначение, объём, форму и размещение на полке"]},
-      {"name": "selling_point_ranking", "status": "completed", "evidence": ["Прозрачность, крышка, передняя ручка и выбор размера ранжированы до изображения"]},
-      {"name": "image_sequence", "status": "completed", "evidence": ["Три SKU-главные и восемь общих деталей выстроены по пути покупки; индивидуальные размеры повторяются только в сравнении"]},
-      {"name": "per_slot_art_direction", "status": "completed", "evidence": ["Каждый из одиннадцати слотов получил собственную сцену, композицию и ценностный сигнал"]},
-      {"name": "prompt_completion", "status": "completed", "evidence": ["Все подсказки привязаны к реальным SKU и запрещают изменение структуры"]},
-      {"name": "pre_generation_validation", "status": "completed", "evidence": ["Первая попытка отклонена из-за трёх SKU-специфичных деталей; во второй все общие детали исключают индивидуальные объёмы и размеры вне единственного сравнения"]}
+      {
+        "name": "product_evidence",
+        "status": "completed",
+        "evidence": [
+          "Три изолированные SKU-фотографии и подтверждённые размеры"
+        ]
+      },
+      {
+        "name": "buyer_analysis",
+        "status": "completed",
+        "evidence": [
+          "Покупателю нужно понять назначение, объём, форму и размещение на полке"
+        ]
+      },
+      {
+        "name": "selling_point_ranking",
+        "status": "completed",
+        "evidence": [
+          "Прозрачность, крышка, передняя ручка и выбор размера ранжированы до изображения"
+        ]
+      },
+      {
+        "name": "image_sequence",
+        "status": "completed",
+        "evidence": [
+          "Три SKU-главные и восемь общих деталей выстроены по пути покупки; индивидуальные размеры повторяются только в сравнении"
+        ]
+      },
+      {
+        "name": "per_slot_art_direction",
+        "status": "completed",
+        "evidence": [
+          "Каждый из одиннадцати слотов получил собственную сцену, композицию и ценностный сигнал"
+        ]
+      },
+      {
+        "name": "prompt_completion",
+        "status": "completed",
+        "evidence": [
+          "Все подсказки привязаны к реальным SKU и запрещают изменение структуры"
+        ]
+      },
+      {
+        "name": "pre_generation_validation",
+        "status": "completed",
+        "evidence": [
+          "Первая попытка отклонена из-за трёх SKU-специфичных деталей; во второй все общие детали исключают индивидуальные объёмы и размеры вне единственного сравнения"
+        ]
+      }
     ],
     "compliance_status": "PASS",
     "violations": [],

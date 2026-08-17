@@ -15,25 +15,20 @@ from typing import Any, Dict, Iterable, Optional
 
 ROOT = Path(__file__).resolve().parents[1]
 IMAGE_DIRECTORIES = (
-    "input/main-images",
-    "input/sku-images",
-    "input/detail-images",
     "output/generated-backgrounds",
     "output/generated-images",
-    "output/images",
-    "output/main-images",
-    "output/detail-images",
+    "output/rejected-generation",
     "output/ozon-image-staging",
 )
 REMOTE_PROCESSING_STATES = {"PENDING_REMOTE", "OZON_MODERATION", "UPLOADING"}
 LOCAL_PROCESSING_STATES = {
     "QUEUED", "RUNNING", "PROCESSING", "CATEGORY_MATCHED",
-    "CONTENT_GENERATED", "IMAGES_GENERATED", "PRICED", "OZON_READY",
+    "CONTENT_GENERATED", "IMAGES_GENERATED", "PRICED", "WAITING_MANUAL_REVIEW",
 }
 SUCCESS_STATES = {"UPLOADED", "ACTIVE"}
-FAILED_STATES = {"FAILED", "FAILED_HARD_BLOCKER"}
+FAILED_STATES = {"FAILED", "NEEDS_ATTENTION"}
 IMAGE_DEPENDENT_STEPS = {
-    "image_generation", "image_qc", "marketplace_content",
+    "image_generation", "image_qc",
     "field_completion", "ozon_upload",
 }
 

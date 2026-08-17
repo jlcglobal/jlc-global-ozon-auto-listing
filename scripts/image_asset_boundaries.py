@@ -66,7 +66,7 @@ def asset_contract_path(product_dir: Path) -> Path:
     return product_dir / "output/image-asset-contract.json"
 
 
-def contract_enabled(product_dir: Path) -> bool:
+def asset_boundaries_enabled(product_dir: Path) -> bool:
     return asset_contract_path(product_dir).is_file()
 
 
@@ -74,7 +74,7 @@ def write_asset_contract(
     product_dir: Path,
     *,
     collection_id: str,
-    manual_confirmation_required: bool = True,
+    manual_confirmation_required: bool = False,
 ) -> Dict[str, Any]:
     """Create the versioned marker used by new products and upload gating."""
     import json

@@ -2,13 +2,13 @@
 
 ## 目的
 
-Product Positioning 位于产品事实分析和风格选择之间，用于回答“这个商品应该怎么卖”，但不能改变或补造商品事实。
+Product Positioning 位于产品事实分析和电商设计之间，用于回答“这个商品应该怎么卖”，但不能改变或补造商品事实。
 
 ```text
 source.json
   -> product-analysis.json
   -> product-positioning.json
-  -> style-profile.json
+  -> ozon-ecommerce-design.json
   -> image-plan.json
   -> Codex 内置图片生成
 ```
@@ -34,6 +34,6 @@ source.json
 
 ## 下游约束
 
-- Style Selector 必须把 `product-positioning.json` 加入来源并读取目标客户、购买动机、痛点和核心销售角度。
-- Image Planner 的 `buyer_analysis` 必须优先使用 Product Positioning，而不是重新自由推断。
-- Image Generator 提示包必须包含商品定位，但仍受真实性规则和风格模板约束。
+- `$ozon-ecommerce-designer` 必须把 `product-positioning.json` 加入来源并读取目标客户、购买动机、痛点和核心销售角度。
+- Image Planner 只执行 `ozon-ecommerce-design.json` 中已经落盘的图片销售方案，不重新自由推断。
+- Image Generator 提示包必须包含商品定位，但仍受真实性规则和确定性版式约束。

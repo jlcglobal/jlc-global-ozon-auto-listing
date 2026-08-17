@@ -1,0 +1,44 @@
+{
+  "product_id": "P000880",
+  "versions": [
+    {
+      "version": 1,
+      "saved_at": "2026-07-18T22:21:08+08:00",
+      "modified_by": "studio-owner",
+      "changed_fields": [
+        "sku_overrides"
+      ],
+      "before": {
+        "sku_overrides": null
+      },
+      "after": {
+        "sku_overrides": {
+          "SKU-A": {
+            "color": "синий",
+            "specification_text": "ручной тест A",
+            "product_weight_g": 777,
+            "product_length_mm": 155,
+            "product_width_mm": 88,
+            "product_height_mm": 66
+          }
+        }
+      }
+    },
+    {
+      "version": 2,
+      "saved_at": "2026-07-18T22:25:11+08:00",
+      "modified_by": "studio-owner",
+      "changed_fields": [],
+      "before": {},
+      "after": {}
+    },
+    {
+      "version": 3,
+      "saved_at": "2026-07-18T22:26:54+08:00",
+      "modified_by": "studio-owner",
+      "changed_fields": [],
+      "before": {},
+      "after": {}
+    }
+  ]
+}

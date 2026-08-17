@@ -4,11 +4,12 @@
   "title": "Ozon Russian Product Description",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "product_id", "source_refs", "description_ru", "sections", "section_evidence", "unknown_fields", "warnings"],
+  "required": ["product_id", "description_ru"],
   "properties": {
     "schema_version": { "type": "string", "const": "1.0.0" },
     "product_id": { "type": "string", "pattern": "^P[0-9]{6}$" },
     "source_refs": { "type": "array", "minItems": 3, "uniqueItems": true, "items": { "type": "string", "minLength": 1 } },
+    "source_ref": { "type": "string", "minLength": 1 },
     "description_ru": { "type": "string", "minLength": 80 },
     "sections": {
       "type": "object",

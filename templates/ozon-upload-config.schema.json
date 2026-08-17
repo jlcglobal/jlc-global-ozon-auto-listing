@@ -54,7 +54,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["attribute_id", "value", "source"],
       "properties": {
-        "attribute_id": {"type": "integer", "minimum": 1},
+        "attribute_id": {"type": "integer", "minimum": 0},
         "value": {"type": "string", "minLength": 1},
         "source": {"type": "string", "minLength": 1}
       }
@@ -73,9 +73,9 @@
       "type": "object", "additionalProperties": false,
       "required": ["length_mm", "width_mm", "height_mm", "source", "source_status"],
       "properties": {
-        "length_mm": {"type": "number", "exclusiveMinimum": 0},
-        "width_mm": {"type": "number", "exclusiveMinimum": 0},
-        "height_mm": {"type": "number", "exclusiveMinimum": 0},
+        "length_mm": {"type": "integer", "exclusiveMinimum": 0},
+        "width_mm": {"type": "integer", "exclusiveMinimum": 0},
+        "height_mm": {"type": "integer", "exclusiveMinimum": 0},
         "source": {"type": "string", "minLength": 1},
         "source_status": {"type": "string", "enum": ["confirmed_source", "estimated_human_approved", "estimated_system"]}
       }
@@ -84,7 +84,7 @@
       "type": "object", "additionalProperties": false,
       "required": ["value_g", "source", "source_status"],
       "properties": {
-        "value_g": {"type": "number", "exclusiveMinimum": 0},
+        "value_g": {"type": "integer", "minimum": 1},
         "source": {"type": "string", "minLength": 1},
         "source_status": {"type": "string", "enum": ["confirmed_source", "estimated_human_approved", "estimated_system"]}
       }

@@ -1,6 +1,6 @@
 {
   "name": "crossborder-1688-manual-collector",
-  "version": "0.4.12",
+  "version": "0.4.25",
   "private": true,
   "scripts": {
     "build": "tsc -p tsconfig.json"

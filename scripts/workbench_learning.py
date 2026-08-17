@@ -50,7 +50,9 @@ def category_identity(product_dir: Path) -> Dict[str, Any]:
 def _copy_base(product_dir: Path) -> Dict[str, Any]:
     copy = load(product_dir / "output/copy-ru.json")
     tags = load(product_dir / "output/ozon-tags.json")
-    attrs = load(product_dir / "output/ozon-attributes.json")
+    attrs = load(product_dir / "output/ozon-attributes-final.json")
+    if not attrs.get("attributes"):
+        attrs = load(product_dir / "output/ozon-attributes.json")
     pricing = load(product_dir / "output/pricing-result.json")
     return {
         "title_ru": copy.get("title_ru"),
@@ -150,16 +152,23 @@ def record_image_feedback(
     threshold: int = DEFAULT_THRESHOLD,
 ) -> Dict[str, Any]:
     """Learn visual preferences from concrete keep/regenerate/replace/reorder/delete actions."""
-    profile = load(product_dir / "output/style-profile.json")
+    design = load(product_dir / "output/ozon-ecommerce-design.json")
     analysis = load(product_dir / "output/product-analysis.json")
-    style_family = str(profile.get("style_family") or "unknown")
+    visual_system = design.get("visual_system") if isinstance(design.get("visual_system"), dict) else {}
+    image_strategy = design.get("image_strategy") if isinstance(design.get("image_strategy"), dict) else {}
+    visual_family = str(
+        visual_system.get("visual_family")
+        or image_strategy.get("visual_family")
+        or design.get("visual_family")
+        or "unknown"
+    )
     image_type = str(item.get("image_type") or item.get("type") or "unknown")
     product_type = str(analysis.get("product_type") or "unknown")
-    key = f"{style_family}:{image_type}"
+    key = f"{visual_family}:{image_type}"
     path = root / "cache/image-feedback.json"
     data = load(path, {"schema_version": LEARNING_VERSION, "groups": {}, "events": []})
     group = data.setdefault("groups", {}).setdefault(key, {
-        "style_family": style_family,
+        "visual_family": visual_family,
         "image_type": image_type,
         "actions": {},
         "product_ids": [],
@@ -206,11 +215,19 @@ def materialize_active_experience(root: Path, product_dir: Path, created_at: str
         if value.get("active") is True
     ]
     image_data = load(root / "cache/image-feedback.json", {"groups": {}})
-    current_style = str(load(product_dir / "output/style-profile.json").get("style_family") or "unknown")
+    design = load(product_dir / "output/ozon-ecommerce-design.json")
+    visual_system = design.get("visual_system") if isinstance(design.get("visual_system"), dict) else {}
+    image_strategy = design.get("image_strategy") if isinstance(design.get("image_strategy"), dict) else {}
+    current_visual_family = str(
+        visual_system.get("visual_family")
+        or image_strategy.get("visual_family")
+        or design.get("visual_family")
+        or "unknown"
+    )
     active_image_preferences = [
         {"group_key": key, **value}
         for key, value in (image_data.get("groups") or {}).items()
-        if value.get("active") is True and str(value.get("style_family") or "unknown") == current_style
+        if value.get("active") is True and str(value.get("visual_family") or "unknown") == current_visual_family
     ]
     payload = {
         "schema_version": LEARNING_VERSION,

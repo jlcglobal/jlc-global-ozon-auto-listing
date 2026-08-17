@@ -30,23 +30,31 @@ class OzonWriteClient:
     IMPORT_INFO_ENDPOINT = "/v1/product/import/info"
     PRODUCT_INFO_LIST_ENDPOINT = "/v3/product/info/list"
     PRODUCT_ATTRIBUTES_ENDPOINT = "/v4/product/info/attributes"
+    PRODUCT_ATTRIBUTES_UPDATE_ENDPOINT = "/v1/product/attributes/update"
     ALLOWED_ENDPOINTS = frozenset({
         PRODUCT_IMPORT_ENDPOINT,
         IMPORT_INFO_ENDPOINT,
         PRODUCT_INFO_LIST_ENDPOINT,
         PRODUCT_ATTRIBUTES_ENDPOINT,
+        PRODUCT_ATTRIBUTES_UPDATE_ENDPOINT,
     })
 
-    def __init__(self, config: OzonConfig, transport: Optional[Transport] = None):
+    def __init__(
+        self,
+        config: OzonConfig,
+        transport: Optional[Transport] = None,
+        allow_production_write: bool = False,
+    ):
         if config.base_url.rstrip("/") != self.BASE_URL:
             raise ValueError("Ozon base URL is fixed")
         self.config = config
         self._transport = transport
+        self._allow_production_write = allow_production_write
 
     def _post_json(self, endpoint: str, payload: Dict[str, Any]) -> Dict[str, Any]:
         if endpoint not in self.ALLOWED_ENDPOINTS:
             raise ValueError(f"Endpoint is not in the uploader allowlist: {endpoint}")
-        if os.environ.get("UPLOAD_MODE", "dry-run").strip().lower() != "production":
+        if not self._allow_production_write and os.environ.get("UPLOAD_MODE", "dry-run").strip().lower() != "production":
             raise ValueError(
                 "Ozon uploader network calls require UPLOAD_MODE=production"
             )
@@ -105,3 +113,6 @@ class OzonWriteClient:
             "limit": 100,
             "sort_dir": "ASC",
         })
+
+    def update_product_attributes(self, items: list[Dict[str, Any]]) -> Dict[str, Any]:
+        return self._post_json(self.PRODUCT_ATTRIBUTES_UPDATE_ENDPOINT, {"items": items})

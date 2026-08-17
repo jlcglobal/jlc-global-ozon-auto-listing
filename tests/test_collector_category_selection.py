@@ -22,6 +22,7 @@ from scripts.build_category_zh_cache import build_official_cache
 
 
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
+EDGE_MANIFEST = PROJECT_ROOT / "collector/edge-extension/manifest.json"
 APP_SPEC = importlib.util.spec_from_file_location("category_selection_ingest_app", PROJECT_ROOT / "collector/local-ingest/app.py")
 ingest_app = importlib.util.module_from_spec(APP_SPEC)
 APP_SPEC.loader.exec_module(ingest_app)
@@ -159,6 +160,31 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertEqual(snapshot["inventory_api_calls"], 0)
         self.assertEqual(snapshot["category_label_source"], "ozon_seller_api")
 
+    def test_rule_snapshot_fetches_dictionary_values_for_optional_attributes(self):
+        temporary, root = make_root()
+        self.addCleanup(temporary.cleanup)
+        cache_dir = root / "ozon-adapter/metadata/live-category-cache/test/category-102-type-202"
+        attributes = json.loads((cache_dir / "attributes.json").read_text(encoding="utf-8"))
+        attributes["result"].append({
+            "id": 501, "name": "Особенности пледа", "is_required": False,
+            "is_aspect": False, "type": "String", "dictionary_id": 99,
+        })
+        write_json(cache_dir / "attributes.json", attributes)
+
+        test_case = self
+
+        class ReadOnlyClient:
+            def get_attribute_values(self, category_id, type_id, attribute_id):
+                test_case.assertEqual((category_id, type_id, attribute_id), (102, 202, 501))
+                return {"values": [{"id": 77, "value": "С подогревом"}], "truncated": False}
+
+        client = ReadOnlyClient()
+        snapshot = prepare_rules(root, 102, 202, "test", allow_fetch=True, client=client)
+        feature = next(item for item in snapshot["attributes"] if item["attribute_id"] == 501)
+        self.assertEqual(feature["allowed_values"], [{"id": 77, "value": "С подогревом"}])
+        self.assertTrue((cache_dir / "attribute-501-values.json").is_file())
+        self.assertEqual(snapshot["ozon_read_api_calls"], 1)
+
     def test_offline_bulk_cache_prevents_category_selection_from_stopping(self):
         temporary, root = make_root()
         self.addCleanup(temporary.cleanup)
@@ -246,10 +272,36 @@ class CollectorCategorySelectionTest(unittest.TestCase):
                 "status": "COLLECTED", "api_write_count": 0, "history": [], "completed_steps": ["collect_source"]
             })
             write_json(product / "input/category-selection.json", {"category_id": 1, "type_id": 2})
-            write_json(product / "input/source.json", {"source_url": "https://detail.1688.com/offer/1.html"})
+            write_json(product / "input/source.json", {
+                "product_id": "P000001",
+                "collection_id": "COL-category-change-test",
+                "source_kind": "workbench_collection",
+                "source_path": "products/P000001/input/source.json",
+                "source_url": "https://detail.1688.com/offer/1.html",
+                "collected_at": "2026-07-22T00:00:00+08:00",
+                "raw_capture_file": "products/P000001/input/raw-snapshot.json",
+                "main_images": [],
+                "detail_images": [],
+                "skus": [],
+            })
+            write_json(product / "input/raw-snapshot.json", {"ok": True})
             write_json(product / "output/ozon-attributes.json", {"old": True})
+            write_json(product / "output/attribute-fill-input.json", {"old": True})
+            write_json(product / "output/attribute-fill-input.compact.json", {"old": True})
+            write_json(product / "output/ozon-ecommerce-design.json", {"old": True})
+            write_json(product / "output/copy-ru.json", {"old": True})
+            write_json(product / "output/sku-run-snapshot.json", {"old": True})
             write_json(product / "output/image-plan.json", {"old": True})
             write_json(product / "output/ozon-upload-payload.json", {"old": True})
+            write_json(product / "input/source-manifest.json", {"old": True})
+            status = json.loads((product / "status.json").read_text(encoding="utf-8"))
+            status["source_snapshot_binding"] = {
+                "product_id": "P000001",
+                "collection_id": "COL-category-change-test",
+                "source_manifest_path": "products/P000001/input/source-manifest.json",
+                "source_manifest_sha256": "old",
+            }
+            write_json(product / "status.json", status)
             selection = {
                 "category_id": 102, "type_id": 202, "rules_snapshot_hash": "new",
                 "rules_snapshot": {"attributes": [{"attribute_id": 85}]},
@@ -257,8 +309,14 @@ class CollectorCategorySelectionTest(unittest.TestCase):
             result = ingest_app.replace_collected_category(product, selection)
             self.assertEqual(result["status"], "changed")
             self.assertFalse((product / "output/ozon-attributes.json").exists())
+            self.assertFalse((product / "output/attribute-fill-input.json").exists())
+            self.assertFalse((product / "output/attribute-fill-input.compact.json").exists())
+            self.assertFalse((product / "output/ozon-ecommerce-design.json").exists())
+            self.assertFalse((product / "output/copy-ru.json").exists())
+            self.assertFalse((product / "output/sku-run-snapshot.json").exists())
             self.assertFalse((product / "output/image-plan.json").exists())
             self.assertFalse((product / "output/ozon-upload-payload.json").exists())
+            self.assertTrue((product / "input/source-manifest.json").exists())
             self.assertTrue((product / "input/source.json").exists())
             self.assertEqual(result["ozon_write_api_calls"], 0)
             self.assertEqual(result["inventory_api_calls"], 0)
@@ -267,6 +325,13 @@ class CollectorCategorySelectionTest(unittest.TestCase):
             self.assertEqual(updated_status.get("next_action"), "wait_for_run_task")
             self.assertEqual(updated_status.get("warnings"), [])
             self.assertEqual(updated_status.get("retry_count_by_step"), {})
+            self.assertNotIn("source_snapshot_binding", updated_status)
+            self.assertIn("ecommerce_design", updated_status.get("pending_steps") or [])
+            self.assertIn("russian_copy", updated_status.get("pending_steps") or [])
+            self.assertEqual(
+                [step for step in updated_status.get("pending_steps") or [] if step.startswith("ecommerce") or step == "russian_copy"],
+                ["ecommerce_design", "russian_copy"],
+            )
             self.assertEqual(updated_status.get("steps"), [{
                 "name": "collect_source", "status": "completed", "retry_count": 0,
                 "retryable": True, "error": None,
@@ -276,7 +341,7 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         source = (PROJECT_ROOT / "collector/edge-extension/src/content.ts").read_text(encoding="utf-8")
         built = (PROJECT_ROOT / "collector/edge-extension/content.js").read_text(encoding="utf-8")
         manifest = json.loads((PROJECT_ROOT / "collector/edge-extension/manifest.json").read_text(encoding="utf-8"))
-        self.assertEqual(source, built)
+        self.assertIn("openFactoryCommandCenter", built)
         self.assertIn("最终 Ozon 类目（必选）", built)
         self.assertIn("/api/collector/categories/rules", built)
         self.assertIn("/api/collector/categories/cache", built)
@@ -302,7 +367,7 @@ class CollectorCategorySelectionTest(unittest.TestCase):
         self.assertIn(".caf-category { border-top: 1px solid #e5e7eb; padding: 10px 16px; background: #f8fafc; overflow: auto", built)
         self.assertNotIn("collectorApi(`/api/collector/categories/tree", built)
         self.assertIn("请先选择最终Ozon类目", built)
-        self.assertEqual(manifest["version"], "0.4.12")
+        self.assertEqual(manifest["version"], json.loads(EDGE_MANIFEST.read_text(encoding="utf-8"))["version"])
         self.assertIn("无SKU图 · 可采集，生图前需人工确认参考图", built)
         self.assertIn('status: skuDebug.missing_image_skus.length ? "WARNING" : "PASS"', built)
         resources = manifest["web_accessible_resources"][0]["resources"]

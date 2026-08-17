@@ -208,6 +208,7 @@ def check_runtime(results: List[Dict[str, Any]]) -> None:
     product_errors: List[str] = []
     products = 0
     uploaded = 0
+    handed_off = 0
     archived = 0
     pre_contract: List[str] = []
     for product_dir in sorted((ROOT / "products").glob("P[0-9][0-9][0-9][0-9][0-9][0-9]")):
@@ -220,6 +221,11 @@ def check_runtime(results: List[Dict[str, Any]]) -> None:
             pre_contract.append(product_dir.name)
         status = load_json(product_dir / "status.json")
         state = str(status.get("status") or "unknown")
+        if state == "HANDED_OFF_TO_OZON":
+            handed_off += 1
+            ozon = status.get("ozon") or {}
+            if str(ozon.get("task_id") or "unknown") == "unknown":
+                product_errors.append(f"{product_dir.name}: 已交接Ozon但缺少task_id")
         if state == "UPLOADED":
             uploaded += 1
             ozon = status.get("ozon") or {}
@@ -227,7 +233,7 @@ def check_runtime(results: List[Dict[str, Any]]) -> None:
                 product_errors.append(f"{product_dir.name}: 已上传但Ozon标识不完整")
         if state == "PENDING_REMOTE" and str((status.get("ozon") or {}).get("task_id") or "unknown") == "unknown":
             product_errors.append(f"{product_dir.name}: 状态待回查但缺少task_id")
-        if int(status.get("api_write_count") or 0) > 0 and state not in {"PENDING_REMOTE", "OZON_MODERATION", "UPLOADED", "ACTIVE", "FAILED_HARD_BLOCKER"}:
+        if int(status.get("api_write_count") or 0) > 0 and state not in {"PENDING_REMOTE", "OZON_MODERATION", "HANDED_OFF_TO_OZON", "UPLOADED", "ACTIVE", "NEEDS_ATTENTION"}:
             product_errors.append(f"{product_dir.name}: 已发生写请求但状态不明确")
     stale_workers = []
     worker_dir = ROOT / "logs/product-workers"
@@ -243,7 +249,7 @@ def check_runtime(results: List[Dict[str, Any]]) -> None:
     add(
         results, "runtime_products", not product_errors,
         "活跃商品状态与Ozon异步标识一致" if not product_errors else "活跃商品运行状态存在矛盾",
-        products=products, uploaded=uploaded, archived=archived,
+        products=products, uploaded=uploaded, handed_off=handed_off, archived=archived,
         pre_contract=pre_contract, issues=product_errors,
     )
     add(
@@ -264,6 +270,7 @@ def validate_products(results: List[Dict[str, Any]]) -> None:
     failures = []
     count = 0
     archived = []
+    handed_off = []
     pre_contract = []
     for product_dir in sorted((ROOT / "products").glob("P[0-9][0-9][0-9][0-9][0-9][0-9]")):
         contract_class = product_contract_class(product_dir)
@@ -272,6 +279,10 @@ def validate_products(results: List[Dict[str, Any]]) -> None:
             continue
         if contract_class == "pre_contract":
             pre_contract.append(product_dir.name)
+            continue
+        status = load_json(product_dir / "status.json")
+        if str(status.get("status") or "unknown") == "HANDED_OFF_TO_OZON":
+            handed_off.append(product_dir.name)
             continue
         count += 1
         completed = subprocess.run(
@@ -283,13 +294,15 @@ def validate_products(results: List[Dict[str, Any]]) -> None:
     add(
         results, "product_validation", not failures,
         "当前契约商品全部通过结构校验" if not failures else "当前契约商品结构校验失败",
-        checked=count, products=failures, archived=archived, pre_contract=pre_contract,
+        checked=count, products=failures, archived=archived, handed_off=handed_off, pre_contract=pre_contract,
     )
 
 
 def run_full_tests(results: List[Dict[str, Any]]) -> None:
+    python_bin = ROOT / ".venv/bin/python"
+    executable = str(python_bin) if python_bin.is_file() else sys.executable
     completed = subprocess.run(
-        [sys.executable, "-m", "unittest", "discover", "-s", "tests"],
+        [executable, "-m", "unittest", "discover", "-s", "tests", "-p", "test*.py"],
         cwd=ROOT, capture_output=True, text=True, check=False,
     )
     output = f"{completed.stdout}\n{completed.stderr}"
@@ -300,6 +313,8 @@ def run_full_tests(results: List[Dict[str, Any]]) -> None:
         "完整自动测试通过" if completed.returncode == 0 else "完整自动测试失败",
         tests=int(match.group(1)) if match else None,
         skipped=int(skipped.group(1)) if skipped else 0,
+        python=executable,
+        output_tail=output[-4000:] if completed.returncode else "",
     )
 
 

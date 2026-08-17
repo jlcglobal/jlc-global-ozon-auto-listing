@@ -64,16 +64,48 @@ def _cache_hours() -> float:
 
 
 def _cached_response(path: Path | None, loader: Any, max_age_hours: float) -> Dict[str, Any]:
+    # Product runs never expire verified Ozon metadata merely because the file
+    # is old. Refreshing metadata is an explicit maintenance operation; it
+    # must not turn every listing into a chain of network dictionary calls.
     if path is not None and path.is_file():
-        age_seconds = max(0.0, time.time() - path.stat().st_mtime)
-        if age_seconds <= max_age_hours * 3600:
-            cached = load_json(path)
-            if isinstance(cached, dict):
-                return cached
+        cached = load_json(path)
+        if isinstance(cached, dict):
+            return cached
     response = loader()
     if path is not None:
         write_json_atomic(path, response)
     return response
+
+
+def _shared_dictionary_response(
+    cache_root: Path | None,
+    attribute_id: int,
+    dictionary_id: int,
+) -> Optional[Dict[str, Any]]:
+    """Find an already verified copy of the same Ozon dictionary locally."""
+    if cache_root is None or not cache_root.is_dir():
+        return None
+    pattern = f"category-*-type-*/attribute-{attribute_id}-values.json"
+    for candidate in sorted(cache_root.glob(pattern)):
+        attributes_path = candidate.parent / "attributes.json"
+        if not attributes_path.is_file():
+            continue
+        attributes = load_json(attributes_path)
+        items = attributes.get("result", []) if isinstance(attributes, dict) else []
+        definition = next(
+            (
+                value for value in items
+                if isinstance(value, dict)
+                and _positive_int(value.get("id", value.get("attribute_id"))) == attribute_id
+            ),
+            None,
+        )
+        if _positive_int((definition or {}).get("dictionary_id")) != dictionary_id:
+            continue
+        response = load_json(candidate)
+        if isinstance(response, dict):
+            return response
+    return None
 
 
 def normalize_text(value: Any) -> str:
@@ -340,6 +372,7 @@ def normalize_attribute(
     client: OzonReadOnlyClient,
     cache_root: Path | None = None,
     max_age_hours: float = 24,
+    type_value_name: str = "",
 ) -> Dict[str, Any]:
     attribute_id = _positive_int(item.get("id", item.get("attribute_id")))
     name = str(item.get("name", item.get("attribute_name", ""))).strip()
@@ -356,11 +389,35 @@ def normalize_attribute(
             cache_root / f"category-{category_id}-type-{type_id}" / f"attribute-{attribute_id}-values.json"
             if cache_root is not None else None
         )
-        page = _cached_response(
-            values_path,
-            lambda: client.get_attribute_values(category_id, type_id, attribute_id),
-            max_age_hours,
-        )
+        page = load_json(values_path) if values_path is not None and values_path.is_file() else None
+        if attribute_id == 8229 and isinstance(page, dict):
+            cached_type_ids = {
+                _positive_int(value.get("id"))
+                for value in page.get("values", [])
+                if isinstance(value, dict)
+            }
+            if type_id not in cached_type_ids:
+                page = None
+        if not isinstance(page, dict) and not bool(item.get("category_dependent", False)):
+            page = _shared_dictionary_response(cache_root, attribute_id, dictionary_id)
+        if attribute_id == 8229 and not isinstance(page, dict):
+            page = {
+                "values": [{"id": type_id, "value": type_value_name or str(type_id)}],
+                "truncated": False,
+            }
+        if isinstance(page, dict) and values_path is not None and not values_path.is_file():
+            write_json_atomic(values_path, page)
+        elif attribute_id == 8229 and isinstance(page, dict) and values_path is not None:
+            write_json_atomic(values_path, page)
+        if not isinstance(page, dict):
+            if not bool(item.get("is_required", item.get("required", False))):
+                page = {"values": [], "truncated": False}
+            else:
+                page = _cached_response(
+                    values_path,
+                    lambda: client.get_attribute_values(category_id, type_id, attribute_id),
+                    max_age_hours,
+                )
         values_truncated = page["truncated"]
         for value in page["values"]:
             value_id = _positive_int(value.get("id"))
@@ -393,7 +450,10 @@ def build_category_attributes(
     type_id = int(category["type_id"])
     items = response_items(response, OzonReadOnlyClient.CATEGORY_ATTRIBUTES_ENDPOINT)
     attributes = [
-        normalize_attribute(item, category_id, type_id, client, cache_root, max_age_hours)
+        normalize_attribute(
+            item, category_id, type_id, client, cache_root, max_age_hours,
+            str(category.get("category_name") or ""),
+        )
         for item in items
     ]
     return {
@@ -496,10 +556,21 @@ def _semantic_candidates(semantic_attributes: Dict[str, Any]) -> Dict[str, Dict[
     candidates: Dict[str, Dict[str, Any]] = {}
     if isinstance(semantic_attributes.get("attributes"), list):
         for item in semantic_attributes["attributes"]:
-            candidates[normalize_text(item["name_ru"])] = {
-                "field_key": item["field_key"],
-                "value": item["value"],
-                "source_refs": item.get("source_refs", ["unknown"]),
+            if not isinstance(item, dict):
+                continue
+            # Newer cached Ozon mappings use ``attribute_name``/``source``;
+            # older semantic plans use ``name_ru``/``source_refs``.  Both are
+            # valid inputs to a read-only metadata refresh.
+            name_ru = str(item.get("name_ru") or item.get("attribute_name") or "").strip()
+            if not name_ru:
+                continue
+            source_refs = item.get("source_refs")
+            if not source_refs:
+                source_refs = [item.get("source") or "unknown"]
+            candidates[normalize_text(name_ru)] = {
+                "field_key": item.get("field_key", "unknown"),
+                "value": item.get("value", "unknown"),
+                "source_refs": source_refs,
             }
         return candidates
     for required in semantic_attributes.get("required_attributes", []):

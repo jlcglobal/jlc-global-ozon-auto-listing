@@ -63,6 +63,45 @@ def product_fixture(root: Path, name: str, category_id: int, type_id: int, requi
     return product
 
 
+def write_final_artifacts(product: Path, missing_attribute_ids: list[int]) -> None:
+    output = product / "output"
+    attributes = json.loads((output / "ozon-category-attributes.json").read_text())
+    final_attributes = []
+    for item in attributes.get("attributes", []):
+        attribute_id = int(item["attribute_id"])
+        value = "unknown" if attribute_id in missing_attribute_ids else f"value-{attribute_id}"
+        final_attributes.append({
+            "attribute_id": attribute_id,
+            "attribute_name": item["attribute_name"],
+            "required": item.get("required") is True,
+            "value": value,
+            "target_value": value,
+            "source": "compiled" if value != "unknown" else "unknown",
+        })
+    write_json(output / "attribute-fill-input.json", {
+        "product_id": product.name,
+        "category_id": attributes["category_id"],
+        "type_id": attributes["type_id"],
+    })
+    write_json(output / "ozon-attributes-final.json", {
+        "product_id": product.name,
+        "category_id": attributes["category_id"],
+        "type_id": attributes["type_id"],
+        "attributes": final_attributes,
+        "required_summary": {
+            "total": len([item for item in final_attributes if item.get("required")]),
+            "filled": len([item for item in final_attributes if item.get("required") and item.get("value") != "unknown"]),
+            "missing": len(missing_attribute_ids),
+            "missing_attribute_ids": missing_attribute_ids,
+        },
+    })
+    write_json(output / "ozon-draft.json", {
+        "product_id": product.name,
+        "skus": [{"sku_id": "real-1"}],
+        "attributes": [],
+    })
+
+
 class DynamicOzonAttributeGateTest(unittest.TestCase):
     def test_three_categories_use_their_own_required_attribute_sets(self):
         cases = (
@@ -91,10 +130,28 @@ class DynamicOzonAttributeGateTest(unittest.TestCase):
             mapped["attributes"][1]["value"] = "unknown"
             mapped["attributes"][1]["validation_status"] = "unknown"
             write_json(mapped_path, mapped)
+            write_final_artifacts(product, [64002])
             with self.assertRaisesRegex(RuntimeError, "Upload feasibility failed"):
                 upload_feasibility(product)
             result = json.loads((product / "output/upload-feasibility.json").read_text())
+            self.assertEqual(result["stage"], "final")
             self.assertEqual(result["missing_required_attribute_ids"], [64002])
+
+    def test_early_upload_feasibility_defers_compiler_fillable_required_attributes(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = product_fixture(Path(directory), "P100008", 78001, 88001, [68001, 68002])
+            mapped_path = product / "output/ozon-attributes.json"
+            mapped = json.loads(mapped_path.read_text())
+            mapped["attributes"][1]["value"] = "unknown"
+            mapped["attributes"][1]["validation_status"] = "unknown"
+            write_json(mapped_path, mapped)
+            upload_feasibility(product)
+            result = json.loads((product / "output/upload-feasibility.json").read_text())
+            self.assertEqual(result["status"], "PASS")
+            self.assertEqual(result["stage"], "early_precheck")
+            self.assertFalse(result["final_artifacts_ready"])
+            self.assertEqual(result["missing_required_attribute_ids"], [])
+            self.assertEqual(result["deferred_required_attribute_ids"], [68002])
 
     def test_category_type_mismatch_blocks_cross_product_attribute_pollution(self):
         with tempfile.TemporaryDirectory() as directory:

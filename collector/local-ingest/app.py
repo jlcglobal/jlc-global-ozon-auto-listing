@@ -1,10 +1,13 @@
 from __future__ import annotations
 
 import base64
+import copy as copy_module
 import csv
 import hashlib
+import html
 import ipaddress
 import json
+import math
 import mimetypes
 import os
 import re
@@ -20,13 +23,13 @@ import urllib.parse
 import urllib.request
 from contextlib import asynccontextmanager
 from contextvars import ContextVar
-from datetime import datetime, timezone
+from datetime import datetime, timedelta, timezone
 from pathlib import Path
-from typing import Any, Dict, Iterable, List, Optional, Tuple
+from typing import Any, Dict, Iterable, List, Optional, Sequence, Tuple
 
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, JSONResponse
+from fastapi.responses import FileResponse, JSONResponse, RedirectResponse
 from jsonschema import Draft202012Validator
 
 
@@ -34,17 +37,37 @@ ROOT = Path(__file__).resolve().parents[2]
 PRODUCTS_DIR = ROOT / "products"
 TEMPLATES_DIR = ROOT / "templates"
 STATIC_DIR = Path(__file__).resolve().parent / "static"
+COMMAND_CENTER_DIST_DIR = ROOT / "collector" / "workbench-command-center" / "dist"
+COMMAND_CENTER_VERSION = "2026-08-01-ui-state-v1"
+
+
+def project_relative(path: Path) -> str:
+    """Return a stable project-relative path across macOS /var and /private/var aliases."""
+    return str(path.resolve().relative_to(ROOT.resolve()))
+
+
 sys.path.insert(0, str(ROOT / "scripts"))
 sys.path.insert(0, str(ROOT / "pricing-engine"))
 sys.path.insert(0, str(ROOT / "market-intelligence"))
 sys.path.insert(0, str(ROOT / "finance-center"))
-from pipeline_runtime import batch_path, collected_products, create_batch, retryable_products  # noqa: E402
+sys.path.insert(0, str(ROOT / "ozon-adapter"))
+sys.path.insert(0, str(ROOT / "ozon-uploader"))
+from pipeline_runtime import (  # noqa: E402
+    PIPELINE_STEPS,
+    batch_path,
+    collected_products,
+    create_batch,
+    normalize_checkpoint,
+    reconcile_completed_artifacts,
+    retryable_products,
+)
 from image_cache_cleanup import cleanup_images  # noqa: E402
 from image_asset_boundaries import (  # noqa: E402
     accept_candidate,
+    asset_contract_path,
+    asset_boundaries_enabled,
     asset_inventory,
     classify_path,
-    contract_enabled,
     invalidate_accepted_candidate,
     reject_candidate,
     validate_accepted_manifest,
@@ -53,14 +76,22 @@ from image_asset_boundaries import (  # noqa: E402
 )
 from production_input_guard import (  # noqa: E402
     ProductionInputError,
+    sha256_file,
     validate_formal_product_input,
     validate_registered_input_file,
     write_source_manifest,
 )
 from image_source_preflight import (  # noqa: E402
+    ALLOWED_OZON_REFERENCE_IMAGE_HOST_SUFFIXES,
+    build_preflight,
     open_source_image_url,
     read_source_image_response,
     source_image_candidates,
+)
+from sku_image_bindings import (  # noqa: E402
+    available_binding_candidates,
+    load_sku_image_bindings,
+    save_sku_image_binding,
 )
 from product_deletion import deletion_marker_path, purge_local_product  # noqa: E402
 from store_publications import (  # noqa: E402
@@ -74,6 +105,7 @@ from workbench_stores import (  # noqa: E402
     delete_store,
     list_stores,
     load_registry,
+    read_secret,
     set_enabled,
     upsert_store,
     validate_store_read_only,
@@ -91,8 +123,8 @@ from workbench_operators import (  # noqa: E402
     list_operators,
     upsert_operator,
 )
-from multi_store_upload import definitely_retryable, refresh_pending_stores  # noqa: E402
-from task_database import cutover_active, product_snapshot  # noqa: E402
+from multi_store_upload import definitely_retryable, image_repair_retryable, refresh_pending_stores, variant_repair_retryable  # noqa: E402
+from task_database import cutover_active, product_snapshot, product_snapshots  # noqa: E402
 from collector_categories import (  # noqa: E402
     build_selection,
     category_tree_children,
@@ -114,16 +146,61 @@ from pricing_engine.weight_estimator import (  # noqa: E402
     estimate_product_weight,
     fit_estimated_product_weight_to_confirmed_package,
 )
-from market_intelligence import MarketEnricher, MarketStore  # noqa: E402
+from russian_color_rules import normalize_russian_color_name  # noqa: E402
+from russian_seo_rules import canonical_hashtag  # noqa: E402
+from market_intelligence import (  # noqa: E402
+    MarketEnricher,
+    MarketStore,
+    OzonAnalyticsApiError,
+    OzonAnalyticsPermissionError,
+    OzonAnalyticsReadOnlyClient,
+    build_search_visibility_plan,
+    build_traffic_performance_plan,
+    collect_seller_search_visibility,
+    normalize_seerfar_keyword_rows,
+    normalize_yandex_wordstat_rows,
+    parse_ozon_product_query_text,
+    parse_yandex_wordstat_text,
+)
+from ozon_adapter.config import OzonConfig  # noqa: E402
+from ozon_uploader.client import OzonUploadApiError, OzonWriteClient  # noqa: E402
 from finance_center import FinanceCenter  # noqa: E402
 
 SCHEMA_VERSION = "1.0.0"
+OZON_HASHTAG_ATTRIBUTE_ID = 23171
+OZON_ANNOTATION_ATTRIBUTE_ID = 4191
+OZON_RICH_CONTENT_ATTRIBUTE_ID = 11254
+OZON_PRODUCT_COLOR_ATTRIBUTE_ID = 10096
+OZON_COLOR_NAME_ATTRIBUTE_ID = 10097
+OZON_COUNTRY_ATTRIBUTE_ID = 4389
+OZON_CHINA_DICTIONARY_VALUE_ID = 90296
+OZON_SUBJECT_TAG_MAX_BODY_LENGTH = 30
+SEARCH_VISIBILITY_BLOCKED_TAG_FRAGMENTS = {
+    "apple", "iphone", "ipad", "magsafe", "samsung", "xiaomi", "redmi", "huawei", "honor",
+    "lenovo", "asus", "acer", "bosch", "philips", "dyson", "polaris", "vitek", "bork",
+    "tohatsu", "nibbi", "dozawa", "collonil", "zenden", "ingco", "mindeo", "pantasy",
+    "astroboy", "pirateflag", "happyhair", "natureza", "civitarese", "evoque", "felps",
+    "copacabana", "leomax", "homeelement", "ксиоми", "сяоми", "хуавей", "айфон",
+    "самсунг", "поларис", "витек", "борк", "нибби", "дозава", "зенден", "ингко",
+    "миндео", "пантаси", "астробой", "леомакс", "скидк", "распродаж", "акци",
+    "промокод", "дешев", "недорог", "лучший", "лучш", "топ", "хит", "премиум",
+    "premium", "оригинал", "original", "официаль", "сертифик", "гарант", "возврат",
+    "доставка", "магазин", "чат", "отзыв", "рекомендуем", "идеальн", "профессиональн",
+    "качественн", "долговечн", "выгодн", "бренд",
+}
+SEARCH_VISIBILITY_INTRO_RISK_FRAGMENTS = {
+    "скидк", "распродаж", "акци", "промокод", "дешев", "лучший", "лучш", "топ",
+    "хит", "премиум", "premium", "оригинал", "original", "официаль", "сертифик",
+    "гарант", "возврат", "доставка", "магазин", "чат", "отзыв", "рекомендуем",
+    "бренд", "сервис", "импортер", "пишите", "обратиться", "негатив", "проблем",
+}
 MAX_SELECTED_SKUS_PER_PRODUCT = 10
 ID_LOCK = threading.Lock()
 BATCH_PID_PATH = ROOT / "logs/batch-runner.pid"
 BATCH_LOG_PATH = ROOT / "logs/batch-runner.log"
 CURRENT_BATCH_PATH = ROOT / "logs/current-batch.json"
 WORKBENCH_RUN_QUEUE_PATH = ROOT / "logs/workbench-run-queue.json"
+OZON_REFERENCE_TASKS_FILENAME = "ozon-reference-tasks.json"
 SAFE_STOP_REQUEST_PATH = ROOT / "logs/safe-stop-request.json"
 WORKBENCH_STOP_REQUEST_PATH = ROOT / "runtime/workbench-stop-requested"
 REMOTE_STATUS_WORKER_PID_PATH = ROOT / "logs/remote-status-worker.pid"
@@ -136,29 +213,50 @@ MARKET_DB_PATH = ROOT / "market-intelligence/market.sqlite"
 MARKET_CATEGORIES_PATH = ROOT / "market-intelligence/config/categories.json"
 MARKET_TREND_REPORT_PATH = ROOT / "market-intelligence/reports/latest.json"
 MARKET_IMAGE_CACHE_DIR = ROOT / "runtime/market-intelligence/images"
+MARKET_SEARCH_VISIBILITY_PLAN_PATH = ROOT / "market-intelligence/reports/search-visibility-plan-latest.json"
+MARKET_SEARCH_VISIBILITY_PLAN_CACHE_DIR = ROOT / "market-intelligence/reports/search-visibility-plans"
+MARKET_SEARCH_VISIBILITY_UPLOAD_DIR = ROOT / "market-intelligence/reports/search-visibility-uploads"
+MARKET_YANDEX_WORDSTAT_IMPORT_DIR = ROOT / "market-intelligence/reports/yandex-wordstat-imports"
+MARKET_OZON_PRODUCT_QUERY_IMPORT_DIR = ROOT / "market-intelligence/reports/ozon-product-query-imports"
+MARKET_SEERFAR_KEYWORD_IMPORT_DIR = ROOT / "market-intelligence/reports/seerfar-keyword-imports"
+MARKET_SEERFAR_KEYWORD_JOBS_PATH = ROOT / "runtime/seerfar-keyword-jobs.json"
+MARKET_TRAFFIC_PERFORMANCE_PLAN_PATH = ROOT / "market-intelligence/reports/traffic-performance-plan-latest.json"
 FINANCE_CENTER = FinanceCenter(ROOT)
 FINANCE_SCHEDULER_LOCK = threading.Lock()
 FINANCE_SCHEDULER_STARTED = False
 IMAGE_CLEANUP_THREAD_LOCK = threading.Lock()
 BATCH_QUEUE_LOCK = threading.RLock()
+SEERFAR_KEYWORD_JOB_LOCK = threading.RLock()
 BATCH_DISPATCHER_LOCK = threading.Lock()
 BATCH_DISPATCHER_WAKE = threading.Event()
 BATCH_DISPATCHER_STARTED = False
+OZON_REFERENCE_DISPATCHER_LOCK = threading.Lock()
+OZON_REFERENCE_DISPATCHER_WAKE = threading.Event()
+OZON_REFERENCE_DISPATCHER_STARTED = False
+OZON_REFERENCE_CAPTURE_LIMIT = 2
+OZON_REFERENCE_AI_DESIGN_LIMIT = 1
+OZON_REFERENCE_IMAGE_WORKER_LOCK = threading.Lock()
+OZON_REFERENCE_IMAGE_WORKERS: set[str] = set()
 DEVICE_ACTIVITY_LOCK = threading.Lock()
 DEFAULT_LAN_CIDRS = (
     "127.0.0.0/8", "::1/128", "192.168.0.0/16", "10.0.0.0/8", "172.16.0.0/12",
 )
 DEFAULT_WORKBENCH_SETTINGS = {
     "schema_version": "1.0.0",
-    "auto_mode_enabled": False,
-    "default_review_mode": "manual",
+    # A Run Task click is the only production authorization.  Once the user
+    # has selected SKU/category/stores, the local pipeline must keep going
+    # through the image channel and the selected-store submission itself.
+    "auto_mode_enabled": True,
+    "default_review_mode": "automatic",
     "learning_threshold": 2,
     "fixed_cny_to_rub": 12.0,
     "rub_rounding": 10,
 }
 TERMINAL_PUBLICATION_STATES = {
-    "CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON",
+    "CREATED", "UPLOADED", "ACTIVE",
 }
+REMOTE_PENDING_PUBLICATION_STATES = {"SUBMITTED", "UPLOADING", "PENDING_REMOTE", "OZON_MODERATION", "HANDED_OFF_TO_OZON"}
+ATTENTION_STATES = {"NEEDS_ATTENTION", "FAILED"}
 
 CURRENT_OPERATOR: ContextVar[Optional[Dict[str, Any]]] = ContextVar("current_workbench_operator", default=None)
 
@@ -171,7 +269,9 @@ async def app_lifespan(_app: FastAPI):
     # startup still performs recovery and starts both local schedulers.
     if "pytest" not in sys.modules:
         recover_interrupted_batch()
+        reconcile_priority_upload_queue()
         ensure_batch_dispatcher()
+        ensure_ozon_reference_dispatcher()
         ensure_finance_scheduler()
     yield
 
@@ -308,7 +408,9 @@ def apply_shared_price_tier(payload: Dict[str, Any]) -> Optional[float]:
 
 def atomic_write_json(path: Path, data: Dict[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
-    temp_path = path.with_suffix(path.suffix + ".tmp")
+    # Dispatchers can save the same queue concurrently. A shared `.tmp` name
+    # lets one writer replace the other's file before it performs its rename.
+    temp_path = path.with_name(f".{path.name}.{os.getpid()}.{threading.get_ident()}.tmp")
     with temp_path.open("w", encoding="utf-8") as handle:
         json.dump(data, handle, ensure_ascii=False, indent=2)
         handle.write("\n")
@@ -381,6 +483,23 @@ def is_loopback_client(client_host: str) -> bool:
         return ipaddress.ip_address(host).is_loopback
     except ValueError:
         return False
+
+
+def request_from_host_machine(request: Request, client_host: str) -> bool:
+    """Recognize the host when it opens the service through its own LAN IP."""
+    if is_loopback_client(client_host):
+        return True
+    server = request.scope.get("server")
+    if not isinstance(server, (tuple, list)) or not server:
+        return False
+    client_value = str(client_host or "").split("%", 1)[0]
+    server_value = str(server[0] or "").split("%", 1)[0]
+    try:
+        client_address = ipaddress.ip_address(client_value)
+        server_address = ipaddress.ip_address(server_value)
+    except ValueError:
+        return False
+    return not server_address.is_unspecified and client_address == server_address
 
 
 def _safe_device_value(value: Any, *, limit: int = 80) -> str:
@@ -466,12 +585,127 @@ def unknown_text(value: Any) -> str:
 
 def is_generated_sku_id(value: Any) -> bool:
     text = safe_text(value) or ""
-    return bool(re.match(r"^(script-sku|dom-sku|dom-combo|combo-sku)-", text, re.IGNORECASE))
+    return bool(re.match(r"^(script-sku|dom-sku|dom-combo|combo-sku|local-spec-variant-offer-key)-", text, re.IGNORECASE))
 
 
 def has_acceptable_sku_id(value: Any) -> bool:
     text = safe_text(value)
-    return bool(text and text != "unknown" and not is_generated_sku_id(text))
+    return bool(text and text.lower() != "unknown" and not is_generated_sku_id(text))
+
+
+def is_single_specification_sku(sku: Any) -> bool:
+    """Accept the one deterministic offer key only when 1688 exposes no variants."""
+    return (
+        isinstance(sku, dict)
+        and str(sku.get("sku_identity_type") or "") == "single_specification"
+        and bool(re.fullmatch(
+            r"(?:local-spec-single-offer-key|single-spec)-\d{6,}",
+            str(sku.get("sku_id") or ""),
+        ))
+    )
+
+
+def is_visible_variant_sku(sku: Any) -> bool:
+    """Accept a page-visible variant only when the option and its own image were captured."""
+    if not isinstance(sku, dict) or str(sku.get("sku_identity_type") or "") != "visible_variant":
+        return False
+    if not re.fullmatch(r"local-spec-variant-offer-key-\d{6,}-[A-Za-z0-9]+", str(sku.get("sku_id") or "")):
+        return False
+    if not safe_text(sku.get("image_url")) or str(sku.get("image_url")) == "unknown":
+        return False
+    option_values = sku.get("option_values")
+    source_data = sku.get("source_data") if isinstance(sku.get("source_data"), dict) else {}
+    return bool(
+        isinstance(option_values, list)
+        and option_values
+        and source_data.get("identity_source") == "visible_sku_option"
+    )
+
+
+def capture_has_variant_evidence(payload: Dict[str, Any]) -> bool:
+    groups = payload.get("sku_property_groups") or []
+    if any(isinstance(group, dict) and (group.get("values") or []) for group in groups):
+        return True
+    raw = ((payload.get("raw_snapshot") or {}).get("all_raw_skus") or [])
+    return any(isinstance(item, dict) for item in raw)
+
+
+def materialize_single_specification_sku(payload: Dict[str, Any]) -> bool:
+    """Create one traceable local SKU for a genuinely single-spec 1688 offer."""
+    if payload.get("skus") or capture_has_variant_evidence(payload):
+        return False
+    match = re.search(r"/offer/(\d{6,})", str(payload.get("source_url") or ""))
+    if not match:
+        return False
+    offer_id = match.group(1)
+    payload["skus"] = [{
+        "sku_id": f"local-spec-single-offer-key-{offer_id}",
+        "sku_identity_type": "single_specification",
+        "sku_name": "单规格",
+        "option_values": [],
+        "availability": "unknown",
+        "sku_image_missing": True,
+        "source_data": {"offer_id": offer_id, "identity_source": "1688_offer_url"},
+    }]
+    payload["selected_sku_ids"] = [f"local-spec-single-offer-key-{offer_id}"]
+    payload.setdefault("capture_warnings", []).append("页面未提供SKU组合表，已按单规格商品采集。")
+    return True
+
+
+NON_SKU_SPEC_TEXT = re.compile(r"(?:sku\s*列表|¥|库存|起订量|套起批|\bunknown\b)", re.IGNORECASE)
+
+
+def capture_sku_id(sku: Dict[str, Any]) -> Optional[str]:
+    """Return the first real 1688 SKU/spec identifier from one captured row."""
+    source_data = sku.get("source_data") if isinstance(sku.get("source_data"), dict) else {}
+    for source in (sku, source_data):
+        for key in (
+            "sku_id", "skuId", "skuID", "sku_id_str", "skuIdStr",
+            "specId", "specID", "spec_id", "spec_id_str", "specIdStr",
+        ):
+            value = safe_text(source.get(key))
+            if has_acceptable_sku_id(value):
+                return value
+    return None
+
+
+def has_non_sku_spec_text(sku: Dict[str, Any]) -> bool:
+    values = [sku.get("sku_name")]
+    for item in sku.get("option_values") or []:
+        if not isinstance(item, dict):
+            continue
+        values.extend([
+            item.get("name_cn"), item.get("name"), item.get("value_cn"),
+            item.get("value"), item.get("source_text"),
+        ])
+    return any(NON_SKU_SPEC_TEXT.search(str(value or "")) for value in values)
+
+
+def filter_collected_skus(payload: Dict[str, Any]) -> int:
+    """Drop page fragments that are not real 1688 SKU records.
+
+    This is deliberately performed at the local ingest boundary too, so an
+    older extension cannot save an ``unknown``/price/stock pseudo-SKU.
+    """
+    def keep(item: Any) -> bool:
+        if not isinstance(item, dict):
+            return False
+        sku_id = capture_sku_id(item)
+        if (not sku_id and not is_single_specification_sku(item) and not is_visible_variant_sku(item)) or has_non_sku_spec_text(item):
+            return False
+        item["sku_id"] = sku_id or str(item["sku_id"])
+        return True
+
+    selected = payload.get("skus") if isinstance(payload.get("skus"), list) else []
+    raw_snapshot = payload.get("raw_snapshot") if isinstance(payload.get("raw_snapshot"), dict) else {}
+    raw = raw_snapshot.get("all_raw_skus") if isinstance(raw_snapshot.get("all_raw_skus"), list) else selected
+    filtered_selected = [item for item in selected if keep(item)]
+    filtered_raw = [item for item in raw if keep(item)]
+    payload["skus"] = filtered_selected
+    payload["selected_sku_ids"] = [str(item["sku_id"]) for item in filtered_selected]
+    raw_snapshot["all_raw_skus"] = filtered_raw
+    payload["raw_snapshot"] = raw_snapshot
+    return len(selected) - len(filtered_selected)
 
 
 def normalize_url(url: Any, base_url: str) -> Optional[str]:
@@ -486,9 +720,23 @@ def normalize_url(url: Any, base_url: str) -> Optional[str]:
 def is_disallowed_image_url(url: str) -> bool:
     lowered = url.lower()
     return bool(
-        re.search(r"\.svg(?:$|[?#])", lowered)
+        re.search(r"\.(svg|woff2?|ttf|otf)(?:$|[?#])", lowered)
         or re.search(r"(icon|logo|avatar|sprite|pay|payment|wangwang|qrcode|qr|loading|blank|grey)", lowered)
         or re.search(r"(?:^|[-_/])tps-\d{1,3}-\d{1,3}(?:[-_.]|$)", lowered)
+    )
+
+
+def normalize_ozon_reference_image_url(url: str) -> str:
+    return re.sub(r"/(?:w[hc]|c)\d+/", "/wc1000/", str(url or ""), flags=re.IGNORECASE)
+
+
+def is_disallowed_ozon_reference_image_url(url: str) -> bool:
+    lowered = normalize_ozon_reference_image_url(url).lower()
+    if is_disallowed_image_url(lowered):
+        return True
+    return bool(
+        re.search(r"(ozon-fonts|marketing-api|banner|/cms/|/video-)", lowered)
+        or not re.search(r"\.(jpe?g|png|webp|avif)(?:$|[?#])", lowered)
     )
 
 
@@ -502,6 +750,18 @@ def url_to_extension(url: str, content_type: Optional[str]) -> str:
         if guessed in {".jpg", ".jpeg", ".png", ".webp", ".gif", ".bmp"}:
             return guessed
     return ".jpg"
+
+
+def decode_inline_image_data(data_url: Any) -> Tuple[bytes, str]:
+    text = str(data_url or "").strip()
+    match = re.fullmatch(r"data:(image/[A-Za-z0-9.+-]+);base64,(.+)", text, flags=re.DOTALL)
+    if not match:
+        raise ValueError("inline image data is not a base64 image data URL")
+    content_type = match.group(1).lower()
+    content = base64.b64decode(match.group(2), validate=True)
+    if len(content) > 8 * 1024 * 1024:
+        raise ValueError("inline image data exceeds 8MB")
+    return content, content_type
 
 
 def sha256_bytes(data: bytes) -> str:
@@ -575,7 +835,7 @@ def make_status(
     error_message: Optional[str] = None,
     retry_count: int = 0
 ) -> Dict[str, Any]:
-    step_status = "completed" if status == "COLLECTED" else "failed" if status == "FAILED_HARD_BLOCKER" else "in_progress"
+    step_status = "completed" if status == "COLLECTED" else "failed" if status in ATTENTION_STATES else "in_progress"
     step_error = None
     if error_message:
         step_error = {
@@ -618,9 +878,9 @@ def make_status(
         "completed_steps": ["collect_source"] if status == "COLLECTED" else [],
         "pending_steps": [
             "validate_source", "product_analysis", "category_match", "variant_rules", "measurements",
-            "offer_exists_check", "upload_feasibility", "product_positioning", "russian_copy",
-            "marketplace_content", "field_completion", "style_selector", "image_plan",
-            "image_generation", "image_qc", "final_upload_check", "ozon_upload"
+            "offer_exists_check", "upload_feasibility", "product_positioning", "ecommerce_design", "russian_copy",
+            "field_completion", "image_plan",
+            "image_generation", "image_qc", "ozon_upload"
         ] if status == "COLLECTED" else [],
         "failed_step": "unknown",
         "retry_count_by_step": {},
@@ -658,6 +918,32 @@ def build_field_diagnostic(field: str, strategy: str, hit: bool, failure_reason:
         "failure_reason": failure_reason or "unknown",
         "candidate_count": candidate_count
     }
+
+
+FIELD_DIAGNOSTIC_STRATEGIES = {
+    "structured_json",
+    "script_init_data",
+    "dom_semantic",
+    "candidate_selector",
+    "text_inference",
+    "local_ingest",
+}
+
+
+def coerce_field_diagnostics(items: Any) -> List[Dict[str, Any]]:
+    diagnostics = []
+    for item in items or []:
+        if not isinstance(item, dict):
+            continue
+        strategy = str(item.get("strategy") or "")
+        diagnostics.append(build_field_diagnostic(
+            unknown_text(item.get("field")),
+            strategy if strategy in FIELD_DIAGNOSTIC_STRATEGIES else "local_ingest",
+            bool(item.get("hit")),
+            item.get("failure_reason"),
+            item.get("candidate_count") if isinstance(item.get("candidate_count"), int) else 0,
+        ))
+    return diagnostics
 
 
 def coerce_attribute(item: Dict[str, Any]) -> Dict[str, Any]:
@@ -733,7 +1019,11 @@ def collect_image_inputs(payload: Dict[str, Any]) -> Tuple[List[Dict[str, Any]],
     return main_inputs, detail_inputs, sku_by_url
 
 
-def download_url(url: str, timeout: int = 20) -> Tuple[bytes, Optional[str]]:
+def download_url(
+    url: str,
+    timeout: int = 20,
+    allowed_host_suffixes: Tuple[str, ...] | None = None,
+) -> Tuple[bytes, Optional[str]]:
     request = urllib.request.Request(
         url,
         headers={
@@ -741,7 +1031,7 @@ def download_url(url: str, timeout: int = 20) -> Tuple[bytes, Optional[str]]:
             "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8"
         }
     )
-    with open_source_image_url(request, timeout=timeout) as response:
+    with open_source_image_url(request, timeout=timeout, allowed_host_suffixes=allowed_host_suffixes) as response:
         content, content_type = read_source_image_response(response)
         return content, content_type
 
@@ -752,7 +1042,8 @@ def download_image_group(
     prefix: str,
     url_cache: Dict[str, Dict[str, Any]],
     hash_cache: Dict[str, Dict[str, Any]],
-    warnings: List[str]
+    warnings: List[str],
+    allowed_host_suffixes: Tuple[str, ...] | None = None,
 ) -> List[Dict[str, Any]]:
     results = []
     output_dir.mkdir(parents=True, exist_ok=True)
@@ -765,15 +1056,18 @@ def download_image_group(
             results.append(cached)
             continue
         try:
-            last_error: Exception | None = None
-            for candidate_url in source_image_candidates(url):
-                try:
-                    content, content_type = download_url(candidate_url)
-                    break
-                except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
-                    last_error = exc
+            if item.get("data_url"):
+                content, content_type = decode_inline_image_data(item.get("data_url"))
             else:
-                raise last_error or OSError("no downloadable image candidate")
+                last_error: Exception | None = None
+                for candidate_url in source_image_candidates(url):
+                    try:
+                        content, content_type = download_url(candidate_url, allowed_host_suffixes=allowed_host_suffixes)
+                        break
+                    except (urllib.error.URLError, TimeoutError, OSError, ValueError) as exc:
+                        last_error = exc
+                else:
+                    raise last_error or OSError("no downloadable image candidate")
             digest = sha256_bytes(content)
             if digest in hash_cache:
                 duplicate = dict(hash_cache[digest])
@@ -857,6 +1151,7 @@ def build_source_json(
         skus.append(
             {
                 "sku_id": unknown_text(sku.get("sku_id") or f"sku-{index + 1}"),
+                "sku_identity_type": str(sku.get("sku_identity_type") or "1688_sku"),
                 "sku_name": unknown_text(sku.get("sku_name")),
                 "option_values": option_values,
                 "price": purchase_price,
@@ -897,7 +1192,7 @@ def build_source_json(
         "skus": skus,
         "raw_capture_file": f"products/{product_id}/input/raw-snapshot.json",
         "capture_warnings": warnings,
-        "field_diagnostics": payload.get("field_diagnostics") or [
+        "field_diagnostics": coerce_field_diagnostics(payload.get("field_diagnostics")) or [
             build_field_diagnostic("payload", "local_ingest", True, None, 1)
         ]
     }
@@ -945,6 +1240,7 @@ def build_raw_snapshot(
         url = normalize_url(sku.get("image_url"), payload["source_url"])
         if url:
             original_image_urls.append({"role": "sku_images", "url": url})
+    selected_category = payload.get("ozon_category_selection") if isinstance(payload.get("ozon_category_selection"), dict) else {}
     return {
         "schema_version": SCHEMA_VERSION,
         "product_id": product_id,
@@ -952,11 +1248,15 @@ def build_raw_snapshot(
         "page_title": payload.get("page_title") or "unknown",
         "structured_data_summary": raw_snapshot.get("structured_data_summary", {}),
         "candidate_selectors": raw_snapshot.get("candidate_selectors", {}),
-        "field_diagnostics": payload.get("field_diagnostics") or [],
+        "field_diagnostics": coerce_field_diagnostics(payload.get("field_diagnostics")),
         "original_image_urls": original_image_urls,
         "sku_raw_data": all_raw_skus,
         "sku_debug": sku_debug,
         "sku_property_image_debug": raw_snapshot.get("sku_property_image_debug") or {},
+        # Preserve the exact category object posted by the extension.  The
+        # normalized selection is written separately; keeping both makes any
+        # client-side ID/label mismatch diagnosable instead of invisible.
+        "submitted_ozon_category_selection": selected_category,
         "sku_selection": {
             "original_sku_count": len(all_raw_skus),
             "available_sku_count": available_sku_count,
@@ -985,12 +1285,17 @@ def ingest_capture(payload: Dict[str, Any], operator: Optional[Dict[str, Any]] =
     schema_errors = validate_json(payload, "collector-capture.schema.json")
     if schema_errors:
         raise HTTPException(status_code=422, detail={"message": "Invalid collector payload", "errors": schema_errors})
+    original_selected_sku_count = len(payload.get("skus") or [])
+    materialize_single_specification_sku(payload)
+    filtered_sku_count = filter_collected_skus(payload)
     apply_shared_price_tier(payload)
 
     if "1688." not in urllib.parse.urlparse(payload["source_url"]).netloc:
         raise HTTPException(status_code=422, detail={"message": "Current page is not a supported 1688 product URL"})
     selected_skus = payload.get("skus") or []
     if not selected_skus:
+        if original_selected_sku_count and filtered_sku_count:
+            raise HTTPException(status_code=422, detail={"message": "未解析到真实 1688 SKU，请重新采集。"})
         raise HTTPException(status_code=422, detail={"message": "请至少选择1个SKU。"})
     if len(selected_skus) > MAX_SELECTED_SKUS_PER_PRODUCT:
         raise HTTPException(
@@ -1036,13 +1341,13 @@ def ingest_capture(payload: Dict[str, Any], operator: Optional[Dict[str, Any]] =
     missing_real_sku_ids = [
         sku.get("sku_name") or sku.get("sku_id") or f"sku-{index + 1}"
         for index, sku in enumerate(selected_skus)
-        if isinstance(sku, dict) and not has_acceptable_sku_id(sku.get("sku_id"))
+        if isinstance(sku, dict) and not capture_sku_id(sku) and not is_single_specification_sku(sku) and not is_visible_variant_sku(sku)
     ]
     if missing_real_sku_ids:
         raise HTTPException(
             status_code=422,
             detail={
-                "message": "所选SKU缺少真实1688 sku_id，禁止保存伪造SKU ID。",
+                "message": "所选SKU缺少真实1688 sku_id，也没有可验证的规格图，禁止保存伪造SKU ID。",
                 "missing_count": len(missing_real_sku_ids),
                 "examples": missing_real_sku_ids[:5]
             }
@@ -1094,11 +1399,15 @@ def ingest_capture(payload: Dict[str, Any], operator: Optional[Dict[str, Any]] =
         source_json = build_source_json(product_id, payload, main_images, detail_images, sku_images_by_url, warnings)
         raw_snapshot = build_raw_snapshot(payload, product_id, warnings, duplicate_of)
 
+        # Preserve the submitted SKU/image evidence even when normalized source
+        # validation fails, so a recoverable diagnostic issue cannot erase the
+        # collection needed to repair the product.
+        atomic_write_json(product_dir / "input/raw-snapshot.json", raw_snapshot)
+
         source_errors = validate_json(source_json, "source.schema.json")
         if source_errors:
             raise ValueError("Generated source.json failed schema validation: " + "; ".join(source_errors))
 
-        atomic_write_json(product_dir / "input/raw-snapshot.json", raw_snapshot)
         atomic_write_json(product_dir / "input/source.json", source_json)
         atomic_write_json(product_dir / "input/category-selection.json", category_selection)
         source_manifest = write_source_manifest(product_dir)
@@ -1108,7 +1417,7 @@ def ingest_capture(payload: Dict[str, Any], operator: Optional[Dict[str, Any]] =
         write_asset_contract(
             product_dir,
             collection_id=source_json["collection_id"],
-            manual_confirmation_required=not bool(workbench_settings().get("auto_mode_enabled", False)),
+            manual_confirmation_required=False,
         )
 
         completed_at = now_iso()
@@ -1157,7 +1466,7 @@ def ingest_capture(payload: Dict[str, Any], operator: Optional[Dict[str, Any]] =
         warnings.append(error_message)
         status_failed = make_status(
             product_id,
-            "FAILED_HARD_BLOCKER",
+            "NEEDS_ATTENTION",
             "collect_source",
             100,
             started_at,
@@ -1190,15 +1499,19 @@ def replace_collected_category(product_dir: Path, selection: Dict[str, Any]) -> 
     stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
     invalidated_root = product_dir / "logs/category-invalidations" / stamp
     affected = [
+        "sku-run-snapshot.json",
         "attributes.json", "ozon-category.json", "ozon-category-tree.json",
         "ozon-category-attributes.json", "ozon-attributes.json", "ozon-preflight.json",
         "variant-decision.json", "variant-grouping-result.json", "platform-grouping-result.json",
-        "category-variant-rule-audit.json", "style-profile.json", "image-plan.json",
-        "image-qc-report.json", "title-ru.json", "description-ru.json", "keywords-ru.json",
+        "category-variant-rule-audit.json", "image-plan.json",
+        "image-qc-report.json", "title-ru.json", "description-ru.json", "keyword-research-ru.json",
         "ozon-tags.json", "ozon-attributes-final.json", "attribute-coverage-report.json",
-        "ozon-draft.json", "ozon-upload-config.json", "final-upload-check.json",
+        "attribute-fill-input.json", "attribute-fill-input.compact.json",
+        "ozon-ecommerce-design.json",
+        "copy-ru.json", "keyword-research-ru.json",
+        "ozon-draft.json", "ozon-upload-config.json",
         "ozon-upload-payload.json", "ozon-upload-preflight.json", "final-submission-snapshot.json",
-        "rich-content.json", "generated-images", "images",
+        "rich-content.json", "generated-images",
     ]
     invalidated = []
     for name in affected:
@@ -1212,6 +1525,7 @@ def replace_collected_category(product_dir: Path, selection: Dict[str, Any]) -> 
     if previous:
         atomic_write_json(invalidated_root / "previous-category-selection.json", previous)
     atomic_write_json(previous_path, selection)
+    source_manifest = write_source_manifest(product_dir)
     status.update({
         "status": "COLLECTED", "current_step": "collect_source", "progress": 100,
         "task_authorized": False, "batch_id": "unknown", "completed_steps": ["collect_source"],
@@ -1225,11 +1539,15 @@ def replace_collected_category(product_dir: Path, selection: Dict[str, Any]) -> 
             "retryable": True, "error": None,
         }],
     })
+    # A category/source change invalidates the batch source binding.  Keeping
+    # the old binding makes validate_formal_product_input reject the product
+    # even after the manifest has been correctly rebuilt.
+    status.pop("source_snapshot_binding", None)
     status["pending_steps"] = [
         "validate_source", "product_analysis", "category_match", "variant_rules", "measurements",
-        "offer_exists_check", "upload_feasibility", "product_positioning", "russian_copy",
-        "marketplace_content", "field_completion", "style_selector", "image_plan",
-        "image_generation", "image_qc", "final_upload_check", "ozon_upload",
+        "offer_exists_check", "upload_feasibility", "product_positioning", "ecommerce_design", "russian_copy",
+        "field_completion", "image_plan",
+        "image_generation", "image_qc", "ozon_upload",
     ]
     status.setdefault("history", []).append({
         "from": previous_state, "to": "COLLECTED", "at": now_iso(),
@@ -1239,7 +1557,10 @@ def replace_collected_category(product_dir: Path, selection: Dict[str, Any]) -> 
     append_log(product_dir, "collector_category_changed", {
         "previous_category_id": previous.get("category_id"),
         "category_id": selection["category_id"], "type_id": selection["type_id"],
-        "invalidated": invalidated, "ozon_write_api_calls": 0, "inventory_api_calls": 0,
+        "invalidated": invalidated,
+        "source_manifest_sha256": sha256_file(product_dir / "input/source-manifest.json"),
+        "source_manifest_record_count": len(source_manifest.get("records") or []),
+        "ozon_write_api_calls": 0, "inventory_api_calls": 0,
     })
     return {
         "status": "changed", "product_id": product_dir.name,
@@ -1253,6 +1574,7 @@ def replace_collected_category(product_dir: Path, selection: Dict[str, Any]) -> 
 async def local_network_only(request: Request, call_next):
     client_host = request.client.host if request.client else "unknown"
     loopback = is_loopback_client(client_host)
+    host_device = request_from_host_machine(request, client_host)
     config = load_lan_access_config()
     if not loopback:
         if not config.get("enabled"):
@@ -1269,7 +1591,7 @@ async def local_network_only(request: Request, call_next):
                 status_code=403,
                 content={"detail": {"code": "UNTRUSTED_ORIGIN", "message": "只允许工作台页面和1688采集插件访问"}},
             )
-        operator = automatic_device_operator(request, client_host, loopback=loopback)
+        operator = automatic_device_operator(request, client_host, loopback=host_device)
     token = CURRENT_OPERATOR.set(operator)
     request.state.operator = operator
     try:
@@ -1325,6 +1647,9 @@ def product_is_owned(product_dir: Path, operator_id: Optional[str] = None) -> bo
 
 def product_is_archived(product_dir: Path) -> bool:
     """Keep archived recovery data on disk but hide it from active workbench flows."""
+    # Archive state is persisted in the product status file.  Do not consult
+    # the SQLite publication projection here: this helper is called while
+    # enumerating every product for list and host-status polling.
     status = load_optional_json(product_dir / "status.json")
     return (
         str(status.get("status") or "").upper() == "ARCHIVED"
@@ -1403,7 +1728,13 @@ def image_host_status() -> Dict[str, Any]:
     configured_codex = Path(str(settings.get("codex_command") or ""))
     codex_ready = configured_codex.is_file() or shutil.which("codex") is not None
     workers = []
-    for worker_path in (ROOT / "logs/product-workers").glob("P*.json"):
+    # Image slots run as isolated child workers. Include them here so the
+    # workbench never reports an idle host while a real image request is live.
+    worker_paths = [
+        *(ROOT / "logs/product-workers").glob("P*.json"),
+        *(ROOT / "logs/image-slot-workers").glob("P*.json"),
+    ]
+    for worker_path in worker_paths:
         worker = load_optional_json(worker_path)
         if _pid_is_alive(worker.get("pid")):
             workers.append(worker)
@@ -1414,17 +1745,22 @@ def image_host_status() -> Dict[str, Any]:
     for product_dir in PRODUCTS_DIR.glob("P[0-9][0-9][0-9][0-9][0-9][0-9]"):
         if product_is_archived(product_dir):
             continue
-        status = effective_product_status(
-            product_dir,
-            load_optional_json(product_dir / "status.json"),
-        )
+        # The host monitor only reports local worker recovery and image
+        # failures, all of which are persisted in status.json. It must not
+        # open the publication database once per product on every poll.
+        status = load_optional_json(product_dir / "status.json")
         recovery_state = str(status.get("host_recovery_state") or "normal")
         if recovery_state == "recovering" and status.get("status") in {"PROCESSING", "QUEUED"}:
             recovering.append(product_dir.name)
         if (
+            str(status.get("ai_service_state") or "normal") == "waiting_for_recovery"
+            and status.get("status") in {"PROCESSING", "QUEUED"}
+        ):
+            recovering.append(product_dir.name)
+        if (
             recovery_state == "needs_attention"
             or (
-                status.get("status") == "FAILED_HARD_BLOCKER"
+                status.get("status") in ATTENTION_STATES
                 and status.get("failed_step") == "image_generation"
             )
         ):
@@ -1438,6 +1774,7 @@ def image_host_status() -> Dict[str, Any]:
         item for item in needs_attention
         if any(token in item["error_message"].casefold() for token in (
             "missing_required_sku_reference", "image_source_preflight_blocked", "缺少真实参考图",
+            "no registered sku-bound real image", "has no registered sku reference",
         ))
     ]
     if not codex_ready or needs_attention:
@@ -1478,27 +1815,35 @@ def image_host_status() -> Dict[str, Any]:
 
 @app.get("/api/workbench/system-status")
 def workbench_system_status() -> Dict[str, Any]:
-    return image_host_status()
+    status = image_host_status()
+    with SEERFAR_KEYWORD_JOB_LOCK:
+        queue = _seerfar_keyword_jobs()
+    login_jobs = [
+        item for item in queue.get("jobs") or []
+        if str(item.get("status") or "") == "login_required"
+    ]
+    latest_login_job = login_jobs[-1] if login_jobs else None
+    status["seerfar_login"] = {
+        "required": bool(latest_login_job),
+        "job_id": str((latest_login_job or {}).get("job_id") or ""),
+        "product_id": str((latest_login_job or {}).get("product_id") or ""),
+        "message": "Seerfar 登录已失效，请在 Chrome 的 Seerfar 页面重新登录；登录后会自动继续关键词查询。"
+        if latest_login_job else "",
+    }
+    status["seerfar_worker"] = _seerfar_worker_status(queue)
+    return status
 
 
 @app.post("/api/workbench/system/safe-exit")
 async def safe_exit_workbench(request: Request) -> Dict[str, Any]:
     if current_operator().get("role") != "owner":
         raise HTTPException(status_code=403, detail="只有工作室负责人可以安全退出主机")
-    payload = await request.json()
-    confirm_active = bool((payload or {}).get("confirm_active_tasks")) if isinstance(payload, dict) else False
     batch_pid = running_batch_pid()
-    if batch_pid is not None and not confirm_active:
+    if batch_pid is not None:
         raise HTTPException(
             status_code=409,
-            detail={"message": "当前还有任务运行。确认后会在最近文件断点安全停止，再退出AI Factory。", "active_tasks": True},
+            detail={"message": "当前生产任务已经授权运行到上架，不能人工安全停止；网络或运行异常会自动记录失败原因并保留断点。", "active_tasks": True},
         )
-    if batch_pid is not None:
-        current = load_optional_json(CURRENT_BATCH_PATH)
-        atomic_write_json(SAFE_STOP_REQUEST_PATH, {
-            "batch_id": current.get("batch_id"), "pid": batch_pid,
-            "requested_at": now_iso(), "mode": "safe_exit_preserve_checkpoints",
-        })
 
     def stop_service() -> None:
         deadline = time.monotonic() + 30
@@ -1517,6 +1862,49 @@ async def safe_exit_workbench(request: Request) -> Dict[str, Any]:
     }
 
 
+def known_remote_identity(value: Any) -> bool:
+    text = str(value or "").strip()
+    return bool(text and text.upper() not in {"UNKNOWN", "NULL", "NONE"})
+
+
+def snapshot_effective_aggregate_status(snapshot: Dict[str, Any]) -> str:
+    """Avoid showing a product as fully submitted while a selected store is unwritten."""
+    canonical = snapshot.get("product") or {}
+    canonical_status = str(canonical.get("aggregate_status") or "")
+    if canonical_status not in TERMINAL_PUBLICATION_STATES and canonical_status != "HANDED_OFF_TO_OZON":
+        return canonical_status
+    selected_stores = [
+        item for item in snapshot.get("stores") or []
+        if bool(item.get("selected"))
+    ]
+    if not selected_stores:
+        return canonical_status
+    sku_rows = list(snapshot.get("sku_publications") or [])
+    incomplete = False
+    failed = False
+    for store in selected_stores:
+        store_status = str(store.get("status") or "").upper()
+        if store_status in {"FAILED", "QUERY_ERROR", "NEEDS_ATTENTION"}:
+            failed = True
+            continue
+        publication_id = store.get("id")
+        store_skus = [
+            item for item in sku_rows
+            if publication_id is not None and str(item.get("publication_id")) == str(publication_id)
+        ]
+        has_remote_identity = any(
+            known_remote_identity(item.get("task_id"))
+            or known_remote_identity(item.get("ozon_product_id"))
+            for item in store_skus
+        )
+        has_write = int(store.get("api_write_count") or 0) > 0
+        if not (store_status in TERMINAL_PUBLICATION_STATES or has_write or has_remote_identity):
+            incomplete = True
+    if incomplete:
+        return "PARTIAL_FAILED" if failed else "PARTIAL"
+    return "PENDING_REMOTE" if canonical_status == "HANDED_OFF_TO_OZON" else canonical_status
+
+
 def read_product_card(product_dir: Path) -> Dict[str, Any]:
     source_path = product_dir / "input/source.json"
     status_path = product_dir / "status.json"
@@ -1526,14 +1914,24 @@ def read_product_card(product_dir: Path) -> Dict[str, Any]:
     if status.get("error_message") not in {None, "unknown"}:
         errors.append(status["error_message"])
     errors.extend(item.get("reason", str(item)) for item in (status.get("ozon") or {}).get("errors", []))
-    canonical = product_snapshot(ROOT, product_dir.name).get("product") if cutover_active(ROOT) else None
-    canonical_status = str((canonical or {}).get("aggregate_status") or "")
-    if canonical_status:
-        status_value = canonical_status
-        canonical_progress = 100 if canonical_status in TERMINAL_PUBLICATION_STATES else 99 if canonical_status == "PENDING_REMOTE" else int(status.get("progress") or 0)
+    snapshot = product_snapshot(ROOT, product_dir.name) if cutover_active(ROOT) else {}
+    canonical_status = snapshot_effective_aggregate_status(snapshot)
+    if canonical_status and canonical_status.upper() != "UNKNOWN":
+        status_value = "PENDING_REMOTE" if canonical_status == "HANDED_OFF_TO_OZON" else canonical_status
+        canonical_progress = (
+            100 if canonical_status in TERMINAL_PUBLICATION_STATES
+            else 99 if canonical_status in {"PENDING_REMOTE", "HANDED_OFF_TO_OZON"}
+            else min(int(status.get("progress") or 0), 95) if canonical_status == "PARTIAL"
+            else int(status.get("progress") or 0)
+        )
     else:
         status_value = status.get("status") or "unknown"
         canonical_progress = int(status.get("progress") or 0)
+    if (
+        str(status.get("ai_service_state") or "") == "waiting_for_recovery"
+        and str(status_value or "").upper() in {"PROCESSING", "QUEUED", "RUNNING"}
+    ):
+        status_value = "WAITING_FOR_AI_SERVICE"
     return {
         "product_id": product_dir.name,
         "title_cn": source.get("title_cn") or "unknown",
@@ -1541,1750 +1939,98 @@ def read_product_card(product_dir: Path) -> Dict[str, Any]:
         "selected_sku_count": len(source.get("skus") or []),
         "captured_at": source.get("captured_at") or status.get("started_at") or "unknown",
         "status": status_value,
-        "handoff_message": "已提交Ozon，后续请在Ozon商品卡后台处理" if status_value == "HANDED_OFF_TO_OZON" else None,
+        "handoff_message": "已提交Ozon，正在等待Ozon生成商品卡；本地可执行只读状态查询。" if status_value in {"HANDED_OFF_TO_OZON", "PENDING_REMOTE"} else None,
         "current_step": status.get("current_step") or "none",
         "progress": canonical_progress,
         "warnings": status.get("warnings") or [],
         "errors": errors,
         "directory_path": str(product_dir),
         "thumbnail_url": f"/api/inbox/products/{product_dir.name}/thumbnail",
-        "retryable": status_value in {"FAILED", "PARTIAL_FAILED", "FAILED_HARD_BLOCKER"},
+        "retryable": status_value in {"FAILED", "PARTIAL_FAILED", "WAITING_FOR_AI_SERVICE", *ATTENTION_STATES},
     }
 
 
-@app.get("/api/inbox/products")
-def list_inbox_products() -> Dict[str, Any]:
-    active_product_ids = {path.name for path in retryable_products(ROOT)}
-    products = [
-        read_product_card(product_dir)
-        for product_dir in sorted(PRODUCTS_DIR.glob("P[0-9]*"), reverse=True)
-        if (product_dir / "status.json").is_file()
-        and (product_dir / "input/source.json").is_file()
-        and product_is_owned(product_dir)
-        and not product_is_archived(product_dir)
-        and "1688.com/offer/" in str(json.loads((product_dir / "input/source.json").read_text(encoding="utf-8")).get("source_url") or "")
-    ]
-    for item in products:
-        item["in_current_inbox"] = item["product_id"] in active_product_ids
-    pending = [item for item in products if item["in_current_inbox"]]
-    return {
-        "products": products,
-        "product_count": len(products),
-        "pending_product_count": len(pending),
-        "pending_sku_count": sum(item["selected_sku_count"] for item in pending),
-        "max_selected_skus_per_product": MAX_SELECTED_SKUS_PER_PRODUCT,
-    }
-
-
-def sync_remote_ozon_status_once(product_ids: Optional[List[str]] = None) -> Dict[str, Any]:
-    """Compatibility endpoint: status refresh is intentionally unused."""
-    return {
-        "synced_product_ids": [], "store_checks": 0,
-        "write_api_calls": 0, "read_api_calls": 0, "inventory_api_calls": 0,
-        "disabled": True,
-        "message": "远端回查已停用；本地只显示提交结果，请在Ozon商品卡后台处理",
-    }
-
-
-def ensure_image_status_monitor() -> None:
-    # Image channels use a fixed local TTL.  The old monitor depended on
-    # remote Ozon checks and is intentionally not started anymore.
-    return None
-
-
-@app.post("/api/inbox/refresh-ozon-status")
-def refresh_ozon_status() -> Dict[str, Any]:
-    return sync_remote_ozon_status_once([path.name for path in owned_product_dirs()])
-
-
-@app.get("/api/inbox/products/{product_id}/thumbnail")
-def product_thumbnail(product_id: str) -> FileResponse:
-    product_dir = PRODUCTS_DIR / product_id
-    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir) or product_is_archived(product_dir):
-        raise HTTPException(status_code=404, detail="Product not found")
-    candidates = sorted((product_dir / "input/main-images").glob("*"))
-    image = next((path for path in candidates if path.is_file()), None)
-    if image is None:
-        raise HTTPException(status_code=404, detail="Thumbnail not found")
-    return FileResponse(image)
-
-
-@app.post("/api/inbox/products/{product_id}/open-directory")
-def open_product_directory(product_id: str) -> Dict[str, Any]:
-    product_dir = PRODUCTS_DIR / product_id
-    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir) or product_is_archived(product_dir):
-        raise HTTPException(status_code=404, detail="Product not found")
-    subprocess.Popen(["/usr/bin/open", str(product_dir)], close_fds=True)
-    return {"status": "opened", "product_id": product_id, "path": str(product_dir)}
-
-
-@app.delete("/api/inbox/products/{product_id}")
-async def delete_inbox_product(product_id: str, request: Request) -> Dict[str, Any]:
-    payload = await request.json()
-    if not isinstance(payload, dict) or payload.get("confirm_product_id") != product_id:
-        raise HTTPException(status_code=422, detail="必须明确确认要彻底删除的商品ID")
-    product_dir = PRODUCTS_DIR / product_id
-    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir):
-        raise HTTPException(status_code=404, detail="Product not found")
-    result = purge_local_product(ROOT, product_id)
-    if result["status"] != "deleted":
-        raise HTTPException(status_code=500, detail={"message": "商品未完全删除，可重新执行清理", **result})
-    return result
-
-
-def running_batch_pid() -> Optional[int]:
-    if not BATCH_PID_PATH.is_file():
-        return None
-    try:
-        pid = int(BATCH_PID_PATH.read_text(encoding="utf-8").strip())
-        if not _pid_is_alive(pid):
-            raise OSError("batch process is not alive")
-        return pid
-    except (OSError, TypeError, ValueError):
-        BATCH_PID_PATH.unlink(missing_ok=True)
-        return None
-
-
-def active_product_worker(product_dir: Path) -> Optional[Dict[str, Any]]:
-    """Return a live registered worker so UI state follows the real process."""
-    worker_path = ROOT / "logs/product-workers" / f"{product_dir.name}.json"
-    worker = load_optional_json(worker_path)
-    try:
-        pid = int(worker.get("pid"))
-        if not _pid_is_alive(pid):
-            raise OSError("product worker is not alive")
-    except (OSError, TypeError, ValueError):
-        if worker_path.is_file():
-            worker_path.unlink(missing_ok=True)
-        return None
-    return worker
-
-
-def effective_product_status(product_dir: Path, status: Dict[str, Any]) -> Dict[str, Any]:
-    """Overlay stale persisted STOPPED/QUEUED values while a real worker is alive."""
-    # Resolve the owning project from the products directory.  This keeps
-    # tests/secondary workspaces isolated from the main repository's cutover
-    # marker while preserving the normal workbench behaviour.
-    state_root = product_dir.parents[1] if len(product_dir.parents) > 1 else ROOT
-    if cutover_active(state_root):
-        canonical = product_snapshot(state_root, product_dir.name).get("product")
-        canonical_status = str((canonical or {}).get("aggregate_status") or "")
-        if canonical_status in {"CREATED", "PARTIAL", "PARTIAL_FAILED", "PENDING_REMOTE", "FAILED", "HANDED_OFF_TO_OZON"}:
-            status = dict(status)
-            status["status"] = canonical_status
-            status["progress"] = 100 if canonical_status in TERMINAL_PUBLICATION_STATES else 99 if canonical_status == "PENDING_REMOTE" else status.get("progress", 0)
-            status["current_step"] = "ozon_upload"
-            status["active_step"] = None
-    worker = active_product_worker(product_dir)
-    if not worker:
-        return status
-    effective = dict(status)
-    effective.update({
-        "status": "PROCESSING",
-        "current_step": status.get("current_step") if status.get("current_step") not in {None, "", "queue"} else "image_generation",
-        "active_step": status.get("active_step") or {
-            "name": status.get("current_step") if status.get("current_step") not in {None, "", "queue"} else "image_generation",
-            "started_at": worker.get("started_at") or now_iso(),
-        },
-        "last_run_at": worker.get("started_at") or status.get("last_run_at") or now_iso(),
-    })
-    return effective
-
-
-def launch_batch_process(batch: Dict[str, Any]) -> Dict[str, Any]:
-    BATCH_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    log_handle = BATCH_LOG_PATH.open("a", encoding="utf-8")
-    process = subprocess.Popen(
-        [sys.executable, str(ROOT / "scripts/run_batch.py"), "--batch-id", batch["batch_id"]],
-        cwd=ROOT, stdout=log_handle, stderr=subprocess.STDOUT,
-        start_new_session=True, close_fds=True,
-    )
-    log_handle.close()
-    BATCH_PID_PATH.write_text(str(process.pid), encoding="utf-8")
-    atomic_write_json(CURRENT_BATCH_PATH, {"batch_id": batch["batch_id"], "pid": process.pid, "started_at": now_iso()})
-    return {"pid": process.pid, "batch_id": batch["batch_id"]}
-
-
-def connected_store_ids() -> List[str]:
-    return [store["id"] for store in list_stores(ROOT) if store["enabled"] and store["connection_status"] == "connected"]
-
-
-def validate_target_stores(store_ids: Iterable[str]) -> List[str]:
-    selected = list(dict.fromkeys(str(value) for value in store_ids if str(value).strip()))
-    if not selected:
-        raise HTTPException(status_code=422, detail="请先明确选择至少一家已验证店铺")
-    available = set(connected_store_ids())
-    unavailable = [store_id for store_id in selected if store_id not in available]
-    if unavailable:
-        raise HTTPException(status_code=422, detail="店铺未启用或尚未通过只读验证：" + "、".join(unavailable))
-    return selected
-
-
-def _confirmation_source_label(source: str) -> str:
-    return {
-        "1688": "1688文字",
-        "sku_specification": "SKU文字",
-        "product_analysis": "已有商品分析",
-        "estimated": "本地同类规则",
-    }.get(str(source or ""), "本地规则")
-
-
-def _source_material(source: Dict[str, Any]) -> Dict[str, Any]:
-    material_names = {"材质", "材料", "主体材质", "产品材质", "面料"}
-    for item in source.get("product_attributes") or []:
-        if str(item.get("name_cn") or "").strip() not in material_names:
-            continue
-        value = str(item.get("value_cn") or "").strip()
-        if value and value != "unknown":
-            return {
-                "value": value,
-                "confidence": 100,
-                "source": "1688文字",
-                "estimated": False,
-                "needs_input": False,
-            }
-    return {
-        "value": "unknown",
-        "confidence": 0,
-        "source": "没有可靠依据",
-        "estimated": False,
-        "needs_input": True,
-    }
-
-
-def _confirmation_image_url(product_id: str, image_type: str, index: int) -> str:
-    return f"/api/workbench/products/{urllib.parse.quote(product_id)}/source-images/{image_type}/{index}"
-
-
-def _source_image_entries(product_id: str, source: Dict[str, Any], image_type: str) -> List[Dict[str, Any]]:
-    if image_type == "sku":
-        values = source.get("skus") or []
-        result = []
-        for index, item in enumerate(values):
-            local_path = item.get("local_image_path") or item.get("variant_local_image_path")
-            if not local_path or local_path == "unknown":
-                continue
-            result.append({
-                "index": index,
-                "label": str(item.get("sku_name") or item.get("sku_id") or f"SKU {index + 1}"),
-                "url": _confirmation_image_url(product_id, "sku", index),
-            })
-        return result
-    source_key = "main_images" if image_type == "main" else "detail_images"
-    result = []
-    for index, item in enumerate(source.get(source_key) or []):
-        local_path = item.get("local_path")
-        if not local_path or local_path == "unknown":
-            continue
-        result.append({
-            "index": index,
-            "label": "1688主图" if image_type == "main" else "1688详情图",
-            "url": _confirmation_image_url(product_id, image_type, index),
-        })
-    return result
-
-
-def build_product_confirmation(product_dir: Path) -> Dict[str, Any]:
-    source = load_optional_json(product_dir / "input/source.json")
-    category = load_optional_json(product_dir / "input/category-selection.json")
-    analysis = load_optional_json(product_dir / "output/product-analysis.json", {
-        "product_type": source.get("title_cn") or "unknown",
-        "category": " / ".join(category.get("category_path_zh") or category.get("category_path") or []),
-        "facts": {},
-    })
-    rules = load_optional_json(PRICING_RULES_PATH)
-    profiles = rules.get("measurement_profiles") or []
-    package_rules = rules.get("package_estimation") or {}
-    if not profiles or not package_rules:
-        raise HTTPException(status_code=500, detail="本地重量尺寸规则未配置")
-    product_weight = estimate_product_weight(source, analysis, profiles)
-    product_dimensions = estimate_product_dimensions(source, analysis, profiles)
-    product_weight = fit_estimated_product_weight_to_confirmed_package(source, product_weight, package_rules)
-    product_dimensions = fit_estimated_product_dimensions_to_confirmed_package(source, product_dimensions, package_rules)
-    package_weight = estimate_package_weight(source, product_weight, package_rules)
-    package_dimensions = estimate_package_dimensions(source, product_dimensions, package_rules)
-    material = _source_material(source)
-    sku_images = _source_image_entries(product_dir.name, source, "sku")
-    main_images = _source_image_entries(product_dir.name, source, "main")
-    detail_images = _source_image_entries(product_dir.name, source, "detail")
-    selected_image = (sku_images or main_images or detail_images or [{}])[0].get("url")
-    path_zh = category.get("category_path_zh") or category.get("category_path") or []
-    sku_values = []
-    for sku in source.get("skus") or []:
-        option_text = " / ".join(
-            str(item.get("value_cn") or item.get("value") or "")
-            for item in sku.get("option_values") or []
-            if item.get("value_cn") or item.get("value")
-        )
-        sku_values.append({
-            "sku_id": str(sku.get("sku_id") or "unknown"),
-            "name": str(sku.get("sku_name") or option_text or "未命名SKU"),
-            "option_text": option_text or str(sku.get("sku_name") or "未确认规格"),
-            "purchase_price_cny": sku.get("purchase_price"),
-        })
-    fields = {
-        "product_dimensions": {
-            "value": {key: product_dimensions[key] for key in ("length", "width", "height")},
-            "unit": "cm", "confidence": int(product_dimensions["confidence"]),
-            "source": _confirmation_source_label(product_dimensions["source"]),
-            "estimated": bool(product_dimensions["estimated"]),
-        },
-        "product_weight_g": {
-            "value": product_weight["value"], "unit": "g", "confidence": int(product_weight["confidence"]),
-            "source": _confirmation_source_label(product_weight["source"]),
-            "estimated": bool(product_weight["estimated"]),
-        },
-        "package_dimensions": {
-            "value": {key: package_dimensions[key] for key in ("length", "width", "height")},
-            "unit": "cm", "confidence": int(package_dimensions["confidence"]),
-            "source": _confirmation_source_label(package_dimensions["source"]),
-            "estimated": bool(package_dimensions["estimated"]),
-        },
-        "package_weight_g": {
-            "value": package_weight["value"], "unit": "g", "confidence": int(package_weight["confidence"]),
-            "source": _confirmation_source_label(package_weight["source"]),
-            "estimated": bool(package_weight["estimated"]),
-        },
-        "material": material,
-    }
-    uncertain_count = sum(
-        1 for item in fields.values()
-        if item.get("estimated") or item.get("needs_input") or int(item.get("confidence") or 0) < 80
-    )
-    rules_snapshot = category.get("rules_snapshot") or {}
-    return {
-        "product_id": product_dir.name,
-        "title_cn": str(source.get("title_cn") or product_dir.name),
-        "source_url": str(source.get("source_url") or "unknown"),
-        "category_id": category.get("category_id"),
-        "type_id": category.get("type_id"),
-        "category_path_zh": path_zh,
-        "rules_snapshot_hash": category.get("rules_snapshot_hash") or "unknown",
-        "required_attribute_count": len(rules_snapshot.get("required_attribute_ids") or []),
-        "aspect_attribute_count": len(rules_snapshot.get("aspect_attribute_ids") or []),
-        "sku_count": len(sku_values),
-        "skus": sku_values,
-        "fields": fields,
-        "uncertain_count": uncertain_count,
-        "thumbnail_url": selected_image,
-        "sku_images": sku_images,
-        "main_images": main_images,
-        "reference_images": detail_images or main_images,
-        "ordinary_field_count": max(0, len(rules_snapshot.get("attributes") or []) - uncertain_count),
-        "omitted_without_evidence": ["认证", "承重", "特殊安全功能"],
-    }
-
-
-def build_batch_confirmation(batch: Dict[str, Any]) -> Dict[str, Any]:
-    products = [build_product_confirmation(workbench_product_dir(product_id)) for product_id in batch_product_ids(batch)]
-    return {
-        "schema_version": "1.0.0",
-        "batch_id": batch.get("batch_id"),
-        "status": batch.get("status"),
-        "mode": "auto" if batch.get("auto_upload") else "manual",
-        "target_store_ids": batch.get("target_store_ids") or [],
-        "product_count": len(products),
-        "sku_count": sum(item["sku_count"] for item in products),
-        "uncertain_count": sum(item["uncertain_count"] for item in products),
-        "estimated_seconds": max(15, min(90, sum(item["uncertain_count"] for item in products) * 5)),
-        "products": products,
-        "created_at": batch.get("created_at"),
-        "confirmed_at": batch.get("confirmed_at") or "unknown",
-        "write_api_calls": 0,
-        "inventory_api_calls": 0,
-    }
-
-
-def load_workbench_run_queue() -> Dict[str, Any]:
-    if not WORKBENCH_RUN_QUEUE_PATH.is_file():
-        return {"schema_version": "1.0.0", "items": []}
-    try:
-        data = json.loads(WORKBENCH_RUN_QUEUE_PATH.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {"schema_version": "1.0.0", "items": []}
-    return {"schema_version": "1.0.0", "items": list(data.get("items") or [])}
-
-
-def save_workbench_run_queue(queue: Dict[str, Any]) -> None:
-    atomic_write_json(WORKBENCH_RUN_QUEUE_PATH, {
-        "schema_version": "1.0.0", "updated_at": now_iso(), "items": list(queue.get("items") or []),
-    })
-
-
-def batch_product_ids(batch: Dict[str, Any]) -> List[str]:
-    return [str(item.get("product_id")) for item in batch.get("products") or [] if item.get("product_id")]
-
-
-def reserved_product_batches() -> Dict[str, str]:
-    reserved: Dict[str, str] = {}
-    if running_batch_pid() is not None:
-        current = load_optional_json(CURRENT_BATCH_PATH)
-        batch_id = str(current.get("batch_id") or "")
-        current_batch = load_optional_json(batch_path(ROOT, batch_id)) if batch_id else {}
-        for product_id in batch_product_ids(current_batch):
-            reserved[product_id] = batch_id
-    for item in load_workbench_run_queue().get("items") or []:
-        batch_id = str(item.get("batch_id") or "")
-        queued_batch = load_optional_json(batch_path(ROOT, batch_id)) if batch_id else {}
-        for product_id in batch_product_ids(queued_batch):
-            reserved.setdefault(product_id, batch_id)
-    for path in (ROOT / "batches").glob("B-*/batch.json"):
-        waiting_batch = load_optional_json(path)
-        if str(waiting_batch.get("local_lifecycle_status") or "").upper() == "ARCHIVED":
-            continue
-        if waiting_batch.get("status") != "AWAITING_CONFIRMATION":
-            continue
-        batch_id = str(waiting_batch.get("batch_id") or path.parent.name)
-        for product_id in batch_product_ids(waiting_batch):
-            reserved.setdefault(product_id, batch_id)
-    return reserved
-
-
-def dispatch_next_queued_batch() -> Optional[Dict[str, Any]]:
-    with BATCH_QUEUE_LOCK:
-        if running_batch_pid() is not None:
-            return None
-        queue = load_workbench_run_queue()
-        items = list(queue.get("items") or [])
-        while items:
-            item = items.pop(0)
-            batch_id = str(item.get("batch_id") or "")
-            queued_batch = load_optional_json(batch_path(ROOT, batch_id)) if batch_id else {}
-            valid_products = [
-                product_id for product_id in batch_product_ids(queued_batch)
-                if (ROOT / "products" / product_id).is_dir()
-                and not product_is_archived(ROOT / "products" / product_id)
-                and not deletion_marker_path(ROOT, product_id).is_file()
-            ]
-            if not queued_batch or not valid_products:
-                queue["items"] = items
-                save_workbench_run_queue(queue)
-                continue
-            launched = launch_batch_process(queued_batch)
-            queue["items"] = items
-            save_workbench_run_queue(queue)
-            return {"status": "started", **launched, "queue_position": 0}
-        queue["items"] = []
-        save_workbench_run_queue(queue)
-        return None
-
-
-def batch_dispatcher_worker() -> None:
-    while True:
-        try:
-            dispatch_next_queued_batch()
-        except Exception as exc:
-            BATCH_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-            with BATCH_LOG_PATH.open("a", encoding="utf-8") as handle:
-                handle.write(f"[{now_iso()}] batch dispatcher error: {exc}\n")
-        BATCH_DISPATCHER_WAKE.wait(2)
-        BATCH_DISPATCHER_WAKE.clear()
-
-
-def ensure_batch_dispatcher() -> None:
-    global BATCH_DISPATCHER_STARTED
-    with BATCH_DISPATCHER_LOCK:
-        if BATCH_DISPATCHER_STARTED:
-            BATCH_DISPATCHER_WAKE.set()
-            return
-        threading.Thread(target=batch_dispatcher_worker, daemon=True, name="workbench-batch-dispatcher").start()
-        BATCH_DISPATCHER_STARTED = True
-
-
-def _pid_is_alive(value: Any) -> bool:
-    try:
-        pid = int(value)
-        os.kill(pid, 0)
-    except (OSError, TypeError, ValueError):
-        return False
-    try:
-        state = subprocess.run(
-            ["/bin/ps", "-o", "stat=", "-p", str(pid)],
-            capture_output=True, text=True, timeout=2, check=False,
-        ).stdout.strip()
-        if not state or state.upper().startswith("Z"):
-            return False
-    except (OSError, subprocess.SubprocessError):
-        pass
-    return True
-
-
-def recover_interrupted_batch() -> Optional[Dict[str, Any]]:
-    """Resume an authorized local batch after an unexpected computer/service restart."""
-    if "pytest" in sys.modules or os.getenv("CAF_DISABLE_BATCH_RECOVERY", "0") == "1":
-        return None
-    if running_batch_pid() is not None or not CURRENT_BATCH_PATH.is_file():
-        return None
-    current = load_optional_json(CURRENT_BATCH_PATH)
-    batch_id = str(current.get("batch_id") or "")
-    batch = load_optional_json(batch_path(ROOT, batch_id)) if batch_id else {}
-    if batch.get("status") not in {"RUNNING", "QUEUED"}:
-        return None
-    resumable = []
-    for product_id in batch_product_ids(batch):
-        product_dir = ROOT / "products" / product_id
-        status = load_optional_json(product_dir / "status.json")
-        if (
-            product_dir.is_dir()
-            and not product_is_archived(product_dir)
-            and status.get("task_authorized") is True
-            and status.get("status") in {"PROCESSING", "QUEUED"}
-        ):
-            resumable.append(product_id)
-        worker_path = ROOT / "logs/product-workers" / f"{product_id}.json"
-        worker = load_optional_json(worker_path)
-        if worker_path.is_file() and not _pid_is_alive(worker.get("pid")):
-            worker_path.unlink(missing_ok=True)
-        lock_path = product_dir / ".pipeline.lock"
-        if lock_path.is_file():
-            try:
-                lock_pid = int(lock_path.read_text(encoding="utf-8").strip())
-            except (OSError, ValueError):
-                lock_pid = 0
-            if not _pid_is_alive(lock_pid):
-                lock_path.unlink(missing_ok=True)
-    if not resumable:
-        return None
-    launched = launch_batch_process(batch)
-    BATCH_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
-    with BATCH_LOG_PATH.open("a", encoding="utf-8") as handle:
-        handle.write(
-            f"[{now_iso()}] 自动恢复意外中断批次 {batch_id}，从文件断点继续：{', '.join(resumable)}\n"
-        )
-    return {"status": "recovered", **launched, "product_ids": resumable}
-
-
-def launch_or_enqueue_batch(batch: Dict[str, Any], source: str) -> Dict[str, Any]:
-    with BATCH_QUEUE_LOCK:
-        if running_batch_pid() is None:
-            launched = launch_batch_process(batch)
-            ensure_batch_dispatcher()
-            return {"status": "started", **launched, "queue_position": 0}
-        queue = load_workbench_run_queue()
-        items = list(queue.get("items") or [])
-        items.append({
-            "batch_id": batch["batch_id"], "source": source,
-            "queued_at": now_iso(), "product_count": batch.get("product_count", 0),
-        })
-        queue["items"] = items
-        save_workbench_run_queue(queue)
-        ensure_batch_dispatcher()
-        return {"status": "queued", "batch_id": batch["batch_id"], "queue_position": len(items)}
-
-
-@app.post("/api/tasks/run")
-def run_collected_tasks() -> Dict[str, Any]:
-    selected_stores: List[str] = []
-    auto_upload = False
-    ensure_image_status_monitor()
-    # Starting a batch only schedules this local production pipeline.  It does
-    # not start remote status polling and never waits on Ozon.
-    with BATCH_QUEUE_LOCK:
-        reserved = reserved_product_batches()
-        product_ids = [
-            path.name for path in collected_products(ROOT)
-            if path.name not in reserved and product_is_owned(path)
-        ]
-        if not product_ids:
-            return {"status": "empty", "queued_products": 0, "already_queued_products": len(reserved)}
-        for product_id in product_ids:
-            try:
-                validate_formal_product_input(PRODUCTS_DIR / product_id)
-            except ProductionInputError as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"{product_id} 不是当前工作台本次采集的正式输入，任务未启动：{exc}",
-                ) from exc
-        batch = create_batch(
-            ROOT, product_ids=product_ids, target_store_ids=selected_stores, auto_upload=auto_upload,
-        )
-        save_batch_owner(batch["batch_id"])
-        launched = launch_or_enqueue_batch(batch, "collector")
-    return {
-        "status": launched["status"],
-        "pid": launched.get("pid"),
-        "batch_id": batch["batch_id"],
-        "queue_position": launched.get("queue_position", 0),
-        "queued_products": batch["product_count"],
-        "queued_skus": batch["sku_count"],
-        "max_selected_skus_per_product": MAX_SELECTED_SKUS_PER_PRODUCT,
-        "target_store_ids": selected_stores,
-        "auto_upload": auto_upload,
-    }
-
-
-def overlay_live_batch_status(batch: Dict[str, Any], products_dir: Path) -> Dict[str, Any]:
-    live_products = []
-    progress_values = []
-    for entry in batch.get("products") or []:
-        product_id = str(entry.get("product_id") or "")
-        status_path = products_dir / product_id / "status.json"
-        if not status_path.is_file():
-            live_products.append(entry)
-            continue
-        status = effective_product_status(
-            products_dir / product_id,
-            json.loads(status_path.read_text(encoding="utf-8")),
-        )
-        progress = int(status.get("progress") or 0)
-        live_products.append({
-            **entry,
-            "status": status.get("status", entry.get("status", "unknown")),
-            "current_step": status.get("current_step", entry.get("current_step", "none")),
-            "progress": progress,
-            "started_at": status.get("started_at", entry.get("started_at", "unknown")),
-            "completed_at": status.get("completed_at", entry.get("completed_at", "unknown")),
-            "warnings": status.get("warnings", entry.get("warnings", [])),
-            "errors": [status.get("error_message")]
-            if status.get("error_message") not in {None, "unknown"} else [],
-        })
-        progress_values.append(progress)
-    result = {**batch, "products": live_products}
-    if progress_values:
-        result["progress"] = round(sum(progress_values) / len(progress_values))
-    return result
-
-
-def manual_upload_product_ids(batch: Dict[str, Any]) -> List[str]:
-    if batch.get("auto_upload", False):
-        return []
-    return [
-        str(item.get("product_id"))
-        for item in batch.get("products") or []
-        if str(item.get("status") or "").upper() in {"OZON_READY", "WAITING_MANUAL_REVIEW"}
-        and item.get("product_id")
-    ]
-
-
-@app.get("/api/tasks/status")
-def get_batch_status() -> Dict[str, Any]:
-    pid = running_batch_pid()
-    current = json.loads(CURRENT_BATCH_PATH.read_text(encoding="utf-8")) if CURRENT_BATCH_PATH.is_file() else {}
-    current_path = batch_path(ROOT, current.get("batch_id", "")) if current.get("batch_id") else None
-    batch = json.loads(current_path.read_text(encoding="utf-8")) if current_path and current_path.is_file() else None
-    if batch and batch_is_owned(str(batch.get("batch_id") or "")):
-        batch = overlay_live_batch_status(batch, PRODUCTS_DIR)
-    elif batch:
-        batch = None
-    report_path = ROOT / "batch-result.json"
-    report = json.loads(report_path.read_text(encoding="utf-8")) if report_path.is_file() else None
-    if report and not batch_is_owned(str(report.get("batch_id") or "")):
-        report = None
-    return {"running": pid is not None, "pid": pid, "current_batch": batch, "last_result": report}
-
-
-@app.post("/api/collector/products")
-async def create_product(request: Request) -> Dict[str, Any]:
-    payload = await request.json()
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=422, detail={"message": "Payload must be a JSON object"})
-    return ingest_capture(payload, current_operator())
-
-
-@app.get("/api/collector/categories/cache")
-def collector_category_cache() -> FileResponse:
-    cache = load_translated_tree_cache(ROOT)
-    cache_path = ROOT / "ozon-adapter/metadata/ozon-rules-2026-07-10/category-tree.zh-CN.json"
-    if not cache or not cache_path.is_file():
-        raise HTTPException(
-            status_code=503,
-            detail={"message": "Ozon官方简体中文类目尚未同步，禁止使用本地翻译类目"},
-        )
-    return FileResponse(
-        cache_path,
-        media_type="application/json",
-        headers={
-            "Cache-Control": "no-cache",
-            "X-Ozon-Category-Source": "ozon_seller_api",
-            "X-Ozon-Category-Language": "ZH_HANS",
-        },
-    )
-
-
-@app.get("/api/collector/categories")
-def collector_category_search(q: str = "", limit: int = 30) -> Dict[str, Any]:
-    if not load_translated_tree_cache(ROOT):
-        raise HTTPException(status_code=503, detail={"message": "Ozon官方简体中文类目尚未同步"})
-    items = search_categories(ROOT, q, limit)
-    return {"query": q, "items": items, "count": len(items), "ozon_write_api_calls": 0, "inventory_api_calls": 0}
-
-
-@app.get("/api/collector/categories/tree")
-def collector_category_tree(parent_id: str = "root") -> Dict[str, Any]:
-    try:
-        items = category_tree_children(ROOT, parent_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=404, detail={"message": str(exc)}) from exc
-    cache = load_translated_tree_cache(ROOT)
-    return {
-        "parent_id": parent_id,
-        "items": items,
-        "count": len(items),
-        "locale": cache.get("locale") or "unknown",
-        "cache_version": cache.get("cache_version") or "dynamic-fallback",
-        "cache_source": cache.get("source") or "unavailable",
-        "api_language": cache.get("api_language") or "unknown",
-        "ozon_write_api_calls": 0,
-        "inventory_api_calls": 0,
-    }
-
-
-@app.get("/api/collector/categories/recommendations")
-def collector_category_recommendations(q: str) -> Dict[str, Any]:
-    items = recommend_categories(ROOT, q)
-    return {"query": q, "items": items[:3], "count": min(len(items), 3), "final_choice_required": True}
-
-
-@app.get("/api/collector/categories/preferences")
-def collector_category_preferences() -> Dict[str, Any]:
-    return {**public_preferences(ROOT), "ozon_write_api_calls": 0, "inventory_api_calls": 0}
-
-
-@app.put("/api/collector/categories/favorite")
-async def collector_category_favorite(request: Request) -> Dict[str, Any]:
-    payload = await request.json()
-    try:
-        return set_favorite(
-            ROOT, int(payload.get("category_id")), int(payload.get("type_id")), bool(payload.get("favorite", True))
-        )
-    except (TypeError, ValueError, KeyError) as exc:
-        raise HTTPException(status_code=422, detail={"message": str(exc)}) from exc
-
-
-@app.post("/api/collector/categories/rules")
-async def collector_category_rules(request: Request) -> Dict[str, Any]:
-    payload = await request.json()
-    try:
-        return prepare_rules(
-            ROOT,
-            int(payload.get("category_id")),
-            int(payload.get("type_id")),
-            str(payload.get("shop_id") or "zhonglian1"),
-            allow_fetch=bool(payload.get("allow_readonly_fetch", True)),
-        )
-    except FileNotFoundError as exc:
-        raise HTTPException(status_code=409, detail={"message": str(exc)}) from exc
-    except (TypeError, ValueError, KeyError) as exc:
-        raise HTTPException(status_code=422, detail={"message": str(exc)}) from exc
-
-
-@app.get("/api/collector/products/{product_id}")
-def get_product(product_id: str) -> Dict[str, Any]:
-    product_dir = PRODUCTS_DIR / product_id
-    source_path = product_dir / "input/source.json"
-    status_path = product_dir / "status.json"
-    if not source_path.is_file() or not status_path.is_file() or not product_is_owned(product_dir):
-        raise HTTPException(status_code=404, detail="Product not found")
-    return {
-        "product_id": product_id,
-        "source": json.loads(source_path.read_text(encoding="utf-8")),
-        "status": json.loads(status_path.read_text(encoding="utf-8")),
-        "category_selection": json.loads((product_dir / "input/category-selection.json").read_text(encoding="utf-8"))
-        if (product_dir / "input/category-selection.json").is_file() else None,
-    }
-
-
-@app.put("/api/collector/products/{product_id}/category")
-async def update_collected_product_category(product_id: str, request: Request) -> Dict[str, Any]:
-    product_dir = PRODUCTS_DIR / product_id
-    if not re.fullmatch(r"P[0-9]{6}", product_id) or not product_dir.is_dir() or not product_is_owned(product_dir):
-        raise HTTPException(status_code=404, detail="Product not found")
-    ensure_workbench_product_mutable(product_dir)
-    payload = await request.json()
-    try:
-        selection = build_selection(ROOT, {"ozon_category_selection": payload}, preferences_root=PRODUCTS_DIR.parent)
-        selection_errors = validate_json(selection, "category-selection.schema.json")
-        if selection_errors:
-            raise ValueError("类目选择数据无效：" + "；".join(selection_errors))
-        return replace_collected_category(product_dir, selection)
-    except (ValueError, TypeError, KeyError) as exc:
-        raise HTTPException(status_code=409, detail={"message": str(exc)}) from exc
-
-
-@app.get("/api/collector/products/{product_id}/status")
-def get_product_status(product_id: str) -> Dict[str, Any]:
-    product_dir = PRODUCTS_DIR / product_id
-    status_path = product_dir / "status.json"
-    if not status_path.is_file() or not product_is_owned(product_dir):
-        raise HTTPException(status_code=404, detail="Product not found")
-    return json.loads(status_path.read_text(encoding="utf-8"))
-
-
-@app.get("/api/collector/duplicates")
-def get_duplicate(source_url: str) -> Dict[str, Any]:
-    duplicate_of = find_existing_source_urls().get(source_url)
-    return {
-        "exists": duplicate_of is not None,
-        "product_id": duplicate_of,
-        "source_url": source_url
-    }
-
-
-# ---------------------------------------------------------------------------
-# AI product production workbench
-# ---------------------------------------------------------------------------
-
-WORKBENCH_EDITABLE_FIELDS = {
-    "title_ru", "short_title", "description_ru", "bullets_ru", "tags",
-    "attributes", "sku_overrides", "image_order", "selected_shop", "selected_store_ids",
-    "auto_advance", "review_mode", "review_depth", "notes", "image_prompts",
-}
-WORKBENCH_PRODUCT_GLOB = "P[0-9][0-9][0-9][0-9][0-9][0-9]"
-
-
-def load_optional_json(path: Path, default: Any = None) -> Any:
-    if not path.is_file():
-        return {} if default is None else default
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError):
-        return {} if default is None else default
-
-
-def workbench_settings() -> Dict[str, Any]:
-    value = load_optional_json(ROOT / "config/workbench-settings.json", DEFAULT_WORKBENCH_SETTINGS.copy())
-    return {**DEFAULT_WORKBENCH_SETTINGS, **(value if isinstance(value, dict) else {})}
-
-
-def save_workbench_settings(patch: Dict[str, Any]) -> Dict[str, Any]:
-    settings = workbench_settings()
-    if "auto_mode_enabled" in patch:
-        settings["auto_mode_enabled"] = bool(patch["auto_mode_enabled"])
-        settings["default_review_mode"] = "auto" if settings["auto_mode_enabled"] else "manual"
-    settings["learning_threshold"] = 2
-    settings["updated_at"] = now_iso()
-    atomic_write_json(ROOT / "config/workbench-settings.json", settings)
-    return settings
-
-
-def workbench_product_dir(product_id: str) -> Path:
-    if not re.fullmatch(r"P[0-9]{6}", product_id):
-        raise HTTPException(status_code=404, detail="商品不存在")
-    product_dir = PRODUCTS_DIR / product_id
-    if not product_dir.is_dir() or not product_is_owned(product_dir) or product_is_archived(product_dir):
-        raise HTTPException(status_code=404, detail="商品不存在")
-    return product_dir
-
-
-def ensure_workbench_product_mutable(product_dir: Path) -> None:
-    """Keep submitted products as local read-only records.
-
-    A known Ozon task id is the local terminal handoff.  The operator handles
-    later edits in the Ozon product-card backend, so no workbench endpoint may
-    silently mutate or prepare the same local product for another submission.
-    """
-    status = effective_product_status(
-        product_dir,
-        load_optional_json(product_dir / "status.json"),
-    )
-    if str(status.get("status") or "").upper() in TERMINAL_PUBLICATION_STATES:
-        raise HTTPException(
-            status_code=409,
-            detail="该商品已经提交Ozon，本地记录只读；后续请在Ozon商品卡后台修改",
-        )
-
-
-def public_state(status_name: str) -> str:
-    value = str(status_name or "unknown").upper()
-    if "FAIL" in value or "ERROR" in value:
-        return "失败"
-    if value in {"CREATED", "UPLOADED", "OZON_MODERATION", "ACTIVE", "SUCCESS", "IMPORTED", "HANDED_OFF_TO_OZON"}:
-        return "完成"
-    if value in {"COLLECTED", "STOPPED", "OZON_READY", "WAITING_MANUAL_REVIEW", "WAITING", "NOT_STARTED", "UNKNOWN"}:
-        return "待处理"
-    return "处理中"
-
-
-def workflow_bucket(status_name: str) -> str:
-    value = str(status_name or "unknown").upper()
-    if value in {"CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON"}:
-        return "已完成"
-    if value in {"SUBMITTED", "PARTIAL", "UPLOADING", "PENDING_REMOTE", "OZON_MODERATION"}:
-        return "上传中"
-    if value == "PARTIAL_FAILED":
-        return "部分失败"
-    if value in {"OZON_READY", "WAITING_MANUAL_REVIEW"}:
-        return "等待人工检查"
-    if value == "FAILED_HARD_BLOCKER":
-        return "处理失败"
-    if value in {"QUEUED", "PROCESSING"}:
-        return "生成中"
-    if value in {"CATEGORY_MATCHED", "CONTENT_GENERATED", "IMAGES_GENERATED", "PRICED"}:
-        return "待继续"
-    if value == "STOPPED":
-        return "已停止"
-    return "采集箱"
-
-
-def friendly_pipeline_error(status: Dict[str, Any]) -> Dict[str, str]:
-    """Turn an internal pipeline error into a short, actionable UI message.
-
-    The original error is kept as ``technical`` so diagnostics remain possible,
-    but normal workbench screens should tell the operator what happened and
-    where to fix it instead of exposing Python/HTTP wording.
-    """
-    raw = str(status.get("error_message") or "任务没有完成")
-    step = str(status.get("failed_step") or status.get("current_step") or "")
-    text = raw.casefold()
-    result = {
-        "title": "商品处理没有完成",
-        "message": "这件商品在当前步骤没有完成，已保留前面已经生成的内容。点“立即修改”检查后再继续。",
-        "action": "检查并修改",
-        "tab": "risk",
-        "technical": raw,
-        "step": step,
-    }
-    if any(token in text for token in (
-        "missing_required_sku_reference", "image_source_preflight_blocked", "缺少真实参考图",
-    )):
-        result.update({
-            "title": "SKU图片需要确认",
-            "message": "有已选SKU没有独立图片。请人工确认可共用哪一个同外观SKU的真实图片，或取消该SKU；系统不会自动猜测。",
-            "action": "确认SKU图片",
-            "tab": "sku",
-        })
-    elif "failed to fetch" in text or "connection" in text or "timed out" in text and "ozon" in text:
-        result.update({
-            "title": "主电脑工作台没有回应",
-            "message": "连接主电脑失败。先确认工作台服务正在运行，再点“重试”；不会重复上传商品。",
-            "action": "重试任务",
-            "tab": "risk",
-        })
-    elif any(token in text for token in ("empty_placeholder_panel", "placeholder", "空白占位", "空面板")):
-        result.update({
-            "title": "图片里有空白占位框",
-            "message": "这张图片只生成了一个空框，没有有效卖点内容。系统会保留其他合格图片，只重做这张。",
-            "action": "重做这张图片",
-            "tab": "images",
-        })
-    elif "image" in text or "style_selector" in text or "image_generation" in text or step in {"image_generation", "image_qc", "image_plan", "style_selector"}:
-        result.update({
-            "title": "图片步骤没有完成",
-            "message": "部分图片没有生成或质检未通过，已完成的图片会保留。进入“图片”页，只重做失败图片即可。",
-            "action": "修改图片",
-            "tab": "images",
-        })
-    elif any(token in text for token in ("attribute", "required", "dictionary", "6383", "field_completion")) or step in {"field_completion", "category_match", "variant_rules"}:
-        result.update({
-            "title": "类目属性需要修改",
-            "message": "有类目属性没有填对。进入“类目”，修改带“必须填写”或错误提示的字段；可选字段不影响继续。",
-            "action": "修改类目属性",
-            "tab": "category",
-        })
-    elif any(token in text for token in ("price", "pricing", "selling_price", "measurements")) or step in {"measurements"}:
-        result.update({
-            "title": "价格或尺寸需要修改",
-            "message": "售价、重量或尺寸资料不完整。进入“价格”或“SKU”，修改后再继续。",
-            "action": "修改价格或尺寸",
-            "tab": "price",
-        })
-    elif any(token in text for token in ("upload", "offer", "duplicate", "pending", "store")) or step in {"ozon_upload", "final_upload_check", "offer_exists_check", "upload_feasibility"}:
-        result.update({
-            "title": "上架前检查没有通过",
-            "message": "Ozon上架前检查没有通过。先查看店铺状态和失败原因，处理中或状态不明确时不会再次提交。",
-            "action": "检查上架条件",
-            "tab": "store",
-        })
-    elif any(token in text for token in ("codex", "403", "429", "analysis")) or step in {"product_analysis", "product_positioning", "ecommerce_design", "russian_copy", "marketplace_content"}:
-        result.update({
-            "title": "商品资料生成没有完成",
-            "message": "商品资料生成遇到问题。已保留采集内容，进入“资料”页检查标题、卖点和简介后再继续。",
-            "action": "修改商品资料",
-            "tab": "content",
-        })
-    return result
-
-
-def image_plan_items(plan: Dict[str, Any]) -> List[Dict[str, Any]]:
-    items: List[Dict[str, Any]] = []
-    for key in ("main_images", "detail_images", "disclaimer_images", "color_samples"):
-        for item in plan.get(key) or []:
-            if isinstance(item, dict) and item.get("slot"):
-                items.append(item)
-    return sorted(items, key=lambda item: int(item.get("workbench_order", len(items))))
-
-
-def find_image_plan_item(plan: Dict[str, Any], slot: str) -> Tuple[str, Dict[str, Any]]:
-    for key in ("main_images", "detail_images", "disclaimer_images", "color_samples"):
-        for item in plan.get(key) or []:
-            if str(item.get("slot")) == slot:
-                return key, item
-    raise HTTPException(status_code=404, detail="图片槽位不存在")
-
-
-def product_output_image_path(product_dir: Path, raw_path: Any) -> Optional[Path]:
-    """Resolve a planned image inside this product's two generated-image trees only."""
-    value = str(raw_path or "").strip()
-    if not value or value == "unknown":
-        return None
-    candidate = Path(value)
-    resolved = candidate.resolve() if candidate.is_absolute() else (ROOT / candidate).resolve()
-    allowed_roots = (
-        ((product_dir / "output/generated-images").resolve(),)
-        if contract_enabled(product_dir)
-        else (
-            (product_dir / "output/images").resolve(),
-            (product_dir / "output/generated-images").resolve(),
-        )
-    )
-    if not any(allowed_root in resolved.parents for allowed_root in allowed_roots):
-        return None
-    return resolved
-
-
-def regeneration_slot_names(value: Any) -> List[str]:
-    """Accept both legacy slot strings and detailed retry records."""
-    names: List[str] = []
-    for item in value or []:
-        if isinstance(item, dict):
-            item = item.get("slot") or item.get("image_slot")
-        slot = str(item or "").strip()
-        if slot and slot not in names:
-            names.append(slot)
-    return names
-
-
-def workbench_images(
-    product_dir: Path,
-    plan: Dict[str, Any],
-    qc: Dict[str, Any],
-    status: Optional[Dict[str, Any]] = None,
-) -> List[Dict[str, Any]]:
-    request = load_optional_json(product_dir / "output/image-regeneration-request.json")
-    hard_gate = load_optional_json(product_dir / "output/image-hard-gate.json")
-    hard_checked_slots = {str(slot) for slot in hard_gate.get("checked_slots") or []}
-    retry_slots = set(regeneration_slot_names(request.get("failed_slots")))
-    issue_by_slot: Dict[str, List[Dict[str, Any]]] = {}
-    for issue in qc.get("issues") or []:
-        for slot in issue.get("image_slots") or []:
-            issue_by_slot.setdefault(str(slot), []).append(issue)
-    qc_dimensions = qc.get("dimensions") or {}
-    score = qc.get("score")
-    images = []
-    active_generation = bool(
-        status and status.get("status") == "PROCESSING" and status.get("current_step") == "image_generation"
-    )
-    generating_assigned = False
-    for index, item in enumerate(image_plan_items(plan)):
-        slot = str(item.get("slot"))
-        raw_path = str(item.get("output_path") or "")
-        image_path = product_output_image_path(product_dir, raw_path)
-        exists = bool(image_path and image_path.is_file())
-        issues = issue_by_slot.get(slot, [])
-        blocking_issues = [
-            entry for entry in issues
-            if str(entry.get("severity") or "").lower() in {"high", "critical"}
-            or str(entry.get("code") or "") in set(qc.get("critical_failures") or [])
-        ]
-        if slot in retry_slots:
-            state = "RETRYING"
-        elif exists and issues and (blocking_issues or qc.get("decision") == "reject"):
-            state = "FAIL"
-        elif exists and qc:
-            state = "PASS" if qc.get("decision") != "reject" else "QC"
-        elif exists and slot in hard_checked_slots:
-            state = "PASS"
-        elif exists:
-            # A file appearing on disk only means generation returned bytes.
-            # It is not a completed ecommerce image until the slot hard gate
-            # has checked it.  This prevents half-finished/placeholder images
-            # from being shown as approved workbench results.
-            state = "QC"
-        elif item.get("status") in {"generating", "processing"}:
-            state = "GENERATING"
-        elif active_generation and not generating_assigned:
-            state = "GENERATING"
-            generating_assigned = True
-        else:
-            state = "WAITING"
-        version = None
-        if exists and image_path:
-            stat_result = image_path.stat()
-            version = f"{stat_result.st_mtime_ns}-{stat_result.st_size}"
-        base_url = (
-            f"/api/workbench/products/{product_dir.name}/images/{urllib.parse.quote(slot)}"
-            if exists else None
-        )
-        images.append({
-            "slot": slot,
-            "type": item.get("image_type") or item.get("type") or "detail",
-            "state": state,
-            "url": f"{base_url}?v={version}" if base_url else None,
-            "download_url": f"{base_url}?v={version}&download=1" if base_url else None,
-            "prompt": item.get("prompt") or item.get("prompt_brief") or "",
-            "russian_text": item.get("russian_text") or [],
-            "purpose": item.get("selling_goal") or item.get("purpose") or "",
-            "variant_scope": item.get("variant_scope") or "shared",
-            "shared_across_variants": bool(item.get("shared_across_variants")),
-            "source_sku_id": str(item.get("source_sku_id") or ""),
-            "score": score,
-            "issues": [entry.get("message") or entry.get("code") for entry in issues],
-            "qc_dimensions": qc_dimensions,
-            "order": index,
-        })
-    return images
-
-
-def build_sku_image_groups(
-    skus: List[Dict[str, Any]], images: List[Dict[str, Any]], *, exact_binding: bool = False,
-) -> List[Dict[str, Any]]:
-    """Present every selected SKU with its own main image and shared details."""
-    shared_details = [
-        item for item in images
-        if item.get("type") != "main"
-        and (
-            item.get("shared_across_variants")
-            or item.get("variant_scope") == "shared"
-            or item.get("source_sku_id") in {"", "all"}
-        )
-    ]
-    generic_mains = [
-        item for item in images
-        if item.get("type") == "main"
-        and item.get("source_sku_id") in {"", "all"}
-    ]
-    groups: List[Dict[str, Any]] = []
-    for sku in skus:
-        sku_id = str(sku.get("sku_id") or "")
-        main_image = next(
-            (
-                item for item in images
-                if item.get("type") == "main"
-                and (
-                    str(item.get("source_sku_id") or "") == sku_id
-                    or str(item.get("slot") or "") == f"main-{sku_id}"
-                )
-            ),
-            None if exact_binding else (generic_mains[0] if generic_mains else None),
-        )
-        group_images = ([main_image] if main_image else []) + shared_details
-        groups.append({
-            "sku_id": sku_id,
-            "sku_name": sku.get("name") or sku_id,
-            "option_text": sku.get("option_text") or sku.get("name") or sku_id,
-            "main_image": main_image,
-            "detail_images": shared_details,
-            "images": group_images,
-            "main_image_missing": main_image is None,
-        })
-    return groups
-
-
-def readable_timeline(status: Dict[str, Any], product_dir: Path) -> List[Dict[str, Any]]:
-    step_labels = {
-        "collect_source": "完成1688采集", "validate_source": "完成采集数据检查",
-        "product_analysis": "完成商品理解", "category_match": "完成Ozon类目匹配",
-        "ecommerce_design": "完成Ozon电商方案",
-        "variant_rules": "完成SKU变体判断", "measurements": "完成重量尺寸处理",
-        "russian_copy": "完成俄文资料", "image_plan": "完成图片方案",
-        "image_generation": "完成图片生成", "image_qc": "完成图片质检",
-        "marketplace_content": "完成Ozon商品资料", "field_completion": "完成Ozon字段整理",
-        "final_upload_check": "完成上架前最终检查", "ozon_upload": "提交Ozon",
-    }
-    result: List[Dict[str, Any]] = []
-    for item in status.get("steps") or []:
-        label = step_labels.get(str(item.get("name")), str(item.get("name") or "任务更新"))
-        if item.get("status") == "failed":
-            label = f"{label}失败"
-        result.append({
-            "at": item.get("finished_at") or item.get("started_at") or "unknown",
-            "message": label,
-            "level": "error" if item.get("status") == "failed" else "info",
-        })
-    ozon = status.get("ozon") or {}
-    if ozon.get("task_id") not in {None, "unknown", ""}:
-        result.append({
-            "at": status.get("last_run_at") or "unknown",
-            "message": f"已获得Ozon任务号 {ozon.get('task_id')}",
-            "level": "info",
-        })
-    return sorted(result, key=lambda item: str(item.get("at") or ""), reverse=True)[:80]
-
-
-def production_contract_state(
-    product_dir: Path,
-    status: Dict[str, Any],
-    plan: Dict[str, Any],
-) -> Dict[str, Any]:
-    """Describe whether this product can still run or upload under today's contract."""
-    raw_status = str(status.get("status") or "unknown").upper()
-    terminal = raw_status in TERMINAL_PUBLICATION_STATES
-    source = load_optional_json(product_dir / "input/source.json")
-    formal_error = None
-    try:
-        validate_formal_product_input(product_dir)
-    except ProductionInputError as exc:
-        formal_error = str(exc)
-    has_image_contract = contract_enabled(product_dir)
-    base = {
-        "formal_input_valid": formal_error is None,
-        "image_contract_present": has_image_contract,
-        "terminal_publication": terminal,
-        "blocking": False,
-        "errors": [],
-    }
-    if terminal:
-        if formal_error or not has_image_contract:
-            return {
-                **base,
-                "state": "legacy_submitted_read_only",
-                "message": "这件商品已在旧流程提交Ozon，只保留查看记录；不会再次上传，也不需要补新版图片确认。",
-                "errors": [formal_error] if formal_error else [],
-            }
-        return {
-            **base,
-            "state": "submitted_read_only",
-            "message": "商品已提交Ozon，后续在Ozon商品卡后台处理，本地不会自动回查或重复提交。",
-        }
-    if formal_error:
-        return {
-            **base,
-            "state": "legacy_contract_blocked",
-            "blocking": True,
-            "message": "这是旧流程商品，缺少当前采集快照或生产合同，已禁止继续运行和再次上传。请重新从工作台采集为新商品。",
-            "errors": [formal_error],
-        }
-    if raw_status in {"OZON_READY", "WAITING_MANUAL_REVIEW"}:
-        expected_count = len(source.get("skus") or []) + 8
-        if not has_image_contract:
-            return {
-                **base,
-                "state": "image_contract_missing",
-                "blocking": True,
-                "message": "商品缺少新版图片确认合同，不能上传；请从图片步骤继续生成。",
-                "errors": ["缺少 output/image-asset-contract.json"],
-            }
-        manifest_errors = validate_accepted_manifest(
-            product_dir,
-            image_plan_items(plan),
-            expected_count=expected_count,
-            revoke_stale=False,
-        )
-        if manifest_errors:
-            return {
-                **base,
-                "state": "awaiting_image_confirmation",
-                "blocking": True,
-                "message": f"图片尚未全部人工确认：必须确认 {len(source.get('skus') or [])} 张SKU主图和8张通用详情图后才能上传。",
-                "errors": manifest_errors,
-            }
-    return {
-        **base,
-        "state": "current_contract",
-        "message": "当前商品使用本次工作台采集和新版生产合同。",
-    }
-
-
-def calculate_risk(
-    status: Dict[str, Any],
-    category: Dict[str, Any],
-    attributes: Dict[str, Any],
-    qc: Dict[str, Any],
-    *,
-    analysis: Optional[Dict[str, Any]] = None,
-    contract_state: Optional[Dict[str, Any]] = None,
-) -> Dict[str, Any]:
-    items: List[Dict[str, str]] = []
-    if "FAIL" in str(status.get("status") or ""):
-        error = friendly_pipeline_error(status)
-        items.append({
-            "level": "high", "code": "pipeline_failed",
-            "message": error["message"], "title": error["title"],
-            "action": error["action"], "tab": error["tab"],
-            "technical": error["technical"], "step": error["step"],
-        })
-    missing = attributes.get("missing_required_attributes") or []
-    if missing:
-        names = "、".join(str(item.get("attribute_name") or item.get("attribute_id")) for item in missing[:4])
-        items.append({"level": "high", "code": "required_attributes", "message": f"缺少必填属性：{names}"})
-    if qc.get("decision") == "reject":
-        items.append({"level": "high", "code": "image_qc", "message": f"图片质检未通过，得分 {qc.get('score', '未知')}"})
-    for index, item in enumerate((analysis or {}).get("risks") or []):
-        message = str(item.get("message") or "").strip()
-        if not message:
-            continue
-        level = str(item.get("level") or "medium").lower()
-        items.append({
-            "level": level if level in {"low", "medium", "high"} else "medium",
-            "code": f"analysis_{item.get('area') or index}",
-            "title": "商品分析风险",
-            "message": message,
-            "blocking": bool(item.get("blocking")),
-        })
-    if (contract_state or {}).get("blocking"):
-        items.append({
-            "level": "high",
-            "code": "production_contract_blocked",
-            "title": "当前生产合同已阻断",
-            "message": str(contract_state.get("message") or "当前商品不能继续运行或上传"),
-        })
-    elif (contract_state or {}).get("state") == "legacy_submitted_read_only":
-        items.append({
-            "level": "medium",
-            "code": "legacy_submitted_read_only",
-            "title": "旧流程提交记录",
-            "message": str(contract_state.get("message")),
-        })
-    confidence = category.get("confidence")
-    if isinstance(confidence, (int, float)) and confidence < 0.8:
-        items.append({"level": "medium", "code": "category_confidence", "message": f"类目置信度较低：{confidence:.0%}"})
-    if any(item["level"] == "high" for item in items):
-        level = "high"
-    elif items:
-        level = "medium"
-    else:
-        level = "low"
-    return {"level": level, "items": items}
-
-
-def prelisting_assessment(pricing: Dict[str, Any], qc: Dict[str, Any], risk: Dict[str, Any]) -> Dict[str, Any]:
-    sku_prices = pricing.get("sku_pricing") or []
-    profits = [item.get("estimated_profit_cny") for item in sku_prices if isinstance(item.get("estimated_profit_cny"), (int, float))]
-    profit_rates = [item.get("profit_rate_markup") for item in sku_prices if isinstance(item.get("profit_rate_markup"), (int, float))]
-    profit_score = min(100, max(0, round(45 + (max(profit_rates or [0]) * 70))))
-    image_score = int(qc.get("score") or (85 if qc.get("decision") == "pass" else 55))
-    risk_penalty = {"low": 4, "medium": 22, "high": 48}.get(str(risk.get("level")), 30)
-    market_score = max(20, 86 - risk_penalty)
-    competition_risk = min(100, 32 + risk_penalty)
-    return_risk = min(100, 24 + risk_penalty)
-    overall = round((profit_score * .32) + (market_score * .24) + (image_score * .24) + ((100 - competition_risk) * .1) + ((100 - return_risk) * .1))
-    advice = "优先处理" if overall >= 80 else "可以测试" if overall >= 58 else "暂缓处理"
-    selling_prices = [item.get("selling_price_rub") for item in sku_prices if isinstance(item.get("selling_price_rub"), (int, float))]
-    costs = [item.get("base_cost_cny") for item in sku_prices if isinstance(item.get("base_cost_cny"), (int, float))]
-    exchange_value = pricing.get("exchange_rate") or 12
-    if isinstance(exchange_value, dict):
-        exchange_value = exchange_value.get("cny_to_rub") or exchange_value.get("value") or 12
-    exchange = float(exchange_value)
-    rule_price = min(selling_prices) if selling_prices else None
-    break_even = round(max(costs or [0]) * exchange * 1.31) if costs else None
-    return {
-        "profit_potential": profit_score, "russia_fit": market_score, "image_sales_potential": image_score,
-        "competition_risk": competition_risk, "return_risk": return_risk,
-        "overall_score": overall, "advice": advice,
-        "pricing_advice": {
-            "break_even_price_rub": break_even, "rule_price_rub": rule_price,
-            "suggested_range_rub": [round(rule_price * .97), round(rule_price * 1.08)] if rule_price else [],
-            "high_profit_test_price_rub": round(rule_price * 1.12) if rule_price else None,
-            "estimated_profit_cny": round(min(profits), 2) if profits else None,
-            "minimum_rules_respected": True,
-        },
-        "source": "现有成本、定价、图片质检和风险结果的上架前计算，不含销量预测",
-    }
-
-
-def build_ai_suggestions(product_dir: Path, content: Dict[str, Any], risk: Dict[str, Any], qc: Dict[str, Any]) -> List[Dict[str, Any]]:
-    saved = load_optional_json(product_dir / "output/ai-suggestions.json", {"items": []})
-    states = {str(item.get("id")): item for item in saved.get("items") or []}
-    candidates: List[Dict[str, Any]] = []
-    if len(content.get("tags") or []) != 30:
-        candidates.append({"id": "tag_count", "type": "copy", "title": "补齐30个俄文主题标签", "detail": "每个标签单独保存且不超过30个字符。"})
-    if qc.get("decision") == "reject":
-        candidates.append({"id": "image_qc", "type": "image", "title": "仅重做未通过图片", "detail": "保留合格图片，不重做整套。"})
-    for item in risk.get("items") or []:
-        candidates.append({"id": f"risk_{item.get('code')}", "type": "risk", "title": "处理阻断风险", "detail": item.get("message")})
-    for candidate in candidates:
-        candidate.update({"status": states.get(candidate["id"], {}).get("status", "pending"), "non_blocking": True})
-    return candidates
-
-
-def pending_product_question(product_dir: Path) -> Dict[str, Any]:
-    value = load_optional_json(product_dir / "input/pending-question.json")
-    return value if str(value.get("status") or "").upper() == "OPEN" else {}
-
-
-def product_primary_action(detail: Dict[str, Any]) -> Dict[str, str]:
-    status = str((detail.get("status") or {}).get("status") or "unknown").upper()
-    if detail.get("pending_question"):
-        return {"key": "answer", "label": "回答问题"}
-    if status in {"COLLECTED", "STOPPED"}:
-        return {"key": "run", "label": "运行任务"}
-    if status == "FAILED_HARD_BLOCKER":
-        return {"key": "fix", "label": "查看并继续"}
-    if status in {"CATEGORY_MATCHED", "CONTENT_GENERATED", "IMAGES_GENERATED", "PRICED"}:
-        return {"key": "fix", "label": "继续生成"}
-    if status in {"OZON_READY", "WAITING_MANUAL_REVIEW"}:
-        return {"key": "review_upload", "label": "检查商品并确认上传"}
-    if status in {"CREATED", "UPLOADED", "ACTIVE", "HANDED_OFF_TO_OZON"}:
-        return {"key": "result", "label": "查看上架结果"}
-    if status in {"SUBMITTED", "PARTIAL", "UPLOADING", "PENDING_REMOTE", "OZON_MODERATION"}:
-        return {"key": "status", "label": "查看上传状态"}
-    if status == "PARTIAL_FAILED":
-        return {"key": "retry_failed_store", "label": "仅重试失败店铺"}
-    return {"key": "status", "label": "查看进度"}
-
-
-def workbench_product_detail(product_id: str) -> Dict[str, Any]:
-    product_dir = workbench_product_dir(product_id)
-    source = load_optional_json(product_dir / "input/source.json")
-    if source.get("source_kind") == "manual_test":
-        raise HTTPException(status_code=404, detail="手动测试样品不属于正式工作台商品")
-    status = effective_product_status(product_dir, load_optional_json(product_dir / "status.json"))
-    analysis = load_optional_json(product_dir / "output/product-analysis.json")
-    copy = load_optional_json(product_dir / "output/copy-ru.json")
-    title_data = load_optional_json(product_dir / "output/title-ru.json")
-    description_data = load_optional_json(product_dir / "output/description-ru.json")
-    category = load_optional_json(product_dir / "output/ozon-category.json")
-    selected_category = load_optional_json(product_dir / "input/category-selection.json")
-    selected_catalog_category: Dict[str, Any] = {}
-    if selected_category:
-        try:
-            selected_catalog_category = get_category(
-                ROOT, int(selected_category.get("category_id")), int(selected_category.get("type_id"))
-            )
-        except (TypeError, ValueError):
-            selected_catalog_category = {}
-    category_name_zh = (selected_category or {}).get("category_name_zh") or selected_catalog_category.get("name_zh")
-    category_path_zh = (selected_category or {}).get("category_path_zh") or selected_catalog_category.get("path_zh") or []
-    if not category:
-        if selected_category:
-            category = {
-                "category_id": selected_category.get("category_id"),
-                "type_id": selected_category.get("type_id"),
-                "category_name": category_name_zh or selected_category.get("category_name_ru"),
-                "category_name_zh": category_name_zh,
-                "category_path": selected_category.get("category_path") or [],
-                "category_path_zh": category_path_zh,
-                "match_status": "user_selected_at_collection",
-                "confidence": 1.0,
-                "rules_snapshot_hash": selected_category.get("rules_snapshot_hash"),
-            }
-    elif selected_category:
-        category["category_name_zh"] = category_name_zh
-        category["category_path_zh"] = category_path_zh
-    attributes = load_optional_json(product_dir / "output/ozon-attributes.json")
-    final_attributes = load_optional_json(product_dir / "output/ozon-attributes-final.json")
-    final_by_id = {
-        str(item.get("attribute_id")): item
-        for item in final_attributes.get("attributes") or []
-        if item.get("attribute_id") is not None
-    }
-    def attribute_has_value(value: Any) -> bool:
-        if value is None:
-            return False
-        if isinstance(value, str):
-            return bool(value.strip()) and value.strip().casefold() != "unknown"
-        if isinstance(value, (list, dict)):
-            return bool(value)
-        return True
-
-    for item in attributes.get("attributes") or []:
-        final = final_by_id.get(str(item.get("attribute_id")))
-        if final:
-            for field in (
-                "value", "source", "confidence", "dictionary_value_id",
-                "evidence", "required",
-            ):
-                if field in final:
-                    item[field] = final[field]
-            item["validation_status"] = (
-                "estimated" if final.get("source") == "AI_estimated"
-                else "valid" if attribute_has_value(final.get("value"))
-                else "unknown"
-            )
-    if final_by_id:
-        attribute_items = attributes.get("attributes") or []
-        filled = [item for item in attribute_items if attribute_has_value(item.get("value"))]
-        missing_required = [
-            item for item in attribute_items
-            if item.get("required") and not attribute_has_value(item.get("value"))
-        ]
-        attributes["summary"] = {
-            **(attributes.get("summary") or {}),
-            "total_count": len(attribute_items),
-            "filled_count": len(filled),
-            "unknown_count": len(attribute_items) - len(filled),
-            "required_count": sum(bool(item.get("required")) for item in attribute_items),
-            "required_filled_count": sum(
-                bool(item.get("required")) and attribute_has_value(item.get("value"))
-                for item in attribute_items
-            ),
-            "mapped_count": sum(
-                bool(item.get("required")) and attribute_has_value(item.get("value"))
-                for item in attribute_items
-            ),
-            "missing_count": len(missing_required),
-        }
-        attributes["missing_required_attributes"] = missing_required
-    attribute_translations = load_optional_json(ATTRIBUTE_TRANSLATIONS_PATH, {"translations": {}}).get("translations") or {}
-    for item in attributes.get("attributes") or []:
-        item["attribute_name_zh"] = attribute_translations.get(str(item.get("attribute_name") or ""), item.get("attribute_name") or str(item.get("attribute_id")))
-    pricing = load_optional_json(product_dir / "output/pricing-result.json")
-    plan = load_optional_json(product_dir / "output/image-plan.json")
-    qc = load_optional_json(product_dir / "output/image-qc-report.json")
-    draft = load_optional_json(product_dir / "output/workbench-draft.json")
-    manual_attributes = draft.get("attributes") or {}
-    for item in attributes.get("attributes") or []:
-        attribute_id = str(item.get("attribute_id"))
-        if attribute_id in manual_attributes:
-            item["value"] = manual_attributes[attribute_id]
-            item["source"] = "人工修改"
-            item["validation_status"] = "pending_dictionary_validation"
-    sku_overrides = draft.get("sku_overrides") or {}
-    for item in pricing.get("sku_pricing") or []:
-        override = sku_overrides.get(str(item.get("sku_id"))) or {}
-        for field in ("selling_price_cny", "selling_price_rub"):
-            if field in override:
-                item[field] = override[field]
-    rich = {}
-    for name in ("ozon-rich-content.json", "rich-content.json", "ozon-draft.json"):
-        candidate = load_optional_json(product_dir / "output" / name)
-        if candidate:
-            rich = candidate
-            break
-    final_tags = load_optional_json(product_dir / "output/ozon-tags.json")
-    tags = final_tags.get("tags") or copy.get("keywords_ru") or copy.get("keywords") or []
-    if not isinstance(tags, list):
-        tags = [str(tags)]
-    tags = [value if str(value).startswith("#") else f"#{value}" for value in tags]
-    content = {
-        "title_ru": title_data.get("title_ru") or copy.get("title_ru") or "",
-        "title_zh_reference": source.get("title_cn") or "unknown",
-        "short_title": copy.get("short_title") or "",
-        "description_ru": description_data.get("description_ru") or copy.get("description_ru") or copy.get("description") or "",
-        "description_zh_reference": "；".join(
-            str(item.get("text") if isinstance(item, dict) else item)
-            for item in (analysis.get("selling_points") or [])[:6]
-            if str(item.get("text") if isinstance(item, dict) else item).strip()
-        ) or source.get("title_cn") or "unknown",
-        "bullets_ru": copy.get("bullets_ru") or [],
-        "tags": tags,
-    }
-    for field in WORKBENCH_EDITABLE_FIELDS:
-        if field in draft:
-            content[field] = draft[field]
-    sku_pricing = {str(item.get("sku_id")): item for item in pricing.get("sku_pricing") or []}
-    skus = []
-    for sku in source.get("skus") or []:
-        price = sku_pricing.get(str(sku.get("sku_id"))) or {}
-        options = sku.get("option_values") or []
-        option_labels = []
-        for value in options:
-            label = str(
-                value.get("value_cn") or value.get("value") or ""
-                if isinstance(value, dict) else value
-            ).strip()
-            if label:
-                option_labels.append(label)
-        option_text = " / ".join(option_labels)
-        source_data = sku.get("source_data") or {}
-        dimensions_cm = source_data.get("external_dimensions_cm") if isinstance(source_data.get("external_dimensions_cm"), dict) else {}
-        skus.append({
-            "sku_id": sku.get("sku_id"), "name": sku.get("sku_name"),
-            "options": options, "option_text": option_text, "purchase_price_cny": sku.get("purchase_price"),
-            "selling_price_cny": price.get("selling_price_cny"),
-            "selling_price_rub": price.get("selling_price_rub"),
-            "profit_cny": price.get("estimated_profit_cny"),
-            "profit_rate": price.get("profit_rate_markup"),
-            "weight_g": ((price.get("shipping") or {}).get("weight") or {}).get("actual_weight_g"),
-            "capacity_ml": source_data.get("capacity_ml"),
-            "dimensions_cm": dimensions_cm,
-            "offer_id": ((status.get("ozon") or {}).get("offer_id") or "unknown"),
-            "variant_decision": analysis.get("variant_decision") or analysis.get("grouping_decision") or "按Ozon变体规则",
-            "aspect_basis": analysis.get("is_aspect_basis") or category.get("variant_basis") or "以当前类目is_aspect规则为准",
-            "image_missing": bool(sku.get("sku_image_missing")),
-        })
-    contract_state = production_contract_state(product_dir, status, plan)
-    risk = calculate_risk(
-        status, category, attributes, qc,
-        analysis=analysis,
-        contract_state=contract_state,
-    )
-    stores = list_stores(ROOT)
-    publications = load_publications(product_dir, [store["id"] for store in stores])
-    assessment = prelisting_assessment(pricing, qc, risk)
-    images = workbench_images(product_dir, plan, qc, status)
-    assets = asset_inventory(product_dir)
-    for bucket, values in assets.items():
-        for value in values:
-            value["url"] = (
-                f"/api/workbench/products/{product_id}/assets/{bucket}/"
-                + urllib.parse.quote(value["path"], safe="/")
-            )
-    detail = {
-        "product_id": product_id,
-        "source": {
-            "title_cn": source.get("title_cn") or "unknown", "source_url": source.get("source_url") or "unknown",
-            "captured_at": source.get("captured_at") or "unknown", "main_image_count": len(source.get("main_images") or []),
-            "detail_image_count": len(source.get("detail_images") or []),
-            "product_id": source.get("product_id") or product_id,
-            "collection_id": source.get("collection_id") or "unknown",
-            "source_kind": source.get("source_kind") or "unknown",
-        },
-        "status": status,
-        "public_state": public_state(status.get("status")),
-        "handoff_message": "已提交Ozon，后续请在Ozon商品卡后台处理" if str(status.get("status") or "").upper() == "HANDED_OFF_TO_OZON" else None,
-        "progress": int(status.get("progress") or 0),
-        "content": content,
-        "draft": {"version": int(draft.get("version") or 0), "saved_at": draft.get("saved_at"), "locked_fields": draft.get("locked_fields") or []},
-        "analysis": analysis,
-        "category": category,
-        "attributes": attributes,
-        "pricing": pricing,
-        "skus": skus,
-        "images": images,
-        "image_assets": assets,
-        "image_contract": {
-            "selected_sku_count": len(skus),
-            "expected_main_count": len(skus),
-            "expected_shared_detail_count": 8,
-            "expected_total_count": len(skus) + 8,
-            "actual_main_count": sum(item.get("type") == "main" for item in images),
-            "actual_shared_detail_count": sum(item.get("type") != "main" for item in images),
-        },
-        "image_groups": build_sku_image_groups(
-            skus, images, exact_binding=contract_enabled(product_dir),
-        ),
-        "image_qc": qc,
-        "production_contract": contract_state,
-        "rich_content": rich,
-        "risk": risk,
-        "error": friendly_pipeline_error(status) if str(status.get("status") or "").upper() == "FAILED_HARD_BLOCKER" else None,
-        "prelisting_assessment": assessment,
-        "stores": stores,
-        "publications": publications,
-        "publication_summary": publication_summary(publications),
-        "ai_suggestions": build_ai_suggestions(product_dir, content, risk, qc),
-        "ozon": status.get("ozon") or {},
-        "timeline": readable_timeline(status, product_dir),
-        "workbench_settings": workbench_settings(),
-        "owner": product_owner(product_dir),
-        "pending_question": pending_product_question(product_dir),
-        "visual_preference": load_optional_json(product_dir / "input/visual-preference.json", {
-            "set_hint": "", "slot_hints": {},
-        }),
-    }
-    detail["primary_action"] = product_primary_action(detail)
-    detail["attention_required"] = bool(
-        detail["pending_question"]
-        or detail["production_contract"].get("blocking")
-        or str(status.get("status") or "").upper() in {"FAILED_HARD_BLOCKER", "OZON_READY", "WAITING_MANUAL_REVIEW"}
-    )
-    return detail
-
-
-def workbench_card(product_dir: Path) -> Dict[str, Any]:
-    detail = workbench_product_detail(product_dir.name)
-    price_items = detail["pricing"].get("sku_pricing") or []
-    prices = [item.get("purchase_cost_cny") for item in price_items if isinstance(item.get("purchase_cost_cny"), (int, float))]
-    thumbnail_exists = any(path.is_file() for path in (product_dir / "input/main-images").glob("*"))
-    publication_values = list((detail.get("publications", {}).get("stores") or {}).values())
-    remote_search = []
-    for publication in publication_values:
-        remote_search.append(str(publication.get("store_id") or ""))
-        for sku in publication.get("sku_publications") or []:
-            remote_search.extend(str(sku.get(key) or "") for key in ("sku_id", "offer_id", "task_id", "ozon_product_id"))
-    remote_search.extend(str(sku.get("sku_id") or "") for sku in detail["skus"])
-    remote_search.extend([str(detail["source"].get("source_url") or ""), str(detail["ozon"].get("task_id") or ""), str(detail["ozon"].get("product_id") or "")])
-    return {
-        "product_id": detail["product_id"], "title_cn": detail["source"]["title_cn"],
-        "title_ru": detail["content"]["title_ru"], "source_url": detail["source"]["source_url"],
-        "captured_at": detail["source"]["captured_at"], "state": detail["public_state"],
-        "workflow_bucket": workflow_bucket(detail["status"].get("status")),
-        "raw_status": detail["status"].get("status") or "unknown", "current_step": detail["status"].get("current_step") or "queue", "progress": detail["progress"],
-        "sku_count": len(detail["skus"]), "purchase_price_cny": min(prices) if prices else None,
-        "risk": detail["risk"], "image_count": len([item for item in detail["images"] if item.get("url")]),
-        "error": detail.get("error"),
-        "handoff_message": detail.get("handoff_message"),
-        "thumbnail_url": f"/api/inbox/products/{detail['product_id']}/thumbnail" if thumbnail_exists else None,
-        "batch_id": detail["status"].get("batch_id") or "unknown",
-        "selected_store_count": detail["publication_summary"]["selected"],
-        "search_terms": " ".join(remote_search),
-        "owner": detail["owner"],
-        "primary_action": detail["primary_action"],
-        "attention_required": detail["attention_required"],
-        "pending_question": detail["pending_question"],
-        "handoff_message": detail.get("handoff_message"),
-    }
-
-
-def associated_shops(product_dir: Path, status: Dict[str, Any]) -> List[str]:
-    shops: set[str] = set()
-    known_keys = {"shop", "shop_name", "selected_shop", "store", "store_name"}
-
-    def visit(value: Any) -> None:
-        if isinstance(value, dict):
-            for key, item in value.items():
-                if key in known_keys and isinstance(item, str) and item.strip() and item != "unknown":
-                    shops.add(item.strip())
-                else:
-                    visit(item)
-        elif isinstance(value, list):
-            for item in value:
-                visit(item)
-
-    visit(status)
-    for path in (
-        product_dir / "output/workbench-draft.json",
-        product_dir / "output/ozon-result.json",
-        product_dir / "output/ozon-upload-config.json",
-        product_dir / "output/ozon-write-receipt.json",
-    ):
-        visit(load_optional_json(path))
-    publications = load_publications(product_dir)
-    for store_id, record in (publications.get("stores") or {}).items():
-        if record.get("selected") or str(record.get("status")) not in {"", "NOT_SELECTED"}:
-            shops.add(store_id)
-    return sorted(shops)
-
-
-def workbench_delete_preview(product_id: str) -> Dict[str, Any]:
-    product_dir = workbench_product_dir(product_id)
-    source = load_optional_json(product_dir / "input/source.json")
-    status = load_optional_json(product_dir / "status.json")
-    ozon = status.get("ozon") or {}
-    result = load_optional_json(product_dir / "output/ozon-result.json")
-    items = result.get("items") or result.get("offers") or []
-    remote_ids = {
-        "task_ids": sorted({str(value) for value in [ozon.get("task_id"), result.get("task_id")] if value not in {None, "", "unknown"}}),
-        "offer_ids": sorted({str(value) for value in [ozon.get("offer_id"), *[item.get("offer_id") for item in items if isinstance(item, dict)]] if value not in {None, "", "unknown"}}),
-        "product_ids": sorted({str(value) for value in [ozon.get("product_id"), *[item.get("product_id") or item.get("ozon_product_id") for item in items if isinstance(item, dict)]] if value not in {None, "", "unknown"}}),
-    }
-    submitted = bool(
-        int(status.get("api_write_count") or 0) > 0
-        or any(remote_ids.values())
-        or str(status.get("status") or "").upper() in {"UPLOADING", "PENDING_REMOTE", "IMPORTED", "UPLOADED", "OZON_MODERATION", "ACTIVE"}
-    )
-    thumbnail_exists = any(path.is_file() for path in (product_dir / "input/main-images").glob("*"))
-    return {
-        "product_id": product_id,
-        "title": source.get("title_cn") or "unknown",
-        "thumbnail_url": f"/api/inbox/products/{product_id}/thumbnail" if thumbnail_exists else None,
-        "sku_count": len(source.get("skus") or []),
-        "status": status.get("status") or "unknown",
-        "public_state": public_state(status.get("status")),
-        "current_step": status.get("current_step") or "none",
-        "submitted_to_ozon": submitted,
-        "associated_shops": associated_shops(product_dir, status),
-        "remote_ids": remote_ids,
-        "remote_warning_required": submitted,
-    }
-
+# Moved to collector_routes.py (exec'd into this module's globals at the bottom).
 
 @app.get("/workbench")
+def workbench_redirect() -> RedirectResponse:
+    return RedirectResponse(url=f"/command-center?v={COMMAND_CENTER_VERSION}", status_code=307)
+
+
 def workbench_page() -> FileResponse:
     trigger_image_cleanup()
-    ensure_image_status_monitor()
-    # The page is local-DB backed and never starts a remote status poller.
+    index_path = COMMAND_CENTER_DIST_DIR / "index.html"
+    if not index_path.is_file():
+        raise HTTPException(status_code=503, detail="Command Center frontend is not built")
     return FileResponse(
-        STATIC_DIR / "workbench.html", media_type="text/html",
+        index_path, media_type="text/html",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
+@app.get("/command-center")
+def command_center_alias(request: Request):
+    if request.query_params.get("v") != COMMAND_CENTER_VERSION:
+        return RedirectResponse(url=f"/command-center?v={COMMAND_CENTER_VERSION}", status_code=307)
+    return workbench_page()
+
+
+@app.get("/1688-collection")
+def command_center_1688_collection_alias(request: Request):
+    product_id = str(request.query_params.get("product_id") or request.query_params.get("productId") or "").strip()
+    if request.query_params.get("v") != COMMAND_CENTER_VERSION:
+        suffix = f"&product_id={urllib.parse.quote(product_id)}" if product_id else ""
+        return RedirectResponse(url=f"/1688-collection?v={COMMAND_CENTER_VERSION}{suffix}", status_code=307)
+    return workbench_page()
+
+
+@app.get("/ozon-reference")
+def command_center_ozon_reference_alias(request: Request):
+    task_id = str(request.query_params.get("task_id") or request.query_params.get("taskId") or "").strip()
+    if task_id:
+        data = load_ozon_reference_tasks()
+        task = next((
+            item for item in data.get("items") or []
+            if isinstance(item, dict) and str(item.get("task_id") or "") == task_id
+        ), None)
+        product_id = str((task or {}).get("created_product_id") or "").strip()
+        if product_id:
+            return RedirectResponse(
+                url=f"/1688-collection?v={COMMAND_CENTER_VERSION}&product_id={urllib.parse.quote(product_id)}",
+                status_code=307,
+            )
+    if request.query_params.get("v") != COMMAND_CENTER_VERSION:
+        suffix = f"&task_id={urllib.parse.quote(task_id)}" if task_id else ""
+        return RedirectResponse(url=f"/ozon-reference?v={COMMAND_CENTER_VERSION}{suffix}", status_code=307)
+    return workbench_page()
+
+
+@app.get("/workbench-legacy")
+def workbench_legacy_page() -> RedirectResponse:
+    return RedirectResponse(url=f"/command-center?v={COMMAND_CENTER_VERSION}", status_code=307)
+
+
+@app.get("/assets/{asset_path:path}")
+def command_center_asset(asset_path: str) -> FileResponse:
+    path = (COMMAND_CENTER_DIST_DIR / "assets" / asset_path).resolve()
+    assets_root = (COMMAND_CENTER_DIST_DIR / "assets").resolve()
+    if assets_root not in path.parents or not path.is_file():
+        raise HTTPException(status_code=404, detail="Command Center asset not found")
+    media_type = mimetypes.guess_type(path.name)[0] or "application/octet-stream"
+    return FileResponse(
+        path, media_type=media_type,
         headers={"Cache-Control": "no-store, max-age=0"},
     )
 
 
 @app.get("/workbench.css")
-def workbench_css() -> FileResponse:
-    return FileResponse(
-        STATIC_DIR / "workbench.css", media_type="text/css",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+def workbench_css() -> RedirectResponse:
+    return RedirectResponse(url=f"/command-center?v={COMMAND_CENTER_VERSION}", status_code=307)
 
 
 @app.get("/workbench-future.css")
-def workbench_future_css() -> FileResponse:
-    return FileResponse(
-        STATIC_DIR / "workbench-future.css", media_type="text/css",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
+def workbench_future_css() -> RedirectResponse:
+    return RedirectResponse(url=f"/command-center?v={COMMAND_CENTER_VERSION}", status_code=307)
 
 
 @app.get("/icons/phosphor.css")
@@ -3303,23 +2049,28 @@ def phosphor_icons_font() -> FileResponse:
     )
 
 
-@app.get("/workbench.js")
-def workbench_js() -> FileResponse:
+@app.get("/brand/jlc-global-logo.png")
+def jlc_global_logo() -> FileResponse:
     return FileResponse(
-        STATIC_DIR / "workbench.js", media_type="application/javascript",
-        headers={"Cache-Control": "no-store, max-age=0"},
+        STATIC_DIR / "brand" / "jlc-global-logo.png", media_type="image/png",
+        headers={"Cache-Control": "public, max-age=31536000, immutable"},
     )
+
+
+@app.get("/workbench.js")
+def workbench_js() -> RedirectResponse:
+    return RedirectResponse(url=f"/command-center?v={COMMAND_CENTER_VERSION}", status_code=307)
 
 
 @app.get("/api/workbench/summary")
 def workbench_summary() -> Dict[str, Any]:
-    cards = [workbench_card(path) for path in owned_product_dirs() if (path / "status.json").is_file()]
-    counts = {name: sum(1 for card in cards if card["state"] == name) for name in ("待处理", "处理中", "完成", "失败")}
+    cards = cached_workbench_cards()
+    counts = {name: sum(1 for card in cards if card["state"] == name) for name in ("待处理", "处理中", "完成", "失败", "需要处理")}
     risks = sum(1 for card in cards if card["risk"]["level"] == "high")
     batch = get_batch_status()
     if risks:
-        focus = {"type": "risk", "title": f"{risks} 个高风险商品需要处理", "action": "打开风险中心"}
-    elif counts["待处理"] or counts["失败"]:
+        focus = {"type": "risk", "title": f"{risks} 个商品需要处理", "action": "打开需要处理"}
+    elif counts["待处理"] or counts["失败"] or counts["需要处理"]:
         focus = {"type": "review", "title": "继续处理商品资料", "action": "进入商品审核台"}
     elif batch.get("running"):
         focus = {"type": "batch", "title": "批次正在运行", "action": "查看批次中心"}
@@ -3328,324 +2079,9 @@ def workbench_summary() -> Dict[str, Any]:
     return {"counts": counts, "high_risk_count": risks, "focus": focus, "batch": batch}
 
 
-@app.get("/api/workbench/finance/overview")
-def finance_overview(
-    store_id: str = "all", date_from: str = "", date_to: str = "", currency: str = "CNY",
-) -> Dict[str, Any]:
-    try:
-        return FINANCE_CENTER.overview(
-            store_id=store_id, date_from=date_from or None, date_to=date_to or None, currency=currency,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.get("/api/workbench/finance/orders")
-def finance_orders(
-    store_id: str = "all", date_from: str = "", date_to: str = "", q: str = "", limit: int = 200,
-) -> Dict[str, Any]:
-    try:
-        return FINANCE_CENTER.orders(
-            store_id=store_id, date_from=date_from or None, date_to=date_to or None, query=q, limit=limit,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.get("/api/workbench/finance/products")
-def finance_products(
-    store_id: str = "all", date_from: str = "", date_to: str = "", q: str = "", limit: int = 200,
-) -> Dict[str, Any]:
-    try:
-        return FINANCE_CENTER.products(
-            store_id=store_id, date_from=date_from or None, date_to=date_to or None, query=q, limit=limit,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.get("/api/workbench/finance/reconciliation")
-def finance_reconciliation(store_id: str = "all", limit: int = 200) -> Dict[str, Any]:
-    return FINANCE_CENTER.reconciliation(store_id=store_id, limit=limit)
-
-
-@app.get("/api/workbench/finance/sync-status")
-def finance_sync_status() -> Dict[str, Any]:
-    return FINANCE_CENTER.sync_status()
-
-
-@app.post("/api/workbench/finance/sync")
-def finance_sync_now() -> Dict[str, Any]:
-    require_owner_role()
-    try:
-        return FINANCE_CENTER.sync(trigger="manual")
-    except (ValueError, RuntimeError) as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.post("/api/workbench/finance/imports/preview")
-async def finance_import_preview(request: Request) -> Dict[str, Any]:
-    require_owner_role()
-    payload = await request.json()
-    try:
-        return FINANCE_CENTER.preview_import(
-            file_name=str(payload.get("file_name") or ""),
-            content_base64=str(payload.get("content_base64") or ""),
-            file_kind=str(payload.get("file_kind") or "") or None,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.post("/api/workbench/finance/imports/commit")
-async def finance_import_commit(request: Request) -> Dict[str, Any]:
-    operator = require_owner_role()
-    payload = await request.json()
-    mapping = payload.get("mapping") or {}
-    if not isinstance(mapping, dict):
-        raise HTTPException(status_code=422, detail="字段映射格式错误")
-    try:
-        return FINANCE_CENTER.commit_import(
-            file_name=str(payload.get("file_name") or ""),
-            content_base64=str(payload.get("content_base64") or ""),
-            file_kind=str(payload.get("file_kind") or ""), mapping=mapping,
-            created_by=str(operator.get("id") or "owner"),
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.get("/api/workbench/finance/imports")
-def finance_import_batches() -> Dict[str, Any]:
-    require_owner_role()
-    return {"items": FINANCE_CENTER.import_batches()}
-
-
-@app.post("/api/workbench/finance/imports/{batch_id}/rollback")
-def finance_import_rollback(batch_id: str) -> Dict[str, Any]:
-    operator = require_owner_role()
-    try:
-        return FINANCE_CENTER.rollback_import(batch_id, rolled_back_by=str(operator.get("id") or "owner"))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="导入批次不存在") from exc
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.get("/api/workbench/finance/other-entries")
-def finance_other_entries(store_id: str = "all", date_from: str = "", date_to: str = "") -> Dict[str, Any]:
-    try:
-        items = FINANCE_CENTER.other_entries(
-            store_id=store_id, date_from=date_from or None, date_to=date_to or None,
-        )
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"items": items}
-
-
-@app.post("/api/workbench/finance/other-entries")
-async def finance_create_other_entry(request: Request) -> Dict[str, Any]:
-    operator = require_owner_role()
-    payload = await request.json()
-    try:
-        return {"item": FINANCE_CENTER.save_other_entry(payload, created_by=str(operator.get("id") or "owner"))}
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.patch("/api/workbench/finance/other-entries/{entry_id}")
-async def finance_update_other_entry(entry_id: str, request: Request) -> Dict[str, Any]:
-    operator = require_owner_role()
-    payload = await request.json()
-    try:
-        return {"item": FINANCE_CENTER.save_other_entry(
-            payload, created_by=str(operator.get("id") or "owner"), entry_id=entry_id,
-        )}
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-
-
-@app.delete("/api/workbench/finance/other-entries/{entry_id}")
-def finance_delete_other_entry(entry_id: str) -> Dict[str, Any]:
-    require_owner_role()
-    try:
-        FINANCE_CENTER.delete_other_entry(entry_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="其他收支记录不存在") from exc
-    return {"deleted": True, "id": entry_id}
-
-
-@app.get("/api/workbench/finance/export/{export_type}")
-def finance_export(
-    export_type: str, store_id: str = "all", date_from: str = "", date_to: str = "",
-) -> FileResponse:
-    if export_type not in {"orders", "products", "reconciliation"}:
-        raise HTTPException(status_code=404, detail="未知财务导出类型")
-    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
-    directory = ROOT / "logs/workbench-exports"
-    directory.mkdir(parents=True, exist_ok=True)
-    path = directory / f"finance-{export_type}-{stamp}.csv"
-    if export_type == "orders":
-        rows = FINANCE_CENTER.orders(store_id=store_id, date_from=date_from or None, date_to=date_to or None, limit=1000)["items"]
-    elif export_type == "products":
-        rows = FINANCE_CENTER.products(store_id=store_id, date_from=date_from or None, date_to=date_to or None, limit=1000)["items"]
-    else:
-        rows = FINANCE_CENTER.reconciliation(store_id=store_id, limit=1000)["items"]
-    fields = sorted({key for row in rows for key, value in row.items() if not isinstance(value, (dict, list))})
-    with path.open("w", encoding="utf-8-sig", newline="") as handle:
-        writer = csv.DictWriter(handle, fieldnames=fields or ["暂无数据"])
-        writer.writeheader()
-        writer.writerows({key: value for key, value in row.items() if key in fields} for row in rows)
-    return FileResponse(path, filename=path.name, media_type="text/csv")
-
-
-@app.get("/api/workbench/market-intelligence/status")
-def workbench_market_intelligence_status() -> Dict[str, Any]:
-    store = MarketStore(MARKET_DB_PATH)
-    store.initialize()
-    categories = load_optional_json(MARKET_CATEGORIES_PATH, {"schema_version": "1.0.0", "categories": []})
-    counts = store.counts()
-    ranking_available = counts["products"] > 0
-    sources = store.list_source_status()
-    latest_checked_at = max((item.get("checked_at") or "" for item in sources), default="") or "unknown"
-    trend = load_optional_json(MARKET_TREND_REPORT_PATH, {
-        "state": "collecting", "days_collected": counts["snapshots"] and 1 or 0,
-        "notice": "等待每日快照积累后生成趋势对比",
-    })
-    return {
-        "schema_version": "1.0.0",
-        "module_state": "data_ready" if ranking_available else "data_source_setup",
-        "categories": categories.get("categories") or [],
-        "sources": sources,
-        "counts": counts,
-        "ranking_available": ranking_available,
-        "last_updated_at": latest_checked_at,
-        "trend": trend,
-        "notice": "Ozon 官方市场商品数据已就绪" if ranking_available else "真实市场商品数据接入后才会显示热销榜和飙升榜",
-    }
-
-
-def market_category(category_key: str) -> Dict[str, Any]:
-    config = load_optional_json(MARKET_CATEGORIES_PATH, {"categories": []})
-    for category in config.get("categories") or []:
-        if category.get("key") == category_key and category.get("enabled", True):
-            return dict(category)
-    raise HTTPException(status_code=404, detail="未找到该选品类目")
-
-
-@app.get("/api/workbench/market-intelligence/products")
-def workbench_market_intelligence_products(
-    ranking: str = "hot",
-    category: str = "home",
-    period: int = 30,
-    page: int = 1,
-    page_size: int = 24,
-    q: str = "",
-) -> Dict[str, Any]:
-    if period not in {7, 30}:
-        raise HTTPException(status_code=400, detail="榜单周期只支持7天或30天")
-    category_rule = market_category(category)
-    if period == 7:
-        return {
-            "schema_version": "1.0.0",
-            "items": [], "total": 0, "page": max(1, page), "page_size": page_size,
-            "ranking": ranking, "category_key": category, "period_days": 7,
-            "available": False,
-            "notice": "当前官方公开商品榜单只提供近30天数据；7天榜将在积累每日快照后开放",
-        }
-    store = MarketStore(MARKET_DB_PATH)
-    store.initialize()
-    try:
-        result = store.list_ranked_products(
-            category_rule=category_rule,
-            ranking=ranking,
-            page=page,
-            page_size=page_size,
-            query=q,
-        )
-    except ValueError as error:
-        raise HTTPException(status_code=400, detail=str(error)) from error
-    return {
-        "schema_version": "1.0.0",
-        **result,
-        "period_days": 30,
-        "available": True,
-        "notice": "数据来自 Ozon 官方免费市场分析报告；排序与FBS适配度由本地规则计算",
-    }
-
-
-@app.get("/api/workbench/market-intelligence/products/{source_product_id}")
-def workbench_market_intelligence_product(source_product_id: str) -> Dict[str, Any]:
-    store = MarketStore(MARKET_DB_PATH)
-    store.initialize()
-    product = store.get_product(source_product_id)
-    if product is None:
-        raise HTTPException(status_code=404, detail="未找到该 Ozon 商品")
-    product = MarketEnricher(store, MARKET_IMAGE_CACHE_DIR).enrich_product(source_product_id)
-    enrichment = dict(product.pop("enrichment", {}) or {})
-    merged_keywords = []
-    seen_keywords = set()
-    for keyword in product.get("keywords") or []:
-        normalized = " ".join(str(keyword.get("keyword_ru") or "").lower().split())
-        if not normalized or normalized in seen_keywords:
-            continue
-        seen_keywords.add(normalized)
-        merged_keywords.append(keyword)
-    product["keywords"] = merged_keywords
-    return {
-        "schema_version": "1.0.0",
-        **product,
-        "image_state": enrichment.get("image_state") or ("ready" if product.get("image_url") != "unknown" else "syncing"),
-        "keyword_state": enrichment.get("keyword_state") or ("ready" if product["keywords"] else "source_pending"),
-        "keyword_notice": "关键词根据公开数据和商品信息整理",
-    }
-
-
-@app.get("/api/workbench/market-intelligence/images/{source_product_id}")
-def workbench_market_intelligence_image(source_product_id: str) -> FileResponse:
-    if not re.fullmatch(r"[0-9A-Za-z_-]+", source_product_id):
-        raise HTTPException(status_code=404, detail="主图不存在")
-    store = MarketStore(MARKET_DB_PATH)
-    store.initialize()
-    try:
-        enrichment = store.get_product_enrichment(source_product_id)
-    except KeyError as error:
-        raise HTTPException(status_code=404, detail="主图不存在") from error
-    raw_path = enrichment.get("image_local_path")
-    if not raw_path or raw_path == "unknown":
-        raise HTTPException(status_code=404, detail="主图仍在同步")
-    image_path = Path(str(raw_path)).resolve()
-    cache_root = MARKET_IMAGE_CACHE_DIR.resolve()
-    if not image_path.is_file() or cache_root not in image_path.parents:
-        raise HTTPException(status_code=404, detail="主图仍在同步")
-    return FileResponse(
-        image_path,
-        media_type=mimetypes.guess_type(image_path.name)[0] or "application/octet-stream",
-        headers={"Cache-Control": "no-store, max-age=0"},
-    )
-
-
-@app.get("/api/workbench/market-intelligence/keywords")
-def workbench_market_intelligence_keywords(category: str = "", limit: int = 12) -> Dict[str, Any]:
-    if category:
-        market_category(category)
-    store = MarketStore(MARKET_DB_PATH)
-    store.initialize()
-    items = [
-        item for item in store.list_keywords(category_key=category, limit=max(limit * 4, 50))
-        if (item.get("evidence") or {}).get("source") == "ozon_official_search_queries"
-    ][:max(1, min(200, int(limit)))]
-    return {
-        "schema_version": "1.0.0",
-        "items": items,
-        "total": len(items),
-        "category_key": category or "all",
-        "period_days": 7,
-        "available": bool(items),
-        "notice": "数据来自 Ozon 官方近7天搜索查询；中文为本地翻译，不改变俄文原词",
-    }
-
-
+# Finance routes moved to finance_routes.py (exec'd into this module's globals at the bottom).
+# Market-intelligence routes and helpers moved to market_routes.py
+# (imported at the bottom of this module; registers its routes on this app).
 @app.get("/api/workbench/settings")
 def get_workbench_settings() -> Dict[str, Any]:
     operator = current_operator()
@@ -3731,19 +2167,55 @@ async def update_workbench_settings(request: Request) -> Dict[str, Any]:
 def workbench_products(q: str = "", state: str = "", page: int = 1, page_size: int = 30) -> Dict[str, Any]:
     page = max(1, page)
     page_size = max(1, min(page_size, 100))
-    cards = [workbench_card(path) for path in owned_product_dirs() if (path / "status.json").is_file()]
+    cards = cached_workbench_cards()
     query = q.strip().lower()
     if query:
         cards = [card for card in cards if query in json.dumps(card, ensure_ascii=False).lower()]
     if state:
-        cards = [card for card in cards if card["state"] == state]
+        state_key = state.strip()
+        state_aliases = {
+            "attention": {"需要处理", "失败"},
+            "needs_attention": {"需要处理", "失败"},
+            "pending": {"待处理"},
+            "inbox": {"待处理"},
+            "running": {"处理中"},
+            "processing": {"处理中"},
+            "ozon": {"等待Ozon处理"},
+            "remote": {"等待Ozon处理"},
+            "done": {"完成"},
+            "completed": {"完成"},
+        }
+        allowed_states = state_aliases.get(state_key.lower(), {state_key})
+        if state_key.lower() in {"attention", "needs_attention"}:
+            cards = [
+                card for card in cards
+                if card["state"] in allowed_states
+                or card.get("attention_required")
+                or str(card.get("raw_status") or "").upper() in {"STOPPED", "NEEDS_ATTENTION", "FAILED", "PARTIAL", "PARTIAL_FAILED"}
+            ]
+        else:
+            cards = [card for card in cards if card["state"] in allowed_states]
     start = (page - 1) * page_size
-    return {"items": cards[start:start + page_size], "total": len(cards), "page": page, "page_size": page_size}
+    return {
+        "items": cards[start:start + page_size], "total": len(cards), "page": page, "page_size": page_size,
+        "execution_plan": bounded_parallel_plan(), "queue_summary": workbench_queue_summary(),
+    }
 
 
 @app.get("/api/workbench/products/{product_id}")
 def workbench_product(product_id: str) -> Dict[str, Any]:
     return workbench_product_detail(product_id)
+
+
+@app.post("/api/workbench/products/{product_id}/refresh-ozon-status")
+def workbench_product_refresh_ozon_status(product_id: str) -> Dict[str, Any]:
+    product_dir = workbench_product_dir(product_id)
+    result = sync_remote_ozon_status_once([product_dir.name])
+    return {
+        **result,
+        "product_id": product_dir.name,
+        "detail": workbench_product_detail(product_dir.name),
+    }
 
 
 @app.get("/api/workbench/products/{product_id}/delete-preview")
@@ -3830,7 +2302,7 @@ def workbench_source_image(product_id: str, image_type: str, index: int) -> File
         image_path.relative_to(product_dir.resolve())
     except ValueError as exc:
         raise HTTPException(status_code=403, detail="禁止读取商品目录以外的文件") from exc
-    if contract_enabled(product_dir):
+    if asset_boundaries_enabled(product_dir):
         try:
             validate_registered_input_file(product_dir, image_path)
         except ProductionInputError as exc:
@@ -3847,7 +2319,7 @@ def workbench_source_image(product_id: str, image_type: str, index: int) -> File
 async def update_workbench_image(product_id: str, slot: str, request: Request) -> Dict[str, Any]:
     product_dir = workbench_product_dir(product_id)
     ensure_workbench_product_mutable(product_dir)
-    if contract_enabled(product_dir):
+    if asset_boundaries_enabled(product_dir):
         try:
             validate_formal_product_input(product_dir)
         except ProductionInputError as exc:
@@ -3888,7 +2360,7 @@ async def update_workbench_image(product_id: str, slot: str, request: Request) -
             raise HTTPException(status_code=422, detail="候选图片路径不安全")
         item["kept_at"] = now_iso()
         item["kept_by"] = current_operator_id()
-        if contract_enabled(product_dir):
+        if asset_boundaries_enabled(product_dir):
             try:
                 accepted = accept_candidate(
                     product_dir,
@@ -3898,7 +2370,7 @@ async def update_workbench_image(product_id: str, slot: str, request: Request) -
                 )
             except ValueError as exc:
                 raise HTTPException(status_code=422, detail=str(exc)) from exc
-            item["accepted_path"] = str(accepted.relative_to(ROOT))
+            item["accepted_path"] = project_relative(accepted)
             item["review_status"] = "accepted"
         else:
             # Archived pre-contract products remain reviewable, but only new
@@ -3935,7 +2407,7 @@ async def replace_workbench_image(product_id: str, slot: str, request: Request) 
     image_path = product_output_image_path(product_dir, item.get("output_path"))
     if image_path is None:
         raise HTTPException(status_code=422, detail="图片路径不安全")
-    if contract_enabled(product_dir):
+    if asset_boundaries_enabled(product_dir):
         try:
             validate_generated_output(product_dir, image_path)
             invalidate_accepted_candidate(product_dir, image_path)
@@ -3964,23 +2436,7 @@ def delete_workbench_image(product_id: str, slot: str) -> Dict[str, Any]:
     if image_path is None:
         raise HTTPException(status_code=422, detail="图片路径不安全")
     try:
-        if contract_enabled(product_dir):
-            rejected_path = reject_candidate(product_dir, image_path, group="workbench-rejected")
-        else:
-            legacy_root = (product_dir / "output/images").resolve()
-            resolved = image_path.resolve()
-            if legacy_root not in resolved.parents:
-                raise ValueError("旧版图片也必须位于当前商品output/images目录")
-            rejected_path = (
-                product_dir / "output/rejected-generation/legacy-workbench"
-                / resolved.relative_to(legacy_root)
-            )
-            rejected_path.parent.mkdir(parents=True, exist_ok=True)
-            if rejected_path.exists():
-                rejected_path = rejected_path.with_name(
-                    f"{rejected_path.stem}-{int(time.time() * 1000)}{rejected_path.suffix}"
-                )
-            shutil.move(str(resolved), str(rejected_path))
+        rejected_path = reject_candidate(product_dir, image_path, group="workbench-rejected")
     except ValueError as exc:
         raise HTTPException(status_code=422, detail=str(exc)) from exc
     record_image_feedback(
@@ -3989,7 +2445,7 @@ def delete_workbench_image(product_id: str, slot: str) -> Dict[str, Any]:
     )
     item.update({
         "status": "rejected", "deleted_at": now_iso(),
-        "rejected_path": str(rejected_path.relative_to(ROOT)),
+        "rejected_path": project_relative(rejected_path),
         "review_status": "rejected",
     })
     atomic_write_json(plan_path, plan)
@@ -4013,26 +2469,31 @@ async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, A
             raise HTTPException(status_code=422, detail="标签必须逐条保存")
         normalized = []
         for value in tags:
-            tag = str(value).strip()
+            tag = normalize_workbench_tag(value)
             if not tag:
                 continue
-            if not tag.startswith("#"):
-                tag = f"#{tag}"
-            if len(tag) > 30:
-                raise HTTPException(status_code=422, detail=f"标签不能超过30个字符：{tag}")
             if tag not in normalized:
                 normalized.append(tag)
         payload["tags"] = normalized[:30]
+    if "attributes" in payload:
+        if not isinstance(payload["attributes"], dict):
+            raise HTTPException(status_code=422, detail="属性修改格式错误")
+        model_ids = system_model_attribute_ids(product_dir)
+        payload["attributes"] = {
+            str(attribute_id): value
+            for attribute_id, value in payload["attributes"].items()
+            if str(attribute_id) not in model_ids
+        }
     if "sku_overrides" in payload:
         if not isinstance(payload["sku_overrides"], dict):
-            raise HTTPException(status_code=422, detail="SKU价格修改格式错误")
+            raise HTTPException(status_code=422, detail="SKU修改格式错误")
         settings = workbench_settings()
         rate = float(settings["fixed_cny_to_rub"])
         rounding = max(1, int(settings["rub_rounding"]))
         normalized_overrides: Dict[str, Dict[str, Any]] = {}
         for sku_id, raw_values in payload["sku_overrides"].items():
             if not isinstance(raw_values, dict):
-                raise HTTPException(status_code=422, detail="SKU价格修改格式错误")
+                raise HTTPException(status_code=422, detail="SKU修改格式错误")
             values = dict(raw_values)
             if "selling_price_cny" in values:
                 try:
@@ -4050,7 +2511,9 @@ async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, A
     changed = [field for field, value in payload.items() if before.get(field) != value]
     draft = dict(before)
     for field, value in payload.items():
-        if field in {"attributes", "sku_overrides", "image_prompts"} and isinstance(value, dict):
+        if field == "sku_overrides" and isinstance(value, dict):
+            draft[field] = deep_merge_sku_overrides(draft.get(field) or {}, value)
+        elif field in {"attributes", "image_prompts"} and isinstance(value, dict):
             draft[field] = {**(draft.get(field) or {}), **value}
         else:
             draft[field] = value
@@ -4061,6 +2524,17 @@ async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, A
         "locked_fields": sorted(set(before.get("locked_fields") or []) | set(changed)),
         "dirty": True,
     })
+    sku_fact_changed = False
+    if "sku_overrides" in payload:
+        sku_fact_changed = persist_workbench_sku_overrides(
+            product_dir,
+            payload["sku_overrides"],
+            draft["saved_at"],
+        )
+        if sku_fact_changed:
+            invalidate_sku_fact_outputs(product_dir)
+            draft["sku_fact_dirty"] = True
+            draft["sku_fact_invalidation_at"] = draft["saved_at"]
     atomic_write_json(draft_path, draft)
     history_path = product_dir / "output/workbench-versions.json"
     history = load_optional_json(history_path, {"product_id": product_id, "versions": []})
@@ -4076,10 +2550,73 @@ async def save_workbench_draft(product_id: str, request: Request) -> Dict[str, A
         ROOT, product_dir, payload, draft["saved_at"],
         threshold=int(workbench_settings()["learning_threshold"]),
     )
-    append_log(product_dir, "workbench_draft_saved", {"version": draft["version"], "changed_fields": changed})
+    append_log(product_dir, "workbench_draft_saved", {
+        "version": draft["version"],
+        "changed_fields": changed,
+        "sku_fact_changed": sku_fact_changed,
+    })
     return {
         "saved": True, "version": draft["version"], "saved_at": draft["saved_at"],
         "locked_fields": draft["locked_fields"], "learning": learning,
+    }
+
+
+@app.post("/api/workbench/products/{product_id}/sku-image-bindings")
+async def bind_workbench_sku_image(product_id: str, request: Request) -> Dict[str, Any]:
+    product_dir = workbench_product_dir(product_id)
+    ensure_workbench_product_mutable(product_dir)
+    payload = await request.json()
+    sku_id = str(payload.get("sku_id") or "").strip()
+    selected_image_path = str(payload.get("selected_image_path") or "").strip()
+    if not sku_id:
+        raise HTTPException(status_code=422, detail="请选择要绑定的SKU")
+    if not selected_image_path:
+        raise HTTPException(status_code=422, detail="请选择一张本商品已采集图片")
+    try:
+        binding = save_sku_image_binding(
+            product_dir,
+            sku_id,
+            selected_image_path,
+            bound_by=current_operator_id(),
+        )
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    status_path = product_dir / "status.json"
+    status = load_optional_json(status_path)
+    if str(status.get("failed_step") or status.get("current_step") or "") in {"ecommerce_design", "image_plan"}:
+        status["next_action"] = "retry_failed_step"
+        status["updated_at"] = now_iso()
+        atomic_write_json(status_path, status)
+    append_log(product_dir, "sku_reference_image_bound", {
+        "sku_id": sku_id,
+        "selected_image_path": binding["selected_image_path"],
+        "source_type": binding["source_type"],
+    })
+    preflight = build_preflight(product_dir, allow_download=False)
+    remaining_blocked = [
+        str(value)
+        for value in preflight.get("blocked_sku_ids") or []
+        if str(value or "").strip()
+    ]
+    if not remaining_blocked:
+        status = load_optional_json(status_path)
+        if str(status.get("failed_step") or status.get("current_step") or "") == "image_source_preflight":
+            status["status"] = "STOPPED"
+            status["next_action"] = "ecommerce_design"
+            status["attention_required"] = False
+            status["error_message"] = "unknown"
+            status["human_message"] = "SKU参考图已绑定，可继续生成。"
+            status["updated_at"] = now_iso()
+            atomic_write_json(status_path, status)
+    source = load_optional_json(product_dir / "input/source.json")
+    return {
+        "saved": True,
+        "binding": binding,
+        "candidates": workbench_sku_image_binding_candidates(product_dir, source),
+        "remaining_blocked_sku_ids": remaining_blocked,
+        "message": "SKU参考图已绑定，点击继续后会从当前断点恢复。" if remaining_blocked else "SKU参考图已全部绑定，可以继续生成。",
+        "ozon_write_calls": 0,
+        "inventory_calls": 0,
     }
 
 
@@ -4113,21 +2650,21 @@ async def save_visual_preference(product_id: str, request: Request) -> Dict[str,
     invalidated: List[str] = []
     if str(status.get("status") or "").upper() not in remote_states and int(status.get("api_write_count") or 0) == 0:
         reset_steps = {
-            "style_selector", "image_plan", "image_generation", "image_qc",
-            "final_upload_check", "ozon_upload",
+            "ecommerce_design", "image_plan", "image_generation", "image_qc",
+            "ozon_upload",
         }
         completed = list(status.get("completed_steps") or [])
         status["completed_steps"] = [step for step in completed if step not in reset_steps]
         invalidated = [step for step in completed if step in reset_steps]
         pipeline_steps = [
             "validate_source", "product_analysis", "category_match", "variant_rules", "measurements",
-            "offer_exists_check", "upload_feasibility", "product_positioning", "russian_copy",
-            "marketplace_content", "field_completion", "style_selector", "image_plan",
-            "image_generation", "image_qc", "final_upload_check", "ozon_upload",
+            "offer_exists_check", "upload_feasibility", "product_positioning", "ecommerce_design", "russian_copy",
+            "field_completion", "image_plan",
+            "image_generation", "image_qc", "ozon_upload",
         ]
         status["pending_steps"] = [step for step in pipeline_steps if step not in status["completed_steps"]]
         status["next_action"] = status["pending_steps"][0] if status["pending_steps"] else "complete"
-        if status.get("status") not in {"COLLECTED", "FAILED_HARD_BLOCKER"}:
+        if status.get("status") not in {"COLLECTED", *ATTENTION_STATES}:
             status["status"] = "STOPPED"
         status["task_authorized"] = False
         atomic_write_json(status_path, status)
@@ -4163,7 +2700,7 @@ def workbench_notifications() -> Dict[str, Any]:
             })
             continue
         raw_status = str(status.get("status") or "").upper()
-        if raw_status == "FAILED_HARD_BLOCKER":
+        if raw_status in ATTENTION_STATES:
             error = friendly_pipeline_error(status)
             items.append({
                 "id": f"failure:{product_dir.name}:{status.get('last_run_at') or status.get('completed_at') or 'current'}",
@@ -4175,7 +2712,7 @@ def workbench_notifications() -> Dict[str, Any]:
                 "created_at": status.get("last_run_at") or "unknown",
                 "requires_action": True,
             })
-        elif raw_status == "OZON_READY":
+        elif raw_status == "WAITING_MANUAL_REVIEW" and not is_auto_upload_ready_status(status):
             items.append({
                 "id": f"review:{product_dir.name}:{status.get('last_run_at') or 'current'}",
                 "type": "review", "product_id": product_dir.name,
@@ -4211,7 +2748,7 @@ async def answer_product_question(product_id: str, request: Request) -> Dict[str
     atomic_write_json(question_path, question)
     status_path = product_dir / "status.json"
     status = load_optional_json(status_path)
-    if str(status.get("status") or "").upper() == "FAILED_HARD_BLOCKER":
+    if str(status.get("status") or "").upper() in ATTENTION_STATES:
         status.update({
             "status": "STOPPED", "error_code": "unknown", "error_message": "unknown",
             "next_action": status.get("failed_step") if status.get("failed_step") not in {None, "", "unknown"} else "validate_source",
@@ -4248,13 +2785,17 @@ def retry_failed_store(product_id: str, store_id: str) -> Dict[str, Any]:
     record = (publications.get("stores") or {}).get(store_id) or {}
     if str(record.get("status") or "") != "FAILED":
         raise HTTPException(status_code=409, detail="只允许重试明确失败的店铺")
-    if not definitely_retryable(record):
+    if (
+        not definitely_retryable(record)
+        and not image_repair_retryable(record)
+        and not variant_repair_retryable(record)
+    ):
         raise HTTPException(status_code=409, detail="该店铺状态不明确或已有远端任务，禁止重传")
     status_path = product_dir / "status.json"
     original_status = load_optional_json(status_path)
     status = dict(original_status)
     status.update({
-        "status": "OZON_READY", "current_step": "field_completion", "progress": 95,
+        "status": "WAITING_MANUAL_REVIEW", "current_step": "field_completion", "progress": 95,
         "failed_step": "unknown", "error_code": "unknown", "error_message": "unknown",
         "next_action": "ozon_upload", "target_store_ids_for_run": [store_id],
         "task_authorized": True, "last_run_at": now_iso(),
@@ -4263,7 +2804,10 @@ def retry_failed_store(product_id: str, store_id: str) -> Dict[str, Any]:
     status["pending_steps"] = list(dict.fromkeys([*(status.get("pending_steps") or []), "ozon_upload"]))
     atomic_write_json(status_path, status)
     try:
-        batch = create_batch(ROOT, [product_id], target_store_ids=[store_id], auto_upload=True)
+        batch = create_batch(
+            ROOT, [product_id], target_store_ids=[store_id],
+            auto_upload=True, allow_terminal_store_retry=True,
+        )
         save_batch_owner(batch["batch_id"])
         final_snapshot(product_dir, [store_id], batch["batch_id"])
         launched = launch_or_enqueue_batch(batch, "retry_failed_store")
@@ -4311,7 +2855,11 @@ async def retry_failed_stores(product_id: str, request: Request) -> Dict[str, An
                 blocked[store_id] = "店铺未启用或尚未验证"
             elif str(record.get("status") or "") != "FAILED":
                 blocked[store_id] = "店铺不是明确失败状态"
-            elif not definitely_retryable(record):
+            elif (
+                not definitely_retryable(record)
+                and not image_repair_retryable(record)
+                and not variant_repair_retryable(record)
+            ):
                 blocked[store_id] = "店铺状态不明确或已有远端任务，禁止重传"
             else:
                 retryable.append(store_id)
@@ -4321,7 +2869,7 @@ async def retry_failed_stores(product_id: str, request: Request) -> Dict[str, An
         original_status = load_optional_json(status_path)
         status = dict(original_status)
         status.update({
-            "status": "OZON_READY", "current_step": "field_completion", "progress": 95,
+            "status": "WAITING_MANUAL_REVIEW", "current_step": "field_completion", "progress": 95,
             "failed_step": "unknown", "error_code": "unknown", "error_message": "unknown",
             "next_action": "ozon_upload", "target_store_ids_for_run": retryable,
             "task_authorized": True, "last_run_at": now_iso(),
@@ -4330,7 +2878,10 @@ async def retry_failed_stores(product_id: str, request: Request) -> Dict[str, An
         status["pending_steps"] = list(dict.fromkeys([*(status.get("pending_steps") or []), "ozon_upload"]))
         atomic_write_json(status_path, status)
         try:
-            batch = create_batch(ROOT, [product_id], target_store_ids=retryable, auto_upload=True)
+            batch = create_batch(
+                ROOT, [product_id], target_store_ids=retryable,
+                auto_upload=True, allow_terminal_store_retry=True,
+            )
             save_batch_owner(batch["batch_id"])
             final_snapshot(product_dir, retryable, batch["batch_id"])
             launched = launch_or_enqueue_batch(batch, "retry_failed_stores")
@@ -4418,12 +2969,32 @@ async def run_single_workbench_product(product_id: str, request: Request) -> Dic
     with BATCH_QUEUE_LOCK:
         existing_batch_id = reserved_product_batches().get(product_id)
         if existing_batch_id:
+            existing_batch = load_optional_json(batch_path(ROOT, existing_batch_id))
+            if existing_batch:
+                mark_products_queued_for_batch(
+                    existing_batch,
+                    priority_upload=existing_batch.get("execution_priority") == "manual_upload",
+                )
             return {
                 "status": "already_queued", "batch_id": existing_batch_id,
                 "write_api_calls": 0, "inventory_api_calls": 0,
                 "target_store_ids": [],
             }
     ensure_workbench_product_mutable(product_dir)
+    if is_ozon_reference_draft_product(product_dir):
+        result = launch_ozon_reference_image_generation(product_dir)
+        return {
+            **result,
+            "batch_id": "ozon_reference_image_generation",
+            "pid": None,
+            "queue_position": 0,
+            "target_store_ids": [],
+            "target_store_id_source": "ozon_reference_draft",
+            "resumed_from_checkpoint": True,
+            "priority_upload": False,
+            "write_api_calls": 0,
+            "inventory_api_calls": 0,
+        }
     try:
         validate_formal_product_input(product_dir)
     except ProductionInputError as exc:
@@ -4434,433 +3005,105 @@ async def run_single_workbench_product(product_id: str, request: Request) -> Dic
     raw = await request.body()
     payload = json.loads(raw) if raw else {}
     requested_store_ids = payload.get("store_ids") or []
-    selected_stores = validate_target_stores(requested_store_ids) if requested_store_ids else []
-    auto_upload = bool(payload.get("auto_upload", workbench_settings()["auto_mode_enabled"]))
+    store_id_source = "request"
+    if requested_store_ids:
+        selected_stores = validate_target_stores(requested_store_ids)
+    else:
+        fallback_store_ids = saved_target_store_candidates(product_dir)
+        selected_stores = validate_target_stores(fallback_store_ids) if fallback_store_ids else []
+        store_id_source = "saved_product_selection" if selected_stores else "missing"
+    # Store/SKU/category selection happens before this click.  The click then
+    # authorizes the full unattended path, including the selected-store upload.
+    auto_upload = True
     if not selected_stores:
-        raise HTTPException(status_code=422, detail="请先选择至少一家已验证店铺；任务会自动完成生成并上传")
-    status = load_optional_json(product_dir / "status.json")
-    resume_authorized_failure = (
-        status.get("status") == "FAILED_HARD_BLOCKER"
-        and status.get("task_authorized") is True
+        raise HTTPException(
+            status_code=422,
+            detail="这件商品还没有保存目标店铺。请先点“上传至店铺”选择店铺，再点继续。",
+        )
+    original_status = load_optional_json(product_dir / "status.json")
+    status = prepare_partial_upload_resume(
+        product_dir,
+        effective_product_status(product_dir, dict(original_status)),
     )
+    # A click on Run/Continue is the explicit operator authorization for this
+    # local product run.  Do not require a stale previous status flag to be
+    # true, otherwise hard-blocked products can show a Continue button that
+    # cannot actually resume.
+    resume_authorized_failure = status.get("status") in ATTENTION_STATES
+    failed_step = str(status.get("failed_step") or status.get("current_step") or "")
+    resume_upload_failure = (
+        resume_authorized_failure
+        and failed_step in {"ozon_upload", "manual_ozon_upload"}
+        and int(status.get("api_write_count") or 0) == 0
+    )
+    if resume_upload_failure:
+        auto_upload = True
     resume_authorized_checkpoint = (
-        status.get("status") in {"CATEGORY_MATCHED", "PRICED", "CONTENT_GENERATED", "IMAGES_GENERATED"}
-        and status.get("task_authorized") is True
+        status.get("status") in {
+        "CATEGORY_MATCHED", "PRICED", "CONTENT_GENERATED", "IMAGES_GENERATED",
+        "WAITING_FOR_AI_SERVICE", "STOPPED", "PARTIAL",
+        }
+        or str(status.get("ai_service_state") or "") == "waiting_for_recovery"
     )
     resume_authorized = resume_authorized_failure or resume_authorized_checkpoint
     if status.get("status") == "PENDING_REMOTE":
         raise HTTPException(status_code=409, detail="Ozon仍在处理，禁止重复提交")
     if status.get("status") in {"UPLOADED", "OZON_MODERATION", "ACTIVE"}:
         raise HTTPException(status_code=409, detail="商品已提交；修改后应由现有UPDATE流程处理")
-    if int(status.get("api_write_count") or 0) > 0 and (status.get("ozon") or {}).get("upload_status") not in {"failed", "not_started"}:
+    if (
+        str(status.get("status") or "").upper() != "PARTIAL"
+        and int(status.get("api_write_count") or 0) > 0
+        and (status.get("ozon") or {}).get("upload_status") not in {"failed", "not_started"}
+    ):
         raise HTTPException(status_code=409, detail="已有Ozon写入记录，当前状态不允许重试")
+    confirmed_manual_upload = (
+        auto_upload
+        and str(status.get("status") or "").upper() == "WAITING_MANUAL_REVIEW"
+        and int(status.get("api_write_count") or 0) == 0
+    )
     with BATCH_QUEUE_LOCK:
         if selected_stores:
             select_stores(product_dir, selected_stores, connected_store_ids(), payload.get("overrides") or {})
         materialize_active_experience(ROOT, product_dir, now_iso())
-        batch = create_batch(ROOT, [product_id], target_store_ids=selected_stores, auto_upload=auto_upload)
+        try:
+            batch = create_batch(ROOT, [product_id], target_store_ids=selected_stores, auto_upload=auto_upload)
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
         save_batch_owner(batch["batch_id"])
         if batch.get("product_count") != 1:
             raise HTTPException(status_code=409, detail="当前商品状态不允许进入任务")
         if auto_upload:
             final_snapshot(product_dir, selected_stores, batch["batch_id"])
         reason = (
-            "resume_failed_product" if resume_authorized_failure
+            "manual_upload" if confirmed_manual_upload
+            else "resume_failed_product" if resume_authorized_failure
             else "resume_checkpoint" if resume_authorized_checkpoint
             else "single_product"
         )
         # Clicking Run Task is the one batch authorization. Manual mode runs
         # the full generation pipeline now and stops only at image review.
-        launched = launch_or_enqueue_batch(batch, reason)
+        try:
+            launched = launch_or_enqueue_batch(batch, reason)
+        except Exception:
+            if confirmed_manual_upload:
+                atomic_write_json(product_dir / "status.json", original_status)
+            raise
     append_log(product_dir, "workbench_product_run", {"batch_id": batch["batch_id"], "launch_status": launched["status"]})
     return {
         "status": launched["status"], "batch_id": batch["batch_id"], "pid": launched.get("pid"),
         "queue_position": launched.get("queue_position", 0), "write_api_calls": 0,
         "inventory_api_calls": 0, "target_store_ids": selected_stores,
+        "target_store_id_source": store_id_source,
         "resumed_from_checkpoint": resume_authorized,
+        "priority_upload": launched.get("priority_upload", False),
+        "preemption_requested": launched.get("preemption_requested", False),
+        "message": launched.get("message"),
     }
 
 
-@app.get("/api/workbench/batches")
-def workbench_batches() -> Dict[str, Any]:
-    items = []
-    active_pid = running_batch_pid()
-    current = load_optional_json(CURRENT_BATCH_PATH)
-    queued_positions = {
-        str(item.get("batch_id")): index
-        for index, item in enumerate(load_workbench_run_queue().get("items") or [], start=1)
-    }
-    for path in sorted((ROOT / "batches").glob("B-*/batch.json"), reverse=True):
-        batch = load_optional_json(path)
-        if str(batch.get("local_lifecycle_status") or "").upper() == "ARCHIVED":
-            continue
-        if batch and batch_is_owned(str(batch.get("batch_id") or path.parent.name)):
-            batch = overlay_live_batch_status(batch, PRODUCTS_DIR)
-            result = load_optional_json(path.with_name("batch-result.json"))
-            batch["result"] = result
-            batch["queue_position"] = queued_positions.get(str(batch.get("batch_id")), 0)
-            ready_product_ids = manual_upload_product_ids(batch)
-            batch["ready_product_ids"] = ready_product_ids
-            if ready_product_ids:
-                batch["status"] = "AWAITING_MANUAL_UPLOAD"
-                batch["display_status"] = "待确认上传"
-            else:
-                batch["display_status"] = (
-                    "排队中"
-                    if batch["queue_position"]
-                    else
-                    "已中断"
-                    if batch.get("status") == "RUNNING" and not (
-                        active_pid and current.get("batch_id") == batch.get("batch_id")
-                    )
-                    else batch.get("status")
-                )
-            items.append(batch)
-    return {"items": items[:100], "running_pid": active_pid, "queued_count": len(queued_positions)}
+# Moved to batches_routes.py (exec'd into this module's globals at the bottom).
 
-
-@app.post("/api/workbench/batches/create")
-async def create_workbench_batch(request: Request) -> Dict[str, Any]:
-    payload = await request.json()
-    if not isinstance(payload, dict):
-        raise HTTPException(status_code=422, detail="批次内容格式错误")
-    selected_stores = validate_target_stores(payload.get("store_ids") or [])
-    product_ids = payload.get("product_ids")
-    if product_ids is not None and not isinstance(product_ids, list):
-        raise HTTPException(status_code=422, detail="商品列表格式错误")
-    overrides = payload.get("product_store_overrides") or {}
-    with BATCH_QUEUE_LOCK:
-        reserved = reserved_product_batches()
-        requested_ids = product_ids or [path.name for path in collected_products(ROOT) if product_is_owned(path)]
-        requested_ids = [
-            str(value) for value in requested_ids
-            if (PRODUCTS_DIR / str(value)).is_dir() and product_is_owned(PRODUCTS_DIR / str(value))
-        ]
-        available_ids = [str(value) for value in requested_ids if str(value) not in reserved]
-        if not available_ids:
-            return {
-                "status": "already_queued" if requested_ids else "empty", "product_count": 0,
-                "existing_batch_ids": sorted({reserved[str(value)] for value in requested_ids if str(value) in reserved}),
-            }
-        for product_id in available_ids:
-            try:
-                validate_formal_product_input(PRODUCTS_DIR / product_id)
-            except ProductionInputError as exc:
-                raise HTTPException(
-                    status_code=422,
-                    detail=f"{product_id} 不是当前工作台本次采集的正式输入，批次未创建：{exc}",
-                ) from exc
-        auto_upload = bool(workbench_settings()["auto_mode_enabled"])
-        batch = create_batch(
-            ROOT, available_ids, target_store_ids=selected_stores,
-            auto_upload=auto_upload, product_store_overrides=overrides,
-        )
-        save_batch_owner(batch["batch_id"])
-        for entry in batch["products"]:
-            product_dir = workbench_product_dir(entry["product_id"])
-            stores_for_product = entry.get("target_store_ids") or selected_stores
-            select_stores(product_dir, stores_for_product, connected_store_ids())
-            materialize_active_experience(ROOT, product_dir, now_iso())
-            if auto_upload:
-                final_snapshot(product_dir, stores_for_product, batch["batch_id"])
-        launched = launch_or_enqueue_batch(batch, "workbench_batch")
-    return {
-        **launched, "product_count": batch["product_count"], "target_store_ids": selected_stores,
-        "auto_upload": batch["auto_upload"], "write_api_calls": 0, "inventory_api_calls": 0,
-    }
-
-
-@app.get("/api/workbench/batches/{batch_id}/confirmation")
-def get_workbench_batch_confirmation(batch_id: str) -> Dict[str, Any]:
-    require_owned_batch(batch_id)
-    batch = load_optional_json(batch_path(ROOT, batch_id))
-    if not batch:
-        raise HTTPException(status_code=404, detail="批次不存在")
-    if batch.get("auto_upload"):
-        raise HTTPException(status_code=409, detail="自动模式批次不需要人工确认")
-    if batch.get("status") not in {"AWAITING_CONFIRMATION", "QUEUED"}:
-        raise HTTPException(status_code=409, detail="当前批次已离开人工确认阶段")
-    return build_batch_confirmation(batch)
-
-
-def _positive_confirmation_number(value: Any, field_name: str) -> float:
-    try:
-        number_value = float(value)
-    except (TypeError, ValueError) as exc:
-        raise HTTPException(status_code=422, detail=f"{field_name}必须是数字") from exc
-    if number_value <= 0:
-        raise HTTPException(status_code=422, detail=f"{field_name}必须大于0")
-    return round(number_value, 2)
-
-
-def _confirmed_dimensions(value: Any, field_name: str) -> Dict[str, float]:
-    if not isinstance(value, dict):
-        raise HTTPException(status_code=422, detail=f"{field_name}格式错误")
-    return {
-        key: _positive_confirmation_number(value.get(key), f"{field_name}{label}")
-        for key, label in (("length", "长"), ("width", "宽"), ("height", "高"))
-    }
-
-
-@app.post("/api/workbench/batches/{batch_id}/confirm")
-async def confirm_workbench_batch(batch_id: str, request: Request) -> Dict[str, Any]:
-    require_owned_batch(batch_id)
-    payload = await request.json()
-    confirmations = payload.get("products") if isinstance(payload, dict) else None
-    if not isinstance(confirmations, list):
-        raise HTTPException(status_code=422, detail="批量确认内容格式错误")
-    by_product = {str(item.get("product_id")): item for item in confirmations if isinstance(item, dict)}
-    with BATCH_QUEUE_LOCK:
-        batch_file = batch_path(ROOT, batch_id)
-        batch = load_optional_json(batch_file)
-        if not batch:
-            raise HTTPException(status_code=404, detail="批次不存在")
-        if batch.get("status") != "AWAITING_CONFIRMATION":
-            raise HTTPException(status_code=409, detail="批次已确认或已经启动，禁止重复确认")
-        if batch.get("auto_upload"):
-            raise HTTPException(status_code=409, detail="自动模式批次不需要人工确认")
-        expected = batch_product_ids(batch)
-        if set(by_product) != set(expected):
-            raise HTTPException(status_code=422, detail="必须一次确认本批次的全部商品")
-        normalized: Dict[str, Dict[str, Any]] = {}
-        for product_id in expected:
-            item = by_product[product_id]
-            fields = item.get("fields") or {}
-            product_dimensions = _confirmed_dimensions(fields.get("product_dimensions"), "商品尺寸")
-            package_dimensions = _confirmed_dimensions(fields.get("package_dimensions"), "包装尺寸")
-            product_weight = _positive_confirmation_number(fields.get("product_weight_g"), "商品净重")
-            package_weight = _positive_confirmation_number(fields.get("package_weight_g"), "包装重量")
-            if package_weight <= product_weight:
-                raise HTTPException(status_code=422, detail=f"{product_id}：包装重量必须大于商品净重")
-            if any(package_dimensions[key] <= product_dimensions[key] for key in ("length", "width", "height")):
-                raise HTTPException(status_code=422, detail=f"{product_id}：包装长宽高必须分别大于商品长宽高")
-            material = str(fields.get("material") or "unknown").strip() or "unknown"
-            sku_prices = item.get("sku_prices") or {}
-            source = load_optional_json(workbench_product_dir(product_id) / "input/source.json")
-            expected_skus = {str(sku.get("sku_id")) for sku in source.get("skus") or []}
-            if set(str(key) for key in sku_prices) != expected_skus:
-                raise HTTPException(status_code=422, detail=f"{product_id}：必须确认全部SKU的人民币进价")
-            normalized_prices = {
-                str(sku_id): _positive_confirmation_number(value, f"{product_id} SKU {sku_id}进价")
-                for sku_id, value in sku_prices.items()
-            }
-            normalized[product_id] = {
-                "schema_version": "1.0.0",
-                "product_id": product_id,
-                "batch_id": batch_id,
-                "confirmed_at": now_iso(),
-                "confirmed_by": "workbench_manual_batch_confirmation",
-                "fields": {
-                    "product_dimensions": {**product_dimensions, "unit": "cm"},
-                    "product_weight": {"value_g": product_weight},
-                    "package_dimensions": {**package_dimensions, "unit": "cm"},
-                    "package_weight": {"value_g": package_weight},
-                    "material": material,
-                },
-                "sku_purchase_prices_cny": normalized_prices,
-                "provenance": "estimated_human_approved",
-                "inventory_submission_enabled": False,
-            }
-        for entry in batch["products"]:
-            product_id = str(entry["product_id"])
-            product_dir = workbench_product_dir(product_id)
-            atomic_write_json(product_dir / "input/manual-confirmation.json", normalized[product_id])
-            stores_for_product = entry.get("target_store_ids") or batch.get("target_store_ids") or []
-            final_snapshot(product_dir, stores_for_product, batch_id)
-            append_log(product_dir, "manual_batch_confirmation_saved", {
-                "batch_id": batch_id,
-                "confirmed_fields": ["product_dimensions", "product_weight", "package_dimensions", "package_weight", "material", "sku_purchase_prices_cny"],
-            })
-            entry.update({"status": "QUEUED", "current_step": "queue"})
-        batch.update({"status": "QUEUED", "confirmed_at": now_iso(), "confirmation_count": len(normalized)})
-        atomic_write_json(batch_file, batch)
-        launched = launch_or_enqueue_batch(batch, "manual_confirmation")
-    return {
-        **launched,
-        "product_count": batch.get("product_count", 0),
-        "confirmed_product_count": len(normalized),
-        "write_api_calls": 0,
-        "inventory_api_calls": 0,
-    }
-
-
-@app.post("/api/workbench/batches/control")
-async def control_batch(request: Request) -> Dict[str, Any]:
-    payload = await request.json()
-    action = str(payload.get("action") or "") if isinstance(payload, dict) else ""
-    pid = running_batch_pid()
-    if action == "cancel_confirmation":
-        batch_id = str(payload.get("batch_id") or "")
-        require_owned_batch(batch_id)
-        batch_file = batch_path(ROOT, batch_id) if batch_id else None
-        batch = load_optional_json(batch_file) if batch_file else {}
-        if not batch:
-            raise HTTPException(status_code=404, detail="批次不存在")
-        if batch.get("status") != "AWAITING_CONFIRMATION":
-            raise HTTPException(status_code=409, detail="只有尚未确认、尚未启动的批次可以直接取消")
-        batch.update({"status": "CANCELLED", "cancelled_at": now_iso(), "cancel_reason": "user_cancelled_before_generation"})
-        for entry in batch.get("products") or []:
-            entry.update({"status": "CANCELLED", "current_step": "cancelled_before_generation"})
-            product_dir = workbench_product_dir(str(entry.get("product_id")))
-            append_log(product_dir, "manual_confirmation_batch_cancelled", {"batch_id": batch_id})
-        atomic_write_json(batch_file, batch)
-        return {
-            "status": "cancelled", "batch_id": batch_id,
-            "message": "本次任务已取消，商品仍保留在采集箱，可以重新运行",
-            "write_api_calls": 0, "inventory_api_calls": 0,
-        }
-    if action == "retry_failed":
-        if pid is not None:
-            raise HTTPException(status_code=409, detail="当前批次仍在运行")
-        failed = [
-            path.name for path in retryable_products(ROOT)
-            if product_is_owned(path) and load_optional_json(path / "status.json").get("status") == "FAILED_HARD_BLOCKER"
-        ]
-        if not failed:
-            return {"status": "empty", "message": "没有可重试的失败商品"}
-        selected_stores = validate_target_stores(payload.get("store_ids") or [])
-        batch = create_batch(ROOT, failed, target_store_ids=selected_stores, auto_upload=bool(payload.get("auto_upload", False)))
-        save_batch_owner(batch["batch_id"])
-        for product_id in failed:
-            select_stores(workbench_product_dir(product_id), selected_stores, connected_store_ids())
-        launched = launch_or_enqueue_batch(batch, "retry_failed")
-        return {**launched, "batch_id": batch["batch_id"], "product_count": len(failed)}
-    if pid is None:
-        raise HTTPException(status_code=409, detail="当前没有运行中的批次")
-    if action == "stop":
-        current = load_optional_json(CURRENT_BATCH_PATH)
-        require_owned_batch(str(current.get("batch_id") or ""))
-        atomic_write_json(SAFE_STOP_REQUEST_PATH, {
-            "batch_id": current.get("batch_id"), "pid": pid,
-            "requested_at": now_iso(), "mode": "interrupt_active_child_preserve_checkpoints",
-        })
-        return {
-            "status": "stopping_safely", "pid": pid,
-            "message": "正在安全停止当前子任务；已经逐张保存的图片保留，未完成图片不再继续生成",
-        }
-    signals = {"pause": signal.SIGSTOP, "continue": signal.SIGCONT}
-    if action not in signals:
-        raise HTTPException(status_code=422, detail="不支持的批次操作")
-    current = load_optional_json(CURRENT_BATCH_PATH)
-    require_owned_batch(str(current.get("batch_id") or ""))
-    os.kill(pid, signals[action])
-    return {"status": action, "pid": pid}
-
-
-@app.get("/api/workbench/risks")
-def workbench_risks() -> Dict[str, Any]:
-    items = []
-    for path in owned_product_dirs():
-        if not (path / "status.json").is_file():
-            continue
-        detail = workbench_product_detail(path.name)
-        for risk in detail["risk"]["items"]:
-            items.append({"product_id": path.name, "title": detail["source"]["title_cn"], **risk})
-    rules_path = ROOT / "config/workbench-risk-rules.json"
-    rules = load_optional_json(rules_path, {
-        "rules": [
-            {"id": "product_truth", "name": "产品真实性", "action": "block", "immutable": True},
-            {"id": "ozon_hard_rule", "name": "Ozon平台硬规则", "action": "block", "immutable": True},
-            {"id": "duplicate_create", "name": "重复CREATE", "action": "block", "immutable": True},
-            {"id": "inventory_api", "name": "库存接口", "action": "block", "immutable": True},
-            {"id": "sku_merge", "name": "SKU错误合并", "action": "block", "immutable": True},
-            {"id": "category_confidence", "name": "类目置信度偏低", "action": "review", "immutable": False},
-        ]
-    })
-    return {"items": items, "rules": rules.get("rules") or []}
-
-
-@app.patch("/api/workbench/risk-rules/{rule_id}")
-async def update_workbench_risk_rule(rule_id: str, request: Request) -> Dict[str, Any]:
-    require_owner_role()
-    path = ROOT / "config/workbench-risk-rules.json"
-    current = workbench_risks()["rules"]
-    rule = next((item for item in current if item.get("id") == rule_id), None)
-    if not rule:
-        raise HTTPException(status_code=404, detail="风险规则不存在")
-    if rule.get("immutable"):
-        raise HTTPException(status_code=422, detail="该硬规则永远禁止降级")
-    payload = await request.json()
-    action = str(payload.get("action") or "") if isinstance(payload, dict) else ""
-    if action not in {"allow", "review", "block"}:
-        raise HTTPException(status_code=422, detail="风险动作必须是自动通过、人工确认或禁止跳过")
-    rule["action"] = action
-    rule["updated_at"] = now_iso()
-    atomic_write_json(path, {"schema_version": "1.0.0", "rules": current})
-    return {"saved": True, "rule": rule, "write_api_calls": 0, "inventory_api_calls": 0}
-
-
-@app.get("/api/workbench/shops")
-def workbench_shops() -> Dict[str, Any]:
-    registry = load_registry(ROOT)
-    items = list_stores(ROOT)
-    counts = {str(item.get("id")): {"associated": 0, "pending": 0} for item in items}
-    for product_dir in owned_product_dirs():
-        publications = load_publications(product_dir)
-        for store_id, record in (publications.get("stores") or {}).items():
-            if store_id not in counts:
-                continue
-            if record.get("selected") or str(record.get("status") or "") not in {"", "NOT_SELECTED"}:
-                counts[store_id]["associated"] += 1
-            if str(record.get("status") or "") in {"QUEUED", "UPLOADING", "PENDING_REMOTE", "OZON_MODERATION"}:
-                counts[store_id]["pending"] += 1
-    for item in items:
-        item["associated_product_count"] = counts[str(item.get("id"))]["associated"]
-        item["pending_task_count"] = counts[str(item.get("id"))]["pending"]
-    return {"items": items, "default_shop": registry.get("default_read_shop")}
-
-
-@app.post("/api/workbench/shops")
-async def create_workbench_shop(request: Request) -> Dict[str, Any]:
-    require_owner_role()
-    payload = await request.json()
-    try:
-        item = upsert_store(ROOT, payload)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"created": True, "item": item, "write_api_calls": 0, "inventory_api_calls": 0}
-
-
-@app.patch("/api/workbench/shops/{store_id}")
-async def edit_workbench_shop(store_id: str, request: Request) -> Dict[str, Any]:
-    require_owner_role()
-    payload = await request.json()
-    try:
-        item = upsert_store(ROOT, payload, store_id=store_id)
-    except ValueError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from exc
-    return {"saved": True, "item": item, "write_api_calls": 0, "inventory_api_calls": 0}
-
-
-@app.post("/api/workbench/shops/{store_id}/validate")
-def validate_workbench_shop(store_id: str) -> Dict[str, Any]:
-    require_owner_role()
-    try:
-        return validate_store_read_only(ROOT, store_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="店铺不存在") from exc
-
-
-@app.post("/api/workbench/shops/{store_id}/enabled")
-async def toggle_workbench_shop(store_id: str, request: Request) -> Dict[str, Any]:
-    require_owner_role()
-    payload = await request.json()
-    try:
-        item = set_enabled(ROOT, store_id, bool(payload.get("enabled")))
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="店铺不存在") from exc
-    return {"saved": True, "item": item, "write_api_calls": 0, "inventory_api_calls": 0}
-
-
-@app.delete("/api/workbench/shops/{store_id}")
-def delete_workbench_shop(store_id: str) -> Dict[str, Any]:
-    require_owner_role()
-    try:
-        delete_store(ROOT, store_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail="店铺不存在") from exc
-    return {"deleted": True, "store_id": store_id, "remote_ozon_unchanged": True, "write_api_calls": 0, "inventory_api_calls": 0}
-
+# Moved to shops_routes.py (exec'd into this module's globals at the bottom).
 
 @app.get("/api/workbench/skills")
 def workbench_skills() -> Dict[str, Any]:
@@ -4896,7 +3139,7 @@ def export_directory() -> Path:
 
 
 def safe_export_cards() -> List[Dict[str, Any]]:
-    cards = [workbench_card(path) for path in owned_product_dirs() if (path / "status.json").is_file()]
+    cards = cached_workbench_cards()
     return [{key: value for key, value in card.items() if key not in {"search_terms"}} for card in cards]
 
 
@@ -4970,3 +3213,14 @@ def export_product_images(product_id: str) -> FileResponse:
             if image_path is not None and image_path.is_file():
                 archive.write(image_path, f"{item.get('slot')}{image_path.suffix.lower()}")
     return FileResponse(path, filename=path.name)
+
+
+# Market-intelligence routes/helpers live in market_routes.py.  Execute its
+# code in THIS module's globals so the extracted functions resolve globals
+# (and test patches via patch.object) exactly as if they were still defined
+# here; their names also land directly on this module.
+sys.path.insert(0, str(Path(__file__).resolve().parent))
+_local_dir = Path(__file__).resolve().parent
+for _extracted in ("market_routes.py", "finance_routes.py", "reference_helpers.py", "reference_routes.py", "collector_routes.py", "batches_routes.py", "shops_routes.py"):
+    _extracted_path = _local_dir / _extracted
+    exec(compile(_extracted_path.read_text(encoding="utf-8"), str(_extracted_path), "exec"), globals())

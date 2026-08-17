@@ -4,14 +4,30 @@
   "title": "Ozon Final Attributes",
   "type": "object",
   "additionalProperties": false,
-  "required": ["schema_version", "product_id", "category_id", "type_id", "schema_source", "attributes", "required_summary", "warnings"],
+  "required": ["schema_version", "product_id", "category_id", "type_id", "schema_source", "compiler", "common_attributes", "attributes_by_sku", "attributes", "required_summary", "warnings"],
   "properties": {
     "schema_version": {"type": "string", "const": "1.0.0"},
     "product_id": {"type": "string", "pattern": "^P[0-9]{6}$"},
     "category_id": {"type": "integer", "minimum": 1},
     "type_id": {"type": "integer", "minimum": 1},
     "schema_source": {"type": "string", "enum": ["ozon_seller_api", "official_bulk_offline_cache"]},
-    "attributes": {"type": "array", "minItems": 1, "items": {"$ref": "#/$defs/attribute"}},
+    "compiler": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["attribute_fill_input_hash", "ecommerce_design_hash", "compiler_version"],
+      "properties": {
+        "attribute_fill_input_hash": {"type": "string"},
+        "ecommerce_design_hash": {"type": "string"},
+        "compiler_version": {"type": "string", "minLength": 1}
+      }
+    },
+    "common_attributes": {"type": "array", "items": {"$ref": "#/$defs/attribute"}},
+    "attributes_by_sku": {
+      "type": "object",
+      "additionalProperties": {"type": "array", "items": {"$ref": "#/$defs/attribute"}}
+    },
+    "sku_measurements": {"type": "object", "additionalProperties": true},
+    "attributes": {"type": "array", "items": {"$ref": "#/$defs/attribute"}},
     "required_summary": {
       "type": "object",
       "additionalProperties": false,
@@ -20,7 +36,10 @@
         "total": {"type": "integer", "minimum": 0},
         "filled": {"type": "integer", "minimum": 0},
         "missing": {"type": "integer", "minimum": 0},
-        "missing_attribute_ids": {"type": "array", "items": {"type": "integer", "minimum": 1}}
+        "missing_attribute_ids": {
+          "type": "array",
+          "items": {"type": ["integer", "string"]}
+        }
       }
     },
     "warnings": {"type": "array", "items": {"type": "string", "minLength": 1}}
@@ -33,11 +52,31 @@
       "properties": {
         "attribute_id": {"type": "integer", "minimum": 1},
         "attribute_name": {"type": "string", "minLength": 1},
+        "scope": {"type": "string", "enum": ["common", "sku"]},
+        "sku_id": {"type": "string", "minLength": 1},
         "required": {"type": "boolean"},
-        "value": {"type": ["string", "number"], "minLength": 1},
-        "source": {"type": "string", "enum": ["1688", "AI_estimated", "workspace_default", "human_override", "unknown"]},
+        "value": {"type": ["string", "number", "integer", "boolean"], "minLength": 1},
+        "canonical_value": {"type": ["string", "number", "integer", "boolean"]},
+        "canonical_unit": {"type": "string"},
+        "target_value": {"type": ["string", "number", "integer", "boolean"]},
+        "target_unit": {"type": "string"},
+        "conversion_rule": {"type": "string"},
+        "source": {"type": "string", "minLength": 1},
+        "mapping_method": {"type": "string"},
         "confidence": {"type": "number", "minimum": 0, "maximum": 1},
         "dictionary_value_id": {"type": ["integer", "null"], "minimum": 1},
+        "dictionary_values": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": ["dictionary_value_id", "value"],
+            "properties": {
+              "dictionary_value_id": {"type": "integer", "minimum": 1},
+              "value": {"type": "string", "minLength": 1}
+            }
+          }
+        },
         "evidence": {"type": "array", "items": {"type": "string", "minLength": 1}}
       }
     }

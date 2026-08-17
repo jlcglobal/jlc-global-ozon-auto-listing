@@ -10,9 +10,9 @@
     "collection_id",
     "source_kind",
     "source_refs",
-    "style_profile_ref",
-    "style_family",
-    "image_structure_rule_ref",
+    "visual_contract_ref",
+    "visual_family",
+    "image_sequence_ref",
     "image_set_structure",
     "creative_direction",
     "listing_context",
@@ -34,11 +34,15 @@
     "collection_id": { "type": "string", "pattern": "^COL-[A-Za-z0-9._-]{8,80}$" },
     "source_kind": { "const": "workbench_collection" },
     "source_refs": { "type": "array", "minItems": 1, "items": { "type": "string", "minLength": 1 } },
-    "style_profile_ref": { "type": "string", "minLength": 1 },
-    "creative_brief_ref": { "type": "string", "minLength": 1 },
     "ecommerce_design_ref": { "type": "string", "minLength": 1 },
-    "style_family": { "$ref": "#/$defs/styleFamily" },
-    "image_structure_rule_ref": { "type": "string", "minLength": 1 },
+    "visual_contract_ref": { "type": "string", "minLength": 1 },
+    "visual_family": { "type": "string", "minLength": 1 },
+    "image_positioning": { "type": "string", "minLength": 1 },
+    "main_image_goal": { "type": "string", "minLength": 1 },
+    "visual_style": { "type": "string", "minLength": 1 },
+    "need_model": { "type": "boolean" },
+    "avoid_style": { "type": "string", "minLength": 1 },
+    "image_sequence_ref": { "type": "string", "minLength": 1 },
     "image_set_structure": { "type": "array", "items": { "type": "string", "minLength": 1 } },
     "variant_image_strategy": {
       "type": "object",
@@ -56,10 +60,10 @@
     "generator_contract": {
       "type": "object",
       "additionalProperties": false,
-      "required": ["must_follow_style_profile", "style_profile_ref", "allowed_structure", "aspect_ratio", "deviation_requires_review"],
+      "required": ["must_follow_ecommerce_design", "ecommerce_design_ref", "allowed_structure", "aspect_ratio", "deviation_requires_review"],
       "properties": {
-        "must_follow_style_profile": { "type": "boolean", "const": true },
-        "style_profile_ref": { "type": "string", "minLength": 1 },
+        "must_follow_ecommerce_design": { "type": "boolean", "const": true },
+        "ecommerce_design_ref": { "type": "string", "minLength": 1 },
         "allowed_structure": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "aspect_ratio": { "type": "string", "const": "3:4" },
         "deviation_requires_review": { "type": "boolean" },
@@ -91,15 +95,15 @@
         ,"prompt_first_required": { "type": "boolean", "const": true }
         ,"empty_placeholder_panels_forbidden": { "type": "boolean", "const": true }
         ,"exact_shared_detail_count": { "type": "integer", "const": 8 }
-        ,"creative_brief_required": { "type": "boolean", "const": true }
         ,"ecommerce_design_required": { "type": "boolean", "const": true }
-        ,"fixed_template_fallback_forbidden": { "type": "boolean", "const": true }
+
         ,"overlay_strategy": { "type": "string", "const": "single_pass_model_native_typography" }
+        ,"true_parallel_slot_executor": { "type": "boolean" }
+        ,"brand_watermark_required": { "type": "string", "minLength": 1 }
       }
     },
     "creative_direction": { "type": "object" },
     "listing_context": { "type": "object" },
-    "learned_image_preferences": { "type": "array", "items": { "type": "object" } },
     "reference_images": { "type": "array", "items": { "$ref": "#/$defs/referenceImage" } },
     "buyer_analysis": {
       "type": "object",
@@ -125,22 +129,6 @@
   },
   "$defs": {
     "productId": { "type": "string", "pattern": "^P[0-9]{6}$" },
-    "styleFamily": {
-      "type": "string",
-      "enum": [
-        "electronics_clean_tech",
-        "outdoor_rugged_lifestyle",
-        "kitchen_warm_home",
-        "portable_kitchen_appliance_fresh",
-        "fresh_fridge_organization",
-        "home_minimal_organized",
-        "pet_friendly_lifestyle",
-        "beauty_clean_premium",
-        "baby_safe_soft",
-        "auto_practical_performance",
-        "unknown"
-      ]
-    },
     "unknownableString": { "type": ["string", "null"], "minLength": 1 },
     "referenceImage": {
       "type": "object",
@@ -185,11 +173,16 @@
         "type": { "type": "string", "minLength": 1 },
         "slot": { "type": "string", "minLength": 1 },
         "image_type": { "type": "string", "minLength": 1 },
+        "image_positioning": { "type": "string", "minLength": 1 },
+        "main_image_goal": { "type": "string", "minLength": 1 },
+        "visual_style": { "type": "string", "minLength": 1 },
+        "need_model": { "type": "boolean" },
+        "avoid_style": { "type": "string", "minLength": 1 },
         "layout_type": {"type": "string", "enum": ["sku_main", "core_benefit", "structure_callout", "usage_scene", "sku_comparison", "purchase_notice"]},
         "overlay_modules": {"type": "array", "items": {"type": "string"}},
         "design_rationale": {"type": "string", "minLength": 30},
         "art_direction": {"$ref": "#/$defs/artDirection"},
-        "overlay_plan": {"type": "array", "minItems": 1, "maxItems": 6, "items": {"$ref": "#/$defs/overlayInstruction"}},
+        "overlay_plan": {"type": "array", "minItems": 1, "maxItems": 7, "items": {"$ref": "#/$defs/overlayInstruction"}},
         "requested_image_type": {"type": "string", "minLength": 1},
         "fallback_reason": {"type": "string", "minLength": 1},
         "purchase_reason": { "type": "string", "minLength": 1 },
@@ -230,9 +223,10 @@
         "source_sku_id": {"type": "string", "minLength": 1},
         "variant_kind": {"type": "string", "enum": ["color", "size_or_measurement", "configuration", "seller_specification", "mixed_supported", "not_applicable"]},
         "variant_value": {"type": "string", "minLength": 1},
+        "sku_identity": {"type": "string", "minLength": 1},
         "operation": {
           "type": "string",
-          "enum": ["locked_product_composite", "edit_real_image", "compose_from_real_images", "not_started", "needs_human_input"]
+          "enum": ["locked_product_composite", "edit_real_image", "compose_from_real_images", "generate_from_reference", "not_started", "needs_human_input"]
         },
         "source_text_policy": { "type": "string", "minLength": 1 },
         "prompt": { "$ref": "#/$defs/unknownableString" },
@@ -240,6 +234,7 @@
         "output_path": { "type": "string", "minLength": 1 },
         "status": { "type": "string", "enum": ["planned", "generated", "failed", "needs_review", "not_started", "replaced", "deleted"] },
         "failure_reason": { "$ref": "#/$defs/unknownableString" },
+        "generation_attempts": { "type": "integer", "minimum": 0 },
         "workbench_order": { "type": "integer", "minimum": 0 },
         "kept_at": { "type": "string", "minLength": 1 },
         "kept_by": { "type": "string", "minLength": 1 },
@@ -274,10 +269,10 @@
       "additionalProperties": false,
       "required": ["role", "text", "box", "font_size_ratio", "font_weight", "text_color", "accent_color", "background_style", "background_color", "accent_style", "align", "vertical_align", "priority"],
       "properties": {
-        "role": {"type": "string", "enum": ["headline", "subheadline", "sku_badge", "benefit", "specification", "callout", "notice"]},
+        "role": {"type": "string", "enum": ["benefit", "specification", "callout", "notice", "brand_watermark"]},
         "text": {"type": "string", "minLength": 2},
         "box": {"type": "array", "minItems": 4, "maxItems": 4, "items": {"type": "number", "minimum": 0, "maximum": 1}},
-        "font_size_ratio": {"type": "number", "minimum": 0.02, "maximum": 0.12},
+        "font_size_ratio": {"type": "number", "minimum": 0.014, "maximum": 0.12},
         "font_weight": {"type": "string", "enum": ["regular", "bold"]},
         "text_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
         "accent_color": {"type": "string", "pattern": "^#[0-9A-Fa-f]{6}$"},
@@ -286,7 +281,7 @@
         "accent_style": {"type": "string", "enum": ["none", "top_line", "left_line", "underline", "check_icon"]},
         "align": {"type": "string", "enum": ["left", "center", "right"]},
         "vertical_align": {"type": "string", "enum": ["top", "middle", "bottom"]},
-        "priority": {"type": "integer", "minimum": 1, "maximum": 6}
+        "priority": {"type": "integer", "minimum": 1, "maximum": 7}
       }
     },
     "imageRisk": {

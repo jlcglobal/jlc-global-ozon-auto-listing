@@ -4,6 +4,7 @@ import io
 import sqlite3
 import sys
 import tempfile
+import threading
 import unittest
 from contextlib import closing
 from datetime import datetime
@@ -13,7 +14,7 @@ from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "finance-center"))
-from finance_center import FinanceCenter, OzonReadOnlyError, decimal_value  # noqa: E402
+from finance_center import FinanceCenter, OzonReadOnlyError, decimal_value, safe_json  # noqa: E402
 
 
 def csv_payload(rows):
@@ -68,6 +69,32 @@ class FinanceCenterTest(unittest.TestCase):
         self.assertIn("raw_payload", columns)
         self.assertEqual(tuple(row), ("legacy-1", "/old.xlsx", "{}"))
 
+    def test_initialize_is_idempotent_across_parallel_reads(self):
+        temporary = tempfile.TemporaryDirectory()
+        self.addCleanup(temporary.cleanup)
+        center = FinanceCenter(Path(temporary.name))
+        center.initialize()
+        errors = []
+
+        def initialize_again():
+            try:
+                center.initialize()
+            except Exception as exc:  # pragma: no cover - asserted below
+                errors.append(exc)
+
+        workers = [threading.Thread(target=initialize_again) for _ in range(12)]
+        for worker in workers:
+            worker.start()
+        for worker in workers:
+            worker.join()
+
+        self.assertEqual(errors, [])
+        with center.connect(readonly=True) as conn:
+            version = conn.execute(
+                "SELECT value FROM finance_center_meta WHERE key='schema_version'"
+            ).fetchone()[0]
+        self.assertEqual(version, "1.0.2")
+
     def test_preview_requires_manual_confirmation_for_money_fields(self):
         temporary, center = self.make_center()
         self.addCleanup(temporary.cleanup)
@@ -105,6 +132,133 @@ class FinanceCenterTest(unittest.TestCase):
         self.assertEqual(restored, "10.00")
         self.assertEqual(unrelated, "keep")
         self.assertEqual(imported_costs, 0)
+
+    def test_purchase_order_import_separates_skus_and_sums_repeated_sku_rows(self):
+        temporary, center = self.make_center()
+        self.addCleanup(temporary.cleanup)
+        with center.connect() as conn:
+            conn.execute(
+                "INSERT INTO stores(id,store_name,store_alias,client_id_reference,created_at,updated_at) "
+                "VALUES('default_store','zhonglian1','zhonglian1','local-reference','2026-08-01','2026-08-01')"
+            )
+
+            def add_order(row_id, posting, sku, offer_id, quantity):
+                conn.execute(
+                    "INSERT INTO orders(id,row_hash,file_hash,posting_number,order_number,sku,offer_id,product_name,"
+                    "order_date,buyer_paid_rub,buyer_paid_cny,status,raw_payload,created_at,store_id) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        row_id, row_id, "seller", posting, posting, sku, offer_id, offer_id,
+                        "2026-08-01", "1200", "100", "delivered",
+                        '{"product":{"quantity":' + str(quantity) + '}}', "2026-08-01", "default_store",
+                    ),
+                )
+                conn.execute(
+                    "INSERT INTO product_master(id,store_id,sku,offer_id,product_name,purchase_cost_source,created_at,updated_at) "
+                    "VALUES(?,?,?,?,?,'missing','2026-08-01','2026-08-01')",
+                    ("product-" + row_id, "default_store", sku, offer_id, offer_id),
+                )
+
+            add_order("five-seed", "POST-5", "SKU-5", "OFFER-5", 1)
+            add_order("seven-seed", "POST-7", "SKU-7", "OFFER-7", 1)
+            add_order("five-multi", "POST-M", "SKU-5-M", "OFFER-5", 2)
+            add_order("seven-multi", "POST-M", "SKU-7-M", "OFFER-7", 1)
+
+        content = csv_payload([
+            {"店铺": "zhonglian1", "名称": "5L", "订单号": "POST-5", "采购成本": "20"},
+            {"店铺": "zhonglian1", "名称": "7L", "订单号": "POST-7", "采购成本": "21"},
+            {"店铺": "zhonglian1", "名称": "5L", "订单号": "POST-M", "采购成本": "20"},
+            {"店铺": "zhonglian1", "名称": "5L", "订单号": "POST-M", "采购成本": "20"},
+            {"店铺": "zhonglian1", "名称": "7L", "订单号": "POST-M", "采购成本": "21"},
+        ])
+        result = center.commit_import(
+            file_name="purchase.csv", content_base64=content, file_kind="purchase_cost",
+            mapping={"店铺": "store_id", "名称": "product_name", "订单号": "order_number", "采购成本": "purchase_cost_cny"},
+            created_by="owner",
+        )
+        self.assertEqual(result["matched_count"], 5)
+        self.assertEqual(result["unmatched_count"], 0)
+        with center.connect(readonly=True) as conn:
+            rows = conn.execute(
+                "SELECT sku,purchase_cost_cny FROM purchase_order_match WHERE posting_number='POST-M' "
+                "ORDER BY sku"
+            ).fetchall()
+            snapshots = conn.execute(
+                "SELECT sku,purchase_cost_cny,unit_purchase_cost_cny,purchase_cost_source "
+                "FROM profit_snapshots WHERE posting_number='POST-M' ORDER BY sku"
+            ).fetchall()
+        self.assertEqual([(row["sku"], row["purchase_cost_cny"]) for row in rows], [("OFFER-5", "40.00"), ("OFFER-7", "21.00")])
+        self.assertEqual(
+            [(row["purchase_cost_cny"], row["unit_purchase_cost_cny"], row["purchase_cost_source"]) for row in snapshots],
+            [("40.00", "20.00", "order_purchase_record"), ("21.00", "21.00", "order_purchase_record")],
+        )
+
+        center.rollback_import(result["batch_id"], rolled_back_by="owner")
+        with center.connect(readonly=True) as conn:
+            self.assertEqual(
+                conn.execute("SELECT COUNT(*) FROM purchase_order_match WHERE source_file='purchase.csv'").fetchone()[0],
+                0,
+            )
+
+    def test_single_sku_cost_input_updates_same_sku_across_stores_and_can_rollback(self):
+        temporary, center = self.make_center()
+        self.addCleanup(temporary.cleanup)
+        with center.connect() as conn:
+            self.seed_store(conn)
+            conn.execute(
+                "INSERT INTO stores(id,store_name,store_alias,status,sync_status,created_at,updated_at) "
+                "VALUES('shop-2','Shop 2','Shop 2','active','idle','2026-07-01','2026-07-01')"
+            )
+            for index, store_id in enumerate(("shop-1", "shop-2"), start=1):
+                conn.execute(
+                    "INSERT INTO product_master(id,store_id,sku,offer_id,unit_purchase_cost_cny,purchase_cost_source,created_at,updated_at) "
+                    "VALUES(?,?,?,?,NULL,'missing','2026-07-01','2026-07-01')",
+                    (f"product-{index}", store_id, f"OZON-{index}", "SHARED-SKU"),
+                )
+                conn.execute(
+                    "INSERT INTO orders(id,row_hash,file_hash,posting_number,order_number,sku,offer_id,product_name,order_date,buyer_paid_rub,buyer_paid_cny,status,raw_payload,created_at,store_id) "
+                    "VALUES(?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)",
+                    (
+                        f"order-{index}", f"r{index}", "f", f"POST-{index}", f"ORDER-{index}",
+                        f"OZON-{index}", "SHARED-SKU", "Test", "2026-07-01", "1200", "100", "delivered",
+                        safe_json({"product": {"quantity": 2 if index == 1 else 1}}), "2026-07-01", store_id,
+                    ),
+                )
+                center._recompute_order(conn, f"order-{index}")
+            conn.execute(
+                "INSERT INTO purchase_order_match(id,store_id,order_id,posting_number,sku,purchase_cost_cny,source_file,source_row,matched_at,created_at) "
+                "VALUES('purchase-1','shop-1','order-1','POST-1','OZON-1','40.00','old.xlsx',2,'2026-07-01','2026-07-01')"
+            )
+            center._recompute_order(conn, "order-1")
+        result = center.set_sku_purchase_cost(sku="SHARED-SKU", purchase_cost_cny="12", created_by="owner")
+        self.assertEqual(result["affected_order_count"], 2)
+        self.assertEqual(result["affected_store_count"], 2)
+        with center.connect(readonly=True) as conn:
+            masters = conn.execute(
+                "SELECT store_id,unit_purchase_cost_cny,purchase_cost_source FROM product_master ORDER BY store_id"
+            ).fetchall()
+            purchase = conn.execute("SELECT purchase_cost_cny FROM purchase_order_match WHERE id='purchase-1'").fetchone()[0]
+            snapshots = conn.execute(
+                "SELECT order_id,purchase_cost_cny FROM profit_snapshots ORDER BY order_id"
+            ).fetchall()
+        self.assertEqual([tuple(row) for row in masters], [
+            ("shop-1", "12.00", "manual_sku_cost"),
+            ("shop-2", "12.00", "manual_sku_cost"),
+        ])
+        self.assertEqual(purchase, "24.00")
+        self.assertEqual([tuple(row) for row in snapshots], [("order-1", "24.00"), ("order-2", "12.00")])
+
+        center.rollback_import(result["batch_id"], rolled_back_by="owner")
+        with center.connect(readonly=True) as conn:
+            purchase = conn.execute("SELECT purchase_cost_cny FROM purchase_order_match WHERE id='purchase-1'").fetchone()[0]
+            snapshots = conn.execute(
+                "SELECT order_id,purchase_cost_cny,purchase_cost_source FROM profit_snapshots ORDER BY order_id"
+            ).fetchall()
+        self.assertEqual(purchase, "40.00")
+        self.assertEqual([tuple(row) for row in snapshots], [
+            ("order-1", "40.00", "order_purchase_record"),
+            ("order-2", "0.00", "missing"),
+        ])
 
     def test_profit_margin_is_stored_as_zero_to_one_decimal(self):
         temporary, center = self.make_center()
@@ -177,6 +331,112 @@ class FinanceCenterTest(unittest.TestCase):
         self.assertEqual(overview["summary"]["fully_covered_order_lines"], 0)
         self.assertEqual(overview["summary"]["confirmed_profit"], "0.00")
         self.assertEqual(overview["summary"]["expected_profit"], "15.00")
+
+    def test_ozon_finance_ad_operations_are_counted_once_and_supersede_imported_ads(self):
+        temporary, center = self.make_center()
+        self.addCleanup(temporary.cleanup)
+        with center.connect() as conn:
+            self.seed_store(conn)
+            conn.execute(
+                "INSERT INTO product_master(id,store_id,sku,unit_purchase_cost_cny,purchase_cost_source,created_at,updated_at) "
+                "VALUES('product-1','shop-1','SKU-1','20.00','confirmed','2026-07-01','2026-07-01')"
+            )
+            conn.execute(
+                "INSERT INTO orders(id,row_hash,file_hash,posting_number,order_number,sku,offer_id,product_name,order_date,buyer_paid_rub,buyer_paid_cny,status,raw_payload,created_at,store_id) "
+                "VALUES('order-1','r','f','POST-1','ORDER-1','SKU-1','SKU-1','Test','2026-07-01','1200','100','delivered','{}','2026-07-01','shop-1')"
+            )
+            conn.execute(
+                "INSERT INTO finance_transactions(id,row_hash,file_hash,matched_order_id,posting_number,sku,occurred_at,operation_type,amount_rub,amount_cny,platform_commission_cny,logistics_fee_cny,refund_cny,compensation_cny,acquiring_cny,other_fee_cny,raw_payload,created_at,store_id) "
+                "VALUES('fin-1','r1','f','order-1','POST-1','SKU-1','2026-07-01','sale','0','0','10','5','0','0','0','0','{}','2026-07-01','shop-1')"
+            )
+            conn.execute(
+                "INSERT INTO finance_transactions(id,row_hash,file_hash,occurred_at,operation_type,service_name,amount_rub,amount_cny,raw_payload,created_at,store_id) "
+                "VALUES('ad-cpo','r2','f','2026-07-01','OperationPromotionWithCostPerOrder','Продвижение с оплатой за заказ','-144','-12','{}','2026-07-01','shop-1')"
+            )
+            conn.execute(
+                "INSERT INTO finance_transactions(id,row_hash,file_hash,occurred_at,operation_type,service_name,amount_rub,amount_cny,raw_payload,created_at,store_id) "
+                "VALUES('ad-cpc','r3','f','2026-07-01','OperationMarketplaceCostPerClick','Оплата за клик','-96','-8','{}','2026-07-01','shop-1')"
+            )
+            conn.execute(
+                "INSERT INTO ad_spend_transactions(id,row_hash,file_hash,occurred_at,campaign_name,spend_rub,spend_cny,raw_payload,created_at,store_id) "
+                "VALUES('legacy-ad','r4','f','2026-07-01','Legacy campaign','600','50','{}','2026-07-01','shop-1')"
+            )
+            center._recompute_order(conn, "order-1")
+        overview = center.overview(store_id="all", date_from="2026-07-01", date_to="2026-07-01")
+        self.assertEqual(overview["summary"]["ad_spend"], "20.00")
+        self.assertEqual(overview["summary"]["expected_profit"], "45.00")
+        self.assertEqual(overview["coverage"]["ads"], 1.0)
+        self.assertEqual(overview["advertising"]["source"], "ozon_finance")
+        self.assertEqual(overview["advertising"]["api_record_count"], 2)
+        self.assertEqual(overview["advertising"]["imported_record_count"], 0)
+        self.assertIn("Ozon Finance", overview["warnings"][1])
+
+    def test_operation_level_delivery_expenses_are_classified_as_logistics(self):
+        delivery = FinanceCenter._service_buckets({
+            "operation_type": "MarketplaceRedistributionOfDeliveryServicesOperation",
+            "operation_type_name": "Перевыставление услуг доставки",
+            "amount": "-400", "services": [],
+        }, decimal_value("10"))
+        agency = FinanceCenter._service_buckets({
+            "operation_type": "OperationMarketplaceAgencyFeeAggregator3PLGlobal",
+            "operation_type_name": "транспортно-экспедиционных услуг",
+            "amount": "-100", "services": [],
+        }, decimal_value("10"))
+        ads = FinanceCenter._service_buckets({
+            "operation_type": "OperationMarketplaceCostPerClick",
+            "operation_type_name": "Оплата за клик",
+            "amount": "-200", "services": [],
+        }, decimal_value("10"))
+        self.assertEqual(delivery["logistics"], decimal_value("40"))
+        self.assertEqual(agency["logistics"], decimal_value("10"))
+        self.assertEqual(sum(ads.values()), decimal_value("0"))
+
+    def test_unsettled_order_uses_same_sku_history_and_period_ad_allocation(self):
+        temporary, center = self.make_center()
+        self.addCleanup(temporary.cleanup)
+        with center.connect() as conn:
+            self.seed_store(conn)
+            conn.execute(
+                "INSERT INTO product_master(id,store_id,sku,offer_id,unit_purchase_cost_cny,purchase_cost_source,created_at,updated_at) "
+                "VALUES('product-1','shop-1','SKU-1','OFFER-1','30.00','confirmed','2026-07-01','2026-07-01')"
+            )
+            for order_id, posting, sales, status, order_date in (
+                ("settled", "POST-1", "100", "delivered", "2026-07-01"),
+                ("pending", "POST-2", "200", "awaiting_deliver", "2026-07-01"),
+            ):
+                conn.execute(
+                    "INSERT INTO orders(id,row_hash,file_hash,posting_number,order_number,sku,offer_id,product_name,order_date,buyer_paid_rub,buyer_paid_cny,status,raw_payload,created_at,store_id) "
+                    "VALUES(?,?,?,?,?,'SKU-1','OFFER-1','Test',?,'0',?,?, '{}','2026-07-01','shop-1')",
+                    (order_id, order_id, "f", posting, posting, order_date, sales, status),
+                )
+            conn.execute(
+                "INSERT INTO finance_transactions(id,row_hash,file_hash,matched_order_id,posting_number,sku,occurred_at,operation_type,amount_rub,amount_cny,platform_commission_cny,logistics_fee_cny,refund_cny,compensation_cny,acquiring_cny,other_fee_cny,raw_payload,created_at,store_id) "
+                "VALUES('fin-1','r1','f','settled','POST-1','SKU-1','2026-07-01','sale','0','0','10','20','0','0','0','0','{}','2026-07-01','shop-1')"
+            )
+            conn.execute(
+                "INSERT INTO finance_transactions(id,row_hash,file_hash,occurred_at,operation_type,service_name,amount_rub,amount_cny,raw_payload,created_at,store_id) "
+                "VALUES('ad-1','r2','f','2026-07-01','OperationMarketplaceCostPerClick','Оплата за клик','-300','-30','{}','2026-07-01','shop-1')"
+            )
+            center._recompute_order(conn, "settled")
+            center._recompute_order(conn, "pending")
+        result = center.orders(store_id="all", date_from="2026-07-01", date_to="2026-07-01", limit=10)
+        items = {item["posting_number"]: item for item in result["items"]}
+        self.assertEqual(items["POST-1"]["finance_fee_cny"], "10.00")
+        self.assertEqual(items["POST-1"]["logistics_cny"], "20.00")
+        self.assertEqual(items["POST-1"]["ad_spend_cny"], "10.00")
+        self.assertEqual(items["POST-1"]["profit_cny"], "30.00")
+        self.assertEqual(items["POST-2"]["finance_fee_cny"], "20.00")
+        self.assertEqual(items["POST-2"]["logistics_cny"], "40.00")
+        self.assertEqual(items["POST-2"]["ad_spend_cny"], "20.00")
+        self.assertEqual(items["POST-2"]["profit_cny"], "90.00")
+        self.assertEqual(items["POST-2"]["cost_sources"]["finance"], "same_sku_history")
+        self.assertEqual(items["POST-2"]["cost_sources"]["ads"], "period_sales_allocation")
+
+        overview = center.overview(store_id="all", date_from="2026-07-01", date_to="2026-07-01")
+        self.assertEqual(overview["summary"]["ozon_fees"], "30.00")
+        self.assertEqual(overview["summary"]["logistics"], "60.00")
+        self.assertEqual(overview["summary"]["ad_spend"], "30.00")
+        self.assertEqual(overview["summary"]["expected_profit"], "120.00")
 
     def test_expected_profit_is_unavailable_without_cost_coverage_samples(self):
         temporary, center = self.make_center()

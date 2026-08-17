@@ -7,10 +7,9 @@ from pathlib import Path
 
 from jsonschema import Draft202012Validator
 
-from scripts.image_planner import build_image_plan
+from scripts.image_planner import ROOT, build_image_plan, load_json
 from scripts.ozon_ecommerce_designer_contract import materialize
 from scripts.production_input_guard import write_source_manifest
-from scripts.style_selector import ROOT, load_json
 from tests.test_ozon_ecommerce_designer_contract import build_design, make_product
 
 sys.path.insert(0, str(ROOT / "ozon-uploader"))
@@ -57,7 +56,7 @@ class VariantImageStrategyTests(unittest.TestCase):
                 product_dir,
                 source,
                 {"buyer_objections": [], "confirmed_facts": [], "unknown_fields": []},
-                load_json(ROOT / "products/P000004/output/style-profile.json"),
+                {},
                 started_at="2026-07-12T00:00:00+08:00",
             )
             return copy.deepcopy(plan)
@@ -133,7 +132,7 @@ class VariantImageStrategyTests(unittest.TestCase):
         self.assertEqual(items[0]["images"][1:], items[1]["images"][1:])
         self.assertEqual(items[0]["color_image"], "https://images/sku-1.png")
 
-    def test_separate_cards_keep_own_images_and_use_distinct_model_values(self):
+    def test_separate_cards_keep_own_images_and_share_one_product_model_value(self):
         draft = {
             "description_category_id": 100,
             "type_id": 200,

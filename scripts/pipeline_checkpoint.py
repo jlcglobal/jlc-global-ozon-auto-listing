@@ -5,7 +5,7 @@ import argparse
 import json
 from pathlib import Path
 
-from pipeline_runtime import complete_step, mark_hard_failure
+from pipeline_runtime import complete_step, mark_needs_attention
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -22,7 +22,7 @@ def main() -> int:
     if args.action == "complete":
         status = complete_step(product_dir, args.step)
     else:
-        status = mark_hard_failure(product_dir, args.step, args.reason)
+        status = mark_needs_attention(product_dir, args.step, args.reason)
     print(json.dumps(status, ensure_ascii=False, indent=2))
     return 0
 

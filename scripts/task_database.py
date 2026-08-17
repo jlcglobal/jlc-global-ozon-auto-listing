@@ -11,6 +11,7 @@ import hashlib
 import json
 import sqlite3
 import tempfile
+import threading
 from contextlib import contextmanager
 from datetime import datetime, timedelta, timezone
 from pathlib import Path
@@ -21,6 +22,7 @@ SCHEMA_VERSION = "003"
 DEFAULT_DB_RELATIVE_PATH = Path("runtime/task-db.sqlite3")
 CUTOVER_MARKER = Path("runtime/task-db-cutover.json")
 UNKNOWN = {None, "", "unknown", "UNKNOWN", "null", "None"}
+_INITIALIZE_LOCK = threading.Lock()
 
 
 def now() -> str:
@@ -32,20 +34,29 @@ def unknown(value: Any) -> bool:
 
 
 def _aggregate_states(states: Iterable[str]) -> str:
-    values = [str(value) for value in states if value not in {"NOT_SELECTED", "SELECTED"}]
-    if not values:
+    selected_values = [
+        str(value or "").upper()
+        for value in states
+        if str(value or "").upper() != "NOT_SELECTED"
+    ]
+    submitted_values = [value for value in selected_values if value != "SELECTED"]
+    if not submitted_values:
         return "UNKNOWN"
-    created = values.count("CREATED")
-    pending = values.count("PENDING_REMOTE") + values.count("SUBMITTED")
-    handoff = values.count("HANDED_OFF_TO_OZON")
-    failed = values.count("FAILED")
-    if created == len(values):
+    created = submitted_values.count("CREATED")
+    pending = (
+        submitted_values.count("PENDING_REMOTE")
+        + submitted_values.count("SUBMITTED")
+        + submitted_values.count("HANDED_OFF_TO_OZON")
+    )
+    failed = submitted_values.count("FAILED")
+    waiting = selected_values.count("SELECTED")
+    if waiting:
+        return "PARTIAL_FAILED" if failed else "PARTIAL"
+    if created == len(submitted_values):
         return "CREATED"
-    if handoff == len(values) or (handoff and not failed):
-        return "HANDED_OFF_TO_OZON"
-    if pending == len(values):
+    if pending == len(submitted_values):
         return "PENDING_REMOTE"
-    if failed == len(values):
+    if failed == len(submitted_values):
         return "FAILED"
     if failed:
         return "PARTIAL_FAILED"
@@ -53,11 +64,11 @@ def _aggregate_states(states: Iterable[str]) -> str:
 
 
 def _migrate_task_ids_to_local_handoff(db: sqlite3.Connection) -> None:
-    """Make a returned Ozon task id the local terminal without remote polling.
+    """Keep returned Ozon task ids in the read-only pending bucket.
 
-    Older P0 projections stored these rows as PENDING_REMOTE and left the UI at
-    99% forever even though the production contract is to hand the item off to
-    the Ozon product-card backend as soon as a task id is recorded.
+    A task_id means Ozon accepted an async import job. It is not proof that a
+    product card exists, so these rows must remain eligible for read-only
+    recovery until Ozon returns product ids or a terminal error.
     """
     applied = db.execute(
         "SELECT 1 FROM schema_migrations WHERE version='003'"
@@ -67,15 +78,15 @@ def _migrate_task_ids_to_local_handoff(db: sqlite3.Connection) -> None:
     changed_at = now()
     known = "task_id IS NOT NULL AND TRIM(task_id) NOT IN ('', 'unknown', 'UNKNOWN', 'null', 'None')"
     db.execute(
-        f"UPDATE store_sku_publications SET status='HANDED_OFF_TO_OZON', updated_at=? "
+        f"UPDATE store_sku_publications SET status='PENDING_REMOTE', updated_at=? "
         f"WHERE {known} AND status IN ('SUBMITTED','PENDING_REMOTE','UPLOADING','QUEUED','OZON_MODERATION')",
         (changed_at,),
     )
     db.execute(
-        f"UPDATE tasks SET status='HANDED_OFF_TO_OZON', next_check_at=NULL, "
-        f"terminal_reason='task_id_local_handoff', updated_at=? "
+        f"UPDATE tasks SET status='PENDING_REMOTE', "
+        f"terminal_reason=NULL, next_check_at=COALESCE(next_check_at, ?), updated_at=? "
         f"WHERE {known} AND status IN ('SUBMITTED','PENDING_REMOTE','UPLOADING','QUEUED','OZON_MODERATION')",
-        (changed_at,),
+        (_after_seconds(60), changed_at),
     )
     publication_rows = db.execute(
         "SELECT id, product_id FROM store_publications WHERE selected=1"
@@ -88,8 +99,8 @@ def _migrate_task_ids_to_local_handoff(db: sqlite3.Connection) -> None:
                 (publication["id"],),
             ).fetchall()
         ]
-        if sku_states and all(state in {"CREATED", "HANDED_OFF_TO_OZON"} for state in sku_states):
-            store_status = "CREATED" if all(state == "CREATED" for state in sku_states) else "HANDED_OFF_TO_OZON"
+        if sku_states and all(state in {"CREATED", "PENDING_REMOTE"} for state in sku_states):
+            store_status = "CREATED" if all(state == "CREATED" for state in sku_states) else "PENDING_REMOTE"
             db.execute(
                 "UPDATE store_publications SET status=?, updated_at=? WHERE id=?",
                 (store_status, changed_at, publication["id"]),
@@ -123,6 +134,22 @@ def _migrate_task_ids_to_local_handoff(db: sqlite3.Connection) -> None:
 
 def database_path(root: Path) -> Path:
     return root / DEFAULT_DB_RELATIVE_PATH
+
+
+def _schema_is_current(path: Path) -> bool:
+    if not path.is_file():
+        return False
+    try:
+        db = sqlite3.connect(f"file:{path}?mode=ro", uri=True, timeout=5)
+        try:
+            row = db.execute(
+                "SELECT 1 FROM schema_migrations WHERE version=?", (SCHEMA_VERSION,),
+            ).fetchone()
+        finally:
+            db.close()
+        return row is not None
+    except sqlite3.Error:
+        return False
 
 
 def _ensure_private_database(root: Path) -> None:
@@ -185,8 +212,15 @@ def database(root: Path):
 
 def initialize(root: Path) -> Path:
     """Create the local task database without contacting any external service."""
-    with database(root) as db:
-        db.executescript(
+    root = Path(root).resolve()
+    path = database_path(root).resolve()
+    if _schema_is_current(path):
+        return path
+    with _INITIALIZE_LOCK:
+        if _schema_is_current(path):
+            return path
+        with database(root) as db:
+            db.executescript(
             """
             CREATE TABLE IF NOT EXISTS schema_migrations (
                 version TEXT PRIMARY KEY,
@@ -301,24 +335,23 @@ def initialize(root: Path) -> Path:
             );
             """
         )
-        db.execute(
-            "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES ('002', ?)",
-            (now(),),
-        )
-        _migrate_task_ids_to_local_handoff(db)
-        # Older P0 databases predate next_check_at.  Backfill the schedule
-        # without contacting Ozon; existing read counts determine the next
-        # read-only delay and no CREATE/UPDATE can be triggered here.
-        for row in db.execute(
-            "SELECT id, read_query_count FROM tasks "
-            "WHERE status IN ('SUBMITTED','PENDING_REMOTE') AND next_check_at IS NULL"
-        ).fetchall():
             db.execute(
-                "UPDATE tasks SET next_check_at=?, updated_at=? WHERE id=?",
-                (_after_seconds(remote_backoff_seconds(int(row["read_query_count"] or 0))), now(), row["id"]),
+                "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES ('002', ?)",
+                (now(),),
             )
-    _ensure_private_database(root)
-    return database_path(root)
+            _migrate_task_ids_to_local_handoff(db)
+            # Older P0 databases predate next_check_at. Backfill the schedule
+            # locally; this never contacts Ozon or issues a write request.
+            for row in db.execute(
+                "SELECT id, read_query_count FROM tasks "
+                "WHERE status IN ('SUBMITTED','PENDING_REMOTE') AND next_check_at IS NULL"
+            ).fetchall():
+                db.execute(
+                    "UPDATE tasks SET next_check_at=?, updated_at=? WHERE id=?",
+                    (_after_seconds(remote_backoff_seconds(int(row["read_query_count"] or 0))), now(), row["id"]),
+                )
+        _ensure_private_database(root)
+        return path
 
 
 def _read_json(path: Path, default: Any) -> Any:
@@ -341,26 +374,33 @@ def _sku_status(sku: Mapping[str, Any], publication_status: str) -> str:
     task_id = sku.get("task_id")
     if not unknown(product_id):
         return "CREATED"
-    if publication_status in {"FAILED", "QUERY_ERROR", "FAILED_HARD_BLOCKER"}:
+    if publication_status in {"FAILED", "QUERY_ERROR", "NEEDS_ATTENTION"}:
         return "FAILED"
     if not unknown(task_id):
-        return "HANDED_OFF_TO_OZON"
+        return "PENDING_REMOTE"
     if publication_status in {"SUBMITTED", "PENDING_REMOTE", "UPLOADING", "QUEUED", "OZON_MODERATION", "HANDED_OFF_TO_OZON"}:
-        return "HANDED_OFF_TO_OZON" if publication_status == "HANDED_OFF_TO_OZON" else ("PENDING_REMOTE" if publication_status != "SUBMITTED" else "SUBMITTED")
+        return "PENDING_REMOTE" if publication_status != "SUBMITTED" else "SUBMITTED"
     return "NOT_SUBMITTED"
 
 
 def _publication_status(record: Mapping[str, Any]) -> str:
     raw = str(record.get("status") or "NOT_SELECTED").upper()
     skus = list(record.get("sku_publications") or [])
-    if raw in {"FAILED", "QUERY_ERROR", "FAILED_HARD_BLOCKER"}:
+    write_count = int(record.get("api_write_count") or 0)
+    if raw in {"FAILED", "QUERY_ERROR", "NEEDS_ATTENTION"}:
         return "FAILED"
     if skus and all(not unknown(item.get("ozon_product_id")) for item in skus):
         return "CREATED"
     if skus and any(not unknown(item.get("task_id")) for item in skus) and all(
         not unknown(item.get("task_id")) or not unknown(item.get("ozon_product_id")) for item in skus
     ):
-        return "HANDED_OFF_TO_OZON"
+        return "PENDING_REMOTE"
+    if (
+        raw in {"SUBMITTED", "UPLOADING", "QUEUED", "PENDING_REMOTE", "OZON_MODERATION"}
+        and write_count <= 0
+        and not any(not unknown(item.get("task_id")) or not unknown(item.get("ozon_product_id")) for item in skus)
+    ):
+        return "SELECTED" if raw != "NOT_SELECTED" else "NOT_SELECTED"
     if raw in {"SUCCESS", "IMPORTED", "ACTIVE", "UPLOADED"}:
         return "PENDING_REMOTE"
     if raw in {"PENDING_REMOTE", "OZON_MODERATION"}:
@@ -368,7 +408,7 @@ def _publication_status(record: Mapping[str, Any]) -> str:
     if raw in {"SUBMITTED", "UPLOADING", "QUEUED"}:
         return "SUBMITTED"
     if raw == "HANDED_OFF_TO_OZON":
-        return "HANDED_OFF_TO_OZON"
+        return "PENDING_REMOTE"
     return "NOT_SELECTED" if raw == "NOT_SELECTED" else "SELECTED"
 
 
@@ -479,7 +519,7 @@ def sync_publications_json(root: Path, product_dir: Path, publications: Optional
                             str(sku.get("action") or "CREATE").upper(), task_status,
                             int(record.get("api_write_count") or 0), 0, sku.get("payload_hash"),
                             record.get("last_submitted_at"),
-                            None if task_status == "HANDED_OFF_TO_OZON" else record.get("next_check_at") or _after_seconds(60),
+                            record.get("next_check_at") or _after_seconds(60),
                             record.get("last_checked_at"), now(),
                         ),
                     )
@@ -526,6 +566,48 @@ def product_snapshot(root: Path, product_id: str) -> Dict[str, Any]:
     }
 
 
+def product_snapshots(root: Path, product_ids: Iterable[str]) -> Dict[str, Dict[str, Any]]:
+    """Read multiple local publication snapshots through one SQLite connection.
+
+    Workbench polling needs summary status for many products at once. Opening a
+    separate SQLite connection per card repeatedly initializes WAL and applies
+    file permissions, which can starve the local UI while a batch is running.
+    """
+    ids = list(dict.fromkeys(str(product_id) for product_id in product_ids if str(product_id).strip()))
+    snapshots = {
+        product_id: {"product": None, "stores": [], "sku_publications": []}
+        for product_id in ids
+    }
+    if not ids:
+        return snapshots
+    initialize(root)
+    placeholders = ",".join("?" for _ in ids)
+    with database(root) as db:
+        products = db.execute(
+            f"SELECT * FROM products WHERE product_id IN ({placeholders})", ids,
+        ).fetchall()
+        stores = db.execute(
+            f"SELECT * FROM store_publications WHERE product_id IN ({placeholders}) ORDER BY store_id", ids,
+        ).fetchall()
+        skus = db.execute(
+            f"""SELECT s.*, p.product_id FROM store_sku_publications s
+                JOIN store_publications p ON p.id=s.publication_id
+                WHERE p.product_id IN ({placeholders}) ORDER BY p.store_id, s.sku_id""",
+            ids,
+        ).fetchall()
+    for item in products:
+        snapshots[str(item["product_id"])]["product"] = dict(item)
+    for item in stores:
+        record = dict(item)
+        product_id = str(record["product_id"])
+        snapshots[product_id]["stores"].append(record)
+    for item in skus:
+        record = dict(item)
+        product_id = str(record.pop("product_id"))
+        snapshots[product_id]["sku_publications"].append(record)
+    return snapshots
+
+
 def due_pending_store_ids(root: Path, product_id: str) -> List[str]:
     """Return only pending stores whose next_check_at has arrived."""
     initialize(root)
@@ -533,7 +615,7 @@ def due_pending_store_ids(root: Path, product_id: str) -> List[str]:
     with database(root) as db:
         rows = db.execute(
             """SELECT store_id, MIN(next_check_at) AS next_check_at, COUNT(*) AS task_count
-               FROM tasks WHERE product_id=? AND status IN ('SUBMITTED','PENDING_REMOTE')
+               FROM tasks WHERE product_id=? AND status IN ('SUBMITTED','PENDING_REMOTE','HANDED_OFF_TO_OZON')
                GROUP BY store_id""",
             (product_id,),
         ).fetchall()
@@ -552,7 +634,7 @@ def record_remote_check(root: Path, product_id: str, store_ids: Optional[Iterabl
     with database(root) as db:
         rows = db.execute(
             "SELECT id, store_id, read_query_count FROM tasks "
-            "WHERE product_id=? AND status IN ('SUBMITTED','PENDING_REMOTE')",
+            "WHERE product_id=? AND status IN ('SUBMITTED','PENDING_REMOTE','HANDED_OFF_TO_OZON')",
             (product_id,),
         ).fetchall()
         for row in rows:
@@ -566,7 +648,7 @@ def record_remote_check(root: Path, product_id: str, store_ids: Optional[Iterabl
         if allowed is None:
             db.execute(
                 "UPDATE store_publications SET last_checked_at=?, updated_at=? "
-                "WHERE product_id=? AND status IN ('SUBMITTED','PENDING_REMOTE')",
+                "WHERE product_id=? AND status IN ('SUBMITTED','PENDING_REMOTE','HANDED_OFF_TO_OZON')",
                 (checked, checked, product_id),
             )
         else:
@@ -574,7 +656,7 @@ def record_remote_check(root: Path, product_id: str, store_ids: Optional[Iterabl
             params = [checked, checked, product_id, *sorted(allowed)]
             db.execute(
                 f"UPDATE store_publications SET last_checked_at=?, updated_at=? "
-                f"WHERE product_id=? AND status IN ('SUBMITTED','PENDING_REMOTE') AND store_id IN ({placeholders})",
+                f"WHERE product_id=? AND status IN ('SUBMITTED','PENDING_REMOTE','HANDED_OFF_TO_OZON') AND store_id IN ({placeholders})",
                 params,
             )
     _ensure_private_database(root)
@@ -598,6 +680,7 @@ def publications_from_db(root: Path, product_dir: Path, store_ids: Iterable[str]
             record = dict(stores.get(store_id) or {"product_internal_id": product_dir.name, "store_id": store_id, "selected": False, "sku_publications": []})
             record.update({
                 "selected": bool(row["selected"]),
+                "action": row["action"] or "UNKNOWN",
                 "status": {"CREATED": "SUCCESS", "SUBMITTED": "PENDING_REMOTE", "PENDING_REMOTE": "PENDING_REMOTE", "FAILED": "FAILED"}.get(row["status"], row["status"]),
                 "api_write_count": row["api_write_count"],
                 "submission_version": row["submission_version"],
@@ -610,6 +693,7 @@ def publications_from_db(root: Path, product_dir: Path, store_ids: Iterable[str]
             for sku_row in sku_rows:
                 item = sku_by_id.setdefault(str(sku_row["sku_id"]), {"sku_id": str(sku_row["sku_id"]), "errors": [], "warnings": []})
                 item.update({
+                    "action": row["action"] if unknown(item.get("action")) else item.get("action"),
                     "offer_id": sku_row["offer_id"] or "unknown",
                     "task_id": sku_row["task_id"] or "unknown",
                     "ozon_product_id": sku_row["ozon_product_id"] or "unknown",
@@ -619,6 +703,16 @@ def publications_from_db(root: Path, product_dir: Path, store_ids: Iterable[str]
                 if sku_row["error_message"]:
                     item["errors"] = [sku_row["error_message"]]
             record["sku_publications"] = list(sku_by_id.values())
+            if (
+                bool(row["selected"])
+                and int(row["api_write_count"] or 0) <= 0
+                and str(row["status"] or "") in {"SUBMITTED", "UPLOADING", "QUEUED", "PENDING_REMOTE", "OZON_MODERATION"}
+                and not any(
+                    not unknown(item.get("task_id")) or not unknown(item.get("ozon_product_id"))
+                    for item in record["sku_publications"]
+                )
+            ):
+                record["status"] = "SELECTED"
             stores[store_id] = record
     for store_id in store_ids:
         stores.setdefault(str(store_id), {"product_internal_id": product_dir.name, "store_id": str(store_id), "selected": False, "status": "NOT_SELECTED", "sku_publications": []})
@@ -803,6 +897,100 @@ def archive_legacy_local_data(
         "ozon_read_api_calls": 0,
         "inventory_api_calls": 0,
     }
+
+
+def archive_empty_batches(
+    root: Path,
+    batch_ids: Optional[Iterable[str]] = None,
+    reason: str = "empty_batch_stale_record",
+) -> Dict[str, Any]:
+    """Archive only stale local batches that contain no products.
+
+    This deliberately refuses to touch a batch with even one product reference.
+    It is a local state repair: no product files, queues, or Ozon clients are
+    involved.  The original batch JSON remains in place for the recovery window.
+    """
+    initialize(root)
+    requested = {str(item) for item in (batch_ids or []) if str(item).strip()}
+    archived_at = now()
+    cleanup_after = (
+        datetime.now(timezone.utc).astimezone() + timedelta(days=RECOVERY_DAYS)
+    ).isoformat(timespec="seconds")
+    recovery_root = root / "runtime" / "recovery-archive" / "batches"
+    archived: List[str] = []
+    skipped: Dict[str, str] = {}
+
+    paths = sorted((root / "batches").glob("B-*/batch.json"))
+    with database(root) as db:
+        for batch_path in paths:
+            batch_id = batch_path.parent.name
+            if requested and batch_id not in requested:
+                continue
+            batch = _read_json(batch_path, {})
+            if str(batch.get("local_lifecycle_status") or "").upper() == "ARCHIVED":
+                skipped[batch_id] = "already_archived"
+                continue
+            product_refs = _extract_product_ids(batch.get("products") or [])
+            declared_count = int(batch.get("product_count") or 0)
+            if product_refs or declared_count:
+                skipped[batch_id] = "contains_products"
+                continue
+            if str(batch.get("status") or "").upper() not in {"RUNNING", "QUEUED", "STOPPED"}:
+                skipped[batch_id] = "not_stale_empty_state"
+                continue
+
+            previous_status = str(batch.get("status") or "unknown")
+            summary = {
+                "batch_id": batch_id,
+                "previous_status": previous_status,
+                "product_ids": [],
+                "reason": reason,
+            }
+            summary_json = json.dumps(summary, ensure_ascii=False, sort_keys=True, separators=(",", ":"))
+            summary_hash = hashlib.sha256(summary_json.encode("utf-8")).hexdigest()
+            db.execute(
+                """INSERT OR IGNORE INTO archive_records(entity_type, entity_id, archived_at, cleanup_after, reason,
+                   summary_json, summary_sha256, created_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)""",
+                ("batch", batch_id, archived_at, cleanup_after, reason, summary_json, summary_hash, archived_at),
+            )
+            db.execute(
+                """INSERT INTO batches(batch_id, local_status, archived_at, cleanup_after, archive_reason, summary_json, updated_at)
+                   VALUES (?, 'ARCHIVED', ?, ?, ?, ?, ?)
+                   ON CONFLICT(batch_id) DO UPDATE SET local_status='ARCHIVED', archived_at=excluded.archived_at,
+                   cleanup_after=excluded.cleanup_after, archive_reason=excluded.archive_reason,
+                   summary_json=excluded.summary_json, updated_at=excluded.updated_at""",
+                (batch_id, archived_at, cleanup_after, reason, summary_json, archived_at),
+            )
+            batch.update({
+                "status": "ARCHIVED",
+                "local_lifecycle_status": "ARCHIVED",
+                "completed_at": archived_at,
+                "processing_count": 0,
+                "next_action": "none",
+                "archived_at": archived_at,
+                "cleanup_after": cleanup_after,
+                "archive_reason": reason,
+            })
+            _write_json_atomic(batch_path, batch)
+            _write_json_atomic(recovery_root / f"{batch_id}.json", {
+                "entity_type": "batch",
+                "entity_id": batch_id,
+                "archived_at": archived_at,
+                "cleanup_after": cleanup_after,
+                "reason": reason,
+                "summary_sha256": summary_hash,
+                "full_data_retained_at": str(batch_path.parent),
+            })
+            archived.append(batch_id)
+    _ensure_private_database(root)
+    return {
+        "archived_batches": archived,
+        "skipped": skipped,
+        "reason": reason,
+        "ozon_write_api_calls": 0,
+        "ozon_read_api_calls": 0,
+        "inventory_api_calls": 0,
+    }
 def main() -> int:
     import argparse
 
@@ -811,10 +999,14 @@ def main() -> int:
     parser.add_argument("--migrate", action="store_true")
     parser.add_argument("--cutover", action="store_true", help="make SQLite the sole mutable task-state source")
     parser.add_argument("--archive-legacy", action="store_true", help="archive old local products and batches without remote calls")
+    parser.add_argument("--archive-empty-batches", action="store_true", help="archive only stale batches with zero products")
+    parser.add_argument("--batch-id", action="append", default=[], help="target one empty batch when archiving")
     parser.add_argument("--product")
     args = parser.parse_args()
     if args.archive_legacy:
         print(json.dumps(archive_legacy_local_data(args.root), ensure_ascii=False, indent=2))
+    elif args.archive_empty_batches:
+        print(json.dumps(archive_empty_batches(args.root, args.batch_id), ensure_ascii=False, indent=2))
     elif args.cutover:
         print(json.dumps(cutover_to_sqlite(args.root), ensure_ascii=False, indent=2))
     elif args.migrate:

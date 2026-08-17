@@ -49,7 +49,14 @@ def _inside(path: Path, root: Path) -> bool:
 def resolve_project_path(product_dir: Path, value: Any) -> Path:
     raw = Path(str(value or "").strip())
     root = project_root_for(product_dir)
-    return raw.resolve() if raw.is_absolute() else (root / raw).resolve()
+    if raw.is_absolute():
+        return raw.resolve()
+    # Designer prompts intentionally use concise references such as
+    # ``input/source.json#/skus``.  They are scoped to the current product,
+    # while project-relative ``products/P000123/...`` references remain valid.
+    if raw.parts and raw.parts[0] in {"input", "output"}:
+        return (product_dir / raw).resolve()
+    return (root / raw).resolve()
 
 
 def _sha256(path: Path) -> str:
@@ -179,7 +186,12 @@ def validate_current_product_trace_ref(product_dir: Path, value: Any) -> str:
     text = str(value or "").strip()
     if text.startswith(("https://", "http://")):
         return text
-    path = resolve_project_path(product_dir, text)
+    # Provenance references often point at a JSON document plus an internal
+    # fragment, for example ``products/P000015/input/source.json#/skus/0``.
+    # Filesystem boundary checks must be applied to the file portion only; the
+    # fragment is evidence detail, not part of the path.
+    local_path_text = text.split("#", 1)[0]
+    path = resolve_project_path(product_dir, local_path_text)
     assert_not_test_path(path)
     current = product_dir.resolve()
     if not _inside(path, current):

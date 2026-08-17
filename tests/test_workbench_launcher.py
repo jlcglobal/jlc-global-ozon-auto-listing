@@ -37,9 +37,18 @@ class WorkbenchLauncherTest(unittest.TestCase):
         source = executable.read_text(encoding="utf-8")
         self.assertIn("run_workbench_service.sh", source)
         self.assertIn("http://127.0.0.1:8765/health", source)
-        self.assertIn("http://127.0.0.1:8765/workbench", source)
+        self.assertIn("http://127.0.0.1:8765/command-center?v=2026-08-01-ui-state-v1", source)
         self.assertIn("workbench-stop-requested", source)
         self.assertNotIn("启动工作室工作台.command", source)
+
+    def test_command_center_does_not_pin_submitted_product_refresh(self):
+        hook = (ROOT / "collector/workbench-command-center/src/hooks/useProducts.ts").read_text(encoding="utf-8")
+        self.assertIn("SUBMITTED_READ_ONLY_STATUSES", hook)
+        self.assertIn("PENDING_REMOTE", hook)
+        self.assertIn("HANDED_OFF_TO_OZON", hook)
+        self.assertIn("setDetail((current) => current?.product_id === selectedProductId ? current : null)", hook)
+        self.assertIn("isSubmittedReadOnlyDetail(detail)", hook)
+        self.assertIn("return;", hook)
 
 
 if __name__ == "__main__":

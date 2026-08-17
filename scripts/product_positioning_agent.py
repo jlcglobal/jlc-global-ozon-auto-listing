@@ -10,14 +10,26 @@ from __future__ import annotations
 
 import argparse
 import json
+import tempfile
 from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Tuple
 
-try:
-    from scripts.style_selector import load_json, write_json_atomic
-except ModuleNotFoundError:
-    from style_selector import load_json, write_json_atomic
+ROOT = Path(__file__).resolve().parents[1]
+
+
+def load_json(path: Path) -> Dict[str, Any]:
+    with path.open(encoding="utf-8") as handle:
+        return json.load(handle)
+
+
+def write_json_atomic(path: Path, payload: Dict[str, Any]) -> None:
+    path.parent.mkdir(parents=True, exist_ok=True)
+    with tempfile.NamedTemporaryFile("w", encoding="utf-8", dir=path.parent, delete=False) as handle:
+        json.dump(payload, handle, ensure_ascii=False, indent=2)
+        handle.write("\n")
+        temp_name = handle.name
+    Path(temp_name).replace(path)
 
 
 def evidence_texts(items: Any) -> List[str]:

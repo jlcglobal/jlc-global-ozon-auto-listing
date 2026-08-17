@@ -56,12 +56,9 @@
     "wrong_sku_or_color",
     "product_structure_changed",
     "unverified_accessory_added",
-    "unverified_function_added",
     "false_parameter_claim",
-    "false_certification_claim",
     "chinese_text_present",
     "garbage_text_present",
-    "russian_text_unreadable",
-    "empty_placeholder_panel"
+    "russian_text_unreadable"
   ]
 }

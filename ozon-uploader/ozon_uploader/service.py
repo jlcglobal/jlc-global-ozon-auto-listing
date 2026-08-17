@@ -13,9 +13,11 @@ import sys
 import tempfile
 import time
 import urllib.parse
+import urllib.error
+import urllib.request
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from jsonschema import Draft202012Validator
 
@@ -31,6 +33,11 @@ try:
         validate_generated_output,
     )
     from scripts.production_input_guard import ProductionInputError, validate_formal_product_input
+    from scripts.russian_color_rules import (
+        is_color_name_attribute,
+        normalize_russian_color_name,
+    )
+    from scripts.russian_seo_rules import canonical_hashtag
 except ModuleNotFoundError:  # package execution from the repository root
     sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "scripts"))
     from image_asset_boundaries import (
@@ -40,6 +47,11 @@ except ModuleNotFoundError:  # package execution from the repository root
         validate_generated_output,
     )
     from production_input_guard import ProductionInputError, validate_formal_product_input
+    from russian_color_rules import (
+        is_color_name_attribute,
+        normalize_russian_color_name,
+    )
+    from russian_seo_rules import canonical_hashtag
 
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -56,7 +68,6 @@ SCHEMAS = {
     "rich_content": TEMPLATES / "rich-content.schema.json",
     "color_variants": TEMPLATES / "color-variants.schema.json",
     "color_variant_policy": TEMPLATES / "color-variant-policy.schema.json",
-    "final_upload_check": TEMPLATES / "final-upload-check.schema.json",
     "upload_payload": TEMPLATES / "ozon-upload-payload.schema.json",
     "exists_check": TEMPLATES / "product-exists-check.schema.json",
     "variant_grouping": TEMPLATES / "variant-grouping-result.schema.json",
@@ -66,6 +77,79 @@ SCHEMAS = {
 
 class UploadGateError(RuntimeError):
     pass
+
+
+def _verify_public_image_url(url: str, *, timeout: int = 20) -> Dict[str, Any]:
+    request = urllib.request.Request(
+        url,
+        headers={
+            "User-Agent": "Mozilla/5.0 crossborder-ai-factory-ozon-image-preflight/1.0",
+            "Accept": "image/avif,image/webp,image/apng,image/svg+xml,image/*,*/*;q=0.8",
+        },
+        method="GET",
+    )
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            status = int(getattr(response, "status", response.getcode()))
+            content_type = str(response.headers.get("Content-Type") or "").casefold()
+            head = response.read(2048)
+            if status != 200:
+                return {"ok": False, "reason": f"HTTP {status}"}
+            if "text/html" in content_type or head.lstrip().lower().startswith(b"<!doctype html"):
+                return {"ok": False, "reason": "returned HTML instead of an image"}
+            if len(head) < 32:
+                return {"ok": False, "reason": "image response is too small"}
+            if content_type and "image/" not in content_type and "octet-stream" not in content_type:
+                return {"ok": False, "reason": f"unexpected content-type {content_type}"}
+            return {"ok": True, "status": status, "content_type": content_type or "unknown"}
+    except (urllib.error.URLError, TimeoutError, OSError) as exc:
+        return {"ok": False, "reason": str(exc)}
+
+
+def _is_local_public_image_probe_failure(reason: Any) -> bool:
+    """Local TLS/proxy probe failures are diagnostics, not proof Ozon cannot fetch."""
+    text = str(reason or "").casefold()
+    markers = (
+        "ssl: unexpected_eof_while_reading",
+        "unexpected eof while reading",
+        "eof occurred in violation of protocol",
+        "ssl_error_syscall",
+        "libressl ssl_connect",
+        "openssl ssl_connect",
+        "tlsv1 alert internal error",
+    )
+    return any(marker in text for marker in markers)
+
+
+def verify_public_image_urls(manifest: Dict[str, Any]) -> List[str]:
+    failures: List[str] = []
+    local_probe_unavailable_reason: str | None = None
+    for item in manifest.get("images") or []:
+        url = str(item.get("public_url") or "")
+        if not url.startswith("https://"):
+            failures.append(f"{item.get('slot') or item.get('staged_name')}: missing HTTPS public image URL")
+            continue
+        if local_probe_unavailable_reason:
+            item["status"] = "served"
+            item["error"] = (
+                "local public image probe skipped after this image channel "
+                f"failed local TLS verification: {local_probe_unavailable_reason}"
+            )
+            continue
+        result = _verify_public_image_url(url)
+        if not result.get("ok"):
+            reason = result.get("reason") or "unreachable"
+            if _is_local_public_image_probe_failure(reason):
+                local_probe_unavailable_reason = str(reason)
+                item["status"] = "served"
+                item["error"] = f"local public image probe unavailable: {reason}"
+                continue
+            item["status"] = "failed"
+            item["error"] = f"public image download failed: {reason}"
+            failures.append(
+                f"{item.get('slot') or item.get('staged_name')}: {reason}"
+            )
+    return failures
 
 
 def ozon_weight_grams(value: Any) -> int:
@@ -81,6 +165,17 @@ def ozon_weight_grams(value: Any) -> int:
     return int(math.ceil(weight))
 
 
+def ozon_dimension_mm(value: Any) -> int:
+    """Return conservative integer millimeters required by Ozon dimension fields."""
+    try:
+        dimension = float(value)
+    except (TypeError, ValueError) as exc:
+        raise UploadGateError("Package dimensions must be positive millimeters") from exc
+    if not math.isfinite(dimension) or dimension <= 0:
+        raise UploadGateError("Package dimensions must be positive millimeters")
+    return int(math.ceil(dimension))
+
+
 def upload_mode() -> str:
     mode = os.environ.get("UPLOAD_MODE", "dry-run").strip().lower()
     if mode not in {"dry-run", "production"}:
@@ -93,6 +188,32 @@ def require_production_mode() -> None:
         raise UploadGateError(
             "Ozon API writes are disabled because UPLOAD_MODE is not production"
         )
+
+
+def _is_ozon_reference_draft_upload(product_dir: Path) -> bool:
+    source_path = product_dir / "input/source.json"
+    status_path = product_dir / "status.json"
+    if not source_path.is_file() or not status_path.is_file():
+        return False
+    try:
+        source = load_json(source_path)
+        status = load_json(status_path)
+    except Exception:
+        return False
+    return (
+        source.get("source_kind") == "ozon_reference_draft"
+        and str(status.get("status") or "").upper() in {
+            "OZON_REFERENCE_CARD_READY",
+            "WAITING_MANUAL_REVIEW",
+            "UPLOADING",
+            "PENDING_REMOTE",
+            "OZON_MODERATION",
+            "UPLOADED",
+            "CREATED",
+            "UPDATED",
+            "ACTIVE",
+        }
+    )
 
 
 def now() -> str:
@@ -137,6 +258,7 @@ def _remote_content_blockers(
     for item in api_items:
         offer_id = str(item.get("offer_id") or "unknown")
         inspect_text(item.get("name"), f"商品 {offer_id} 的标题")
+        inspect_text(item.get("description"), f"商品 {offer_id} 的简介")
         for attribute in item.get("attributes") or []:
             attribute_id = int(attribute.get("id") or 0)
             value_type = attribute_types.get(attribute_id, "")
@@ -189,12 +311,13 @@ def _image_file_is_readable(path: Path) -> bool:
 def current_image_completeness(product_dir: Path) -> Dict[str, Any]:
     """Re-check current image-plan slots and files immediately before upload.
 
-    This deliberately ignores the previous final-upload-check result.  A stale
-    PASS must never allow a CREATE/UPDATE after images were removed or replaced.
+    This deliberately ignores all historical reports.  A stale PASS must never
+    allow a CREATE/UPDATE after images were removed or replaced.
     """
     output = product_dir / "output"
     plan = load_json(output / "image-plan.json") if (output / "image-plan.json").is_file() else {}
     draft = load_json(output / "ozon-draft.json") if (output / "ozon-draft.json").is_file() else {}
+    qc_report = load_json(output / "image-qc-report.json") if (output / "image-qc-report.json").is_file() else {}
     selected_skus = [str(item.get("source_sku_id")) for item in draft.get("skus") or []]
     planned_main = list(plan.get("main_images") or [])
     planned_detail = list(plan.get("detail_images") or [])
@@ -203,6 +326,14 @@ def current_image_completeness(product_dir: Path) -> Dict[str, Any]:
     detail_results: List[Dict[str, Any]] = []
     asset_contract = load_json(asset_contract_path(product_dir)) if asset_contract_path(product_dir).is_file() else {}
     manual_confirmation_required = bool(asset_contract.get("manual_confirmation_required"))
+    qc_passed_slots: set[tuple[str, str]] = set()
+    if str(qc_report.get("decision") or "").lower() == "pass":
+        for checked in qc_report.get("images_checked") or []:
+            try:
+                checked_path = _resolve_product_artifact(product_dir, checked.get("path")).resolve()
+            except UploadGateError:
+                continue
+            qc_passed_slots.add((str(checked.get("slot") or "unknown"), str(checked_path)))
 
     def inspect(item: Dict[str, Any], label: str) -> Dict[str, Any]:
         path_value = item.get("output_path") or item.get("path") or item.get("local_path")
@@ -219,6 +350,8 @@ def current_image_completeness(product_dir: Path) -> Dict[str, Any]:
             errors.append(str(exc))
         status = str(item.get("status") or "").lower()
         status_ok = status in {"", "generated", "ready", "pass", "passed", "complete"}
+        if not status_ok and status == "planned":
+            status_ok = (str(item.get("slot") or "unknown"), str(path.resolve())) in qc_passed_slots
         passed = readable and status_ok
         if not passed:
             errors.append(f"{label}: image file is missing, damaged, or not generation-complete ({path_value or 'unknown'})")
@@ -277,33 +410,60 @@ def current_image_completeness(product_dir: Path) -> Dict[str, Any]:
     }
 
 
-def refresh_current_image_check(product_dir: Path) -> Dict[str, Any]:
-    """Rewrite final-upload-check.json with the current image result."""
-    output = product_dir / "output"
-    check_path = output / "final-upload-check.json"
-    check = load_json(check_path) if check_path.is_file() else {
-        "schema_version": "1.0.0", "product_id": product_dir.name,
-        "status": "FAIL", "upload_allowed": False, "checks": [], "errors": [], "warnings": [],
-    }
+def current_upload_image_gate(product_dir: Path) -> Dict[str, Any]:
+    """Build the current upload image gate from image-plan and real files only."""
     result = current_image_completeness(product_dir)
-    checks = [item for item in check.get("checks") or [] if item.get("name") not in {"image_slot_completeness", "images_qc"}]
     detail = "每个已选SKU必须有合格主图，且商品必须正好有8张详情图。"
     if result["errors"]:
         detail += " " + "；".join(result["errors"])
-    checks.extend([
+    checks = [
         {"name": "image_slot_completeness", "passed": result["passed"], "detail": detail},
         {"name": "images_qc", "passed": result["passed"], "detail": "当前 image-plan 中的全部图片文件必须存在、可读取并完成生成。"},
-    ])
-    check["checks"] = checks
-    errors = [str(item) for item in check.get("errors") or [] if "详情图" not in str(item) and "SKU" not in str(item)]
-    if result["errors"]:
-        errors.extend(result["errors"])
-    check["errors"] = list(dict.fromkeys(errors))
-    check["status"] = "PASS" if not check["errors"] and all(item.get("passed") for item in checks) else "FAIL"
-    check["upload_allowed"] = check["status"] == "PASS"
-    check["checked_at"] = result["checked_at"]
-    write_json_atomic(check_path, check)
-    return check
+    ]
+    errors = list(dict.fromkeys(str(item) for item in result["errors"]))
+    return {
+        "schema_version": "1.0.0",
+        "product_id": product_dir.name,
+        "status": "PASS" if not errors and all(item.get("passed") for item in checks) else "FAIL",
+        "passed": not errors and all(item.get("passed") for item in checks),
+        "checks": checks,
+        "errors": errors,
+        "selected_sku_count": result["selected_sku_count"],
+        "main_images": result["main_images"],
+        "detail_images": result["detail_images"],
+        "checked_at": result["checked_at"],
+    }
+
+
+def _sync_draft_image_qc_from_current_gate(
+    product_dir: Path,
+    draft: Dict[str, Any],
+    image_gate: Optional[Dict[str, Any]] = None,
+) -> Dict[str, Any]:
+    """Refresh stale draft image statuses from the current hard image gate.
+
+    ``ozon-draft.json`` can be written before image QC finishes.  Upload
+    validation must use the current image-plan plus real files, not a stale
+    draft ``qc_status``.  This only upgrades entries whose own current file is
+    still readable inside the product directory.
+    """
+    gate = image_gate or current_upload_image_gate(product_dir)
+    passed_slots = {
+        str(item.get("slot"))
+        for item in [*(gate.get("main_images") or []), *(gate.get("detail_images") or [])]
+        if item.get("passed") is True and item.get("slot")
+    }
+    for item in draft.get("images") or []:
+        slot = str(item.get("slot") or "")
+        if slot not in passed_slots:
+            continue
+        try:
+            current_path = _resolve_product_artifact(product_dir, item.get("path"))
+        except UploadGateError:
+            continue
+        if _image_file_is_readable(current_path):
+            item["qc_status"] = "pass"
+    return gate
 
 
 def _product_context(path: Path) -> Optional[tuple[Path, str]]:
@@ -502,9 +662,255 @@ def _attribute_metadata(metadata: Dict[str, Any]) -> Dict[int, Dict[str, Any]]:
 
 def _allowed_dictionary_value(attribute: Dict[str, Any], value_id: int, value: str) -> bool:
     return any(
-        item["id"] == value_id and item["value"].casefold() == value.casefold()
+        int(item.get("dictionary_value_id", item.get("id")) or 0) == int(value_id)
+        and str(item.get("value") or "").casefold() == str(value or "").casefold()
         for item in attribute["allowed_values"]
     )
+
+
+def _is_hashtag_attribute(attribute_id: int, metadata: Dict[int, Dict[str, Any]]) -> bool:
+    if attribute_id == 23171:
+        return True
+    name = str((metadata.get(attribute_id) or {}).get("attribute_name") or "").casefold()
+    return "хештег" in name or "hashtag" in name
+
+
+def _is_cable_length_attribute(attribute_id: int, metadata: Dict[int, Dict[str, Any]]) -> bool:
+    if attribute_id == 5391:
+        return True
+    name = str((metadata.get(attribute_id) or {}).get("attribute_name") or "").casefold()
+    return any(token in name for token in ("длина шнура", "длина кабеля", "длина провода", "cord length", "cable length"))
+
+
+def _contains_explicit_cable_evidence(compiled: Dict[str, Any]) -> bool:
+    evidence = " ".join(str(value or "") for value in (
+        compiled.get("canonical_value"), compiled.get("source"), *(compiled.get("evidence") or []),
+    )).casefold()
+    return any(token in evidence for token in ("шнур", "кабель", "провод", "cord", "cable", "电源线", "线长", "充电线"))
+
+
+def _payload_tag_terms(
+    config: Dict[str, Any],
+    draft: Dict[str, Any],
+    sku: Dict[str, Any],
+    source: Optional[Dict[str, Any]] = None,
+) -> List[str]:
+    """Terms that may identify a brand/store/model rather than a search tag."""
+    values: List[Any] = [
+        (config.get("brand") or {}).get("value"),
+        (config.get("model_name") or {}).get("value"),
+        config.get("merge_product_name"),
+        sku.get("offer_id"),
+        sku.get("source_sku_name"),
+        sku.get("display_name_ru"),
+    ]
+    # Old drafts may contain a supplier/store name even when the current
+    # config says "Нет бренда".  Only this product's collected brand fields
+    # are used to filter final search tags; no other product is consulted.
+    for key in ("brand", "brand_name", "manufacturer", "seller_brand", "store_name"):
+        values.append((source or {}).get(key))
+    for item in (source or {}).get("product_attributes") or []:
+        if not isinstance(item, dict):
+            continue
+        name = str(item.get("name_cn") or item.get("name") or "").casefold()
+        if "品牌" in name or "商标" in name or "brand" in name or "manufacturer" in name:
+            values.append(item.get("value_cn") or item.get("value"))
+    result: List[str] = []
+    for value in values:
+        term = str(value or "").strip()
+        if not term or term.casefold() in {"нет бренда", "unknown", "none", "null"}:
+            continue
+        result.append(term)
+    return result
+
+
+def _flatten_tag_values(values: List[Dict[str, Any]]) -> List[str]:
+    candidates: List[str] = []
+    for value in values:
+        raw = str(value.get("value") or "")
+        candidates.extend(part for part in re.split(r"[\s,;]+", raw) if part)
+    return candidates
+
+
+def _canonical_tags_from_file(product_dir: Optional[Path]) -> List[str]:
+    if product_dir is None:
+        return []
+    path = product_dir / "output/ozon-tags.json"
+    if not path.is_file():
+        return []
+    try:
+        raw_tags = load_json(path).get("tags") or []
+    except Exception:
+        return []
+    result: List[str] = []
+    seen: set[str] = set()
+    if not isinstance(raw_tags, list):
+        return result
+    for value in raw_tags:
+        tag = canonical_hashtag(value)
+        if not tag or tag.casefold() in seen:
+            continue
+        seen.add(tag.casefold())
+        result.append(tag)
+        if len(result) == 30:
+            break
+    return result
+
+
+def _hashtag_attribute_id(metadata: Dict[int, Dict[str, Any]]) -> int | None:
+    if 23171 in metadata:
+        return 23171
+    for attribute_id, attribute in metadata.items():
+        if _is_hashtag_attribute(attribute_id, metadata):
+            return attribute_id
+    return None
+
+
+def _live_numeric_bounds(attribute: Dict[str, Any]) -> Tuple[float | None, float | None]:
+    """Read a live Ozon numeric range without mistaking list limits for values."""
+    containers = [attribute]
+    for key in ("constraints", "field_contract", "restrictions", "value_limits", "validation"):
+        nested = attribute.get(key)
+        if isinstance(nested, dict):
+            containers.append(nested)
+    minimum = maximum = None
+    for container in containers:
+        if minimum is None:
+            for key in ("min_value", "minimum", "min", "minValue", "lower_bound"):
+                value = container.get(key)
+                if value not in {None, ""}:
+                    try:
+                        minimum = float(value)
+                    except (TypeError, ValueError):
+                        pass
+                    break
+        if maximum is None:
+            for key in ("max_value", "maximum", "max", "maxValue", "upper_bound"):
+                value = container.get(key)
+                if value not in {None, ""}:
+                    try:
+                        maximum = float(value)
+                    except (TypeError, ValueError):
+                        pass
+                    break
+    return minimum, maximum
+
+
+def _normalized_live_numeric_values(attribute: Dict[str, Any], values: List[Dict[str, Any]]) -> List[Dict[str, Any]] | None:
+    """Return API-safe numeric values or ``None`` when a stale value is illegal.
+
+    Unit conversion belongs to the deterministic compiler.  This last layer
+    deliberately only normalizes a decimal separator and validates the live
+    type/range, so it cannot silently reinterpret cm as mm or a weight as a
+    capacity.
+    """
+    kind = str(attribute.get("type") or "").casefold()
+    if kind not in {"integer", "int32", "int64", "decimal", "double", "float"}:
+        return values
+    minimum, maximum = _live_numeric_bounds(attribute)
+    normalized: List[Dict[str, Any]] = []
+    for item in values:
+        raw = str(item.get("value") or "").strip().replace(",", ".")
+        if not _SCALAR_NUMBER_RE.fullmatch(raw):
+            return None
+        try:
+            number = float(raw)
+        except ValueError:
+            return None
+        if kind in {"integer", "int32", "int64"} and not number.is_integer():
+            return None
+        if (minimum is not None and number < minimum) or (maximum is not None and number > maximum):
+            return None
+        value = str(int(number)) if kind in {"integer", "int32", "int64"} else format(number, ".12g")
+        normalized.append({**item, "value": value})
+    return normalized
+
+
+def _repair_final_api_attributes(
+    attributes: List[Dict[str, Any]],
+    *,
+    metadata: Dict[int, Dict[str, Any]],
+    compiled_by_id: Dict[int, Dict[str, Any]],
+    blocked_tag_terms: List[str],
+    canonical_tags: Optional[List[str]] = None,
+    repair_log: List[Dict[str, Any]],
+    sku_id: str,
+) -> List[Dict[str, Any]]:
+    """Final no-write cleanup for old/partially stale compiled artifacts.
+
+    The compiler owns semantic decisions.  This function only enforces the
+    current Ozon metadata at payload construction: optional invalid fields are
+    removed, while a required invalid field remains a deterministic local
+    failure rather than a fabricated value.
+    """
+    result: List[Dict[str, Any]] = []
+    for attribute in attributes:
+        attribute_id = int(attribute.get("id") or 0)
+        live = metadata.get(attribute_id)
+        compiled = compiled_by_id.get(attribute_id) or {}
+        if _is_cable_length_attribute(attribute_id, metadata) and not _contains_explicit_cable_evidence(compiled):
+            repair_log.append({"sku_id": sku_id, "attribute_id": attribute_id, "action": "removed", "reason": "no_explicit_cable_length_source"})
+            continue
+        if _is_hashtag_attribute(attribute_id, metadata):
+            tags: List[str] = []
+            seen: set[str] = set()
+            candidates = canonical_tags if canonical_tags else _flatten_tag_values(attribute.get("values") or [])
+            for candidate in candidates:
+                tag = canonical_hashtag(candidate, blocked_terms=blocked_tag_terms)
+                if not tag or tag.casefold() in seen:
+                    continue
+                seen.add(tag.casefold())
+                tags.append(tag)
+                if len(tags) == 30:
+                    break
+            if not tags:
+                repair_log.append({"sku_id": sku_id, "attribute_id": attribute_id, "action": "removed", "reason": "no_valid_russian_search_tags"})
+                continue
+            if tags != _flatten_tag_values(attribute.get("values") or []):
+                repair_log.append({"sku_id": sku_id, "attribute_id": attribute_id, "action": "normalized", "reason": "canonical_ozon_tags_file", "value_count": len(tags)})
+            values = (
+                [{"value": " ".join(tags)}]
+                if live and live.get("is_collection") is False
+                else [{"value": tag} for tag in tags]
+            )
+            result.append({"complex_id": attribute.get("complex_id", 0), "id": attribute_id, "values": values})
+            continue
+        if live and live.get("allowed_values"):
+            values = attribute.get("values") or []
+            valid = bool(values) and all(
+                value.get("dictionary_value_id") is not None
+                and _allowed_dictionary_value(live, value["dictionary_value_id"], str(value.get("value") or ""))
+                for value in values
+            )
+            if not valid:
+                entry = {"sku_id": sku_id, "attribute_id": attribute_id, "action": "blocked_required" if live.get("required") else "removed", "reason": "value_absent_from_current_allowed_values"}
+                repair_log.append(entry)
+                if live.get("required"):
+                    raise UploadGateError(f"必填属性 {attribute_id} 不在当前 Ozon 合法字典中")
+                continue
+        if live:
+            normalized_values = _normalized_live_numeric_values(live, attribute.get("values") or [])
+            if normalized_values is None:
+                entry = {
+                    "sku_id": sku_id,
+                    "attribute_id": attribute_id,
+                    "action": "blocked_required" if live.get("required") else "removed",
+                    "reason": "numeric_value_or_range_not_allowed_by_current_ozon_metadata",
+                }
+                repair_log.append(entry)
+                if live.get("required"):
+                    raise UploadGateError(f"必填属性 {attribute_id} 的数值或范围不符合当前 Ozon 要求")
+                continue
+            if normalized_values != attribute.get("values"):
+                repair_log.append({
+                    "sku_id": sku_id,
+                    "attribute_id": attribute_id,
+                    "action": "normalized",
+                    "reason": "current_ozon_numeric_contract",
+                })
+                attribute = {**attribute, "values": normalized_values}
+        result.append(attribute)
+    return result
 
 
 def apply_upload_config(draft: Dict[str, Any], config: Dict[str, Any]) -> Dict[str, Any]:
@@ -537,9 +943,11 @@ def apply_upload_config(draft: Dict[str, Any], config: Dict[str, Any]) -> Dict[s
             })
     configured = {
         config["brand"]["attribute_id"]: ("brand", config["brand"], "human"),
-        config["model_name"]["attribute_id"]: ("model_name", config["model_name"], "human"),
         config["type"]["attribute_id"]: ("product_type", config["type"], "source"),
     }
+    model_attribute_id = int((config.get("model_name") or {}).get("attribute_id") or 0)
+    if model_attribute_id > 0:
+        configured[model_attribute_id] = ("model_name", config["model_name"], "human")
     new_attributes = []
     existing_by_id = {
         item["attribute_id"]: item
@@ -574,6 +982,7 @@ def build_preflight(
     metadata: Dict[str, Any],
     image_manifest: Dict[str, Any],
     checked_at: str,
+    image_gate: Optional[Dict[str, Any]] = None,
 ) -> Dict[str, Any]:
     checks = []
     errors = []
@@ -606,19 +1015,48 @@ def build_preflight(
     final_attributes_for_gate = (
         load_json(final_attributes_path) if final_attributes_path.is_file() else {}
     )
-    final_by_id = {
+    sku_ids = [str(item["source_sku_id"]) for item in draft["skus"]]
+    common_by_id = {
         int(item["attribute_id"]): item
-        for item in final_attributes_for_gate.get("attributes", [])
-    }
-    missing_required = [
-        item["attribute_name"]
-        for item in metadata.get("attributes", [])
-        if item.get("required") is True
-        and (
-            int(item["attribute_id"]) not in final_by_id
-            or final_by_id[int(item["attribute_id"])].get("value") in {None, "unknown"}
+        for item in (
+            final_attributes_for_gate.get("common_attributes")
+            or final_attributes_for_gate.get("attributes")
+            or []
         )
-    ]
+        if item.get("attribute_id") is not None
+    }
+    by_sku = {
+        str(sku_id): {
+            int(item["attribute_id"]): item
+            for item in (values or [])
+            if item.get("attribute_id") is not None
+        }
+        for sku_id, values in (final_attributes_for_gate.get("attributes_by_sku") or {}).items()
+    }
+
+    def has_attribute_value(item: Optional[Dict[str, Any]]) -> bool:
+        if not item:
+            return False
+        raw = item.get("target_value", item.get("value", item.get("ozon_value")))
+        return raw not in {None, "", "unknown", "unresolved"}
+
+    missing_required: List[str] = []
+    for item in metadata.get("attributes", []):
+        if item.get("required") is not True:
+            continue
+        attr_id = int(item["attribute_id"])
+        attr_name = item.get("attribute_name") or str(attr_id)
+        sku_scoped_required = (
+            item.get("is_aspect")
+            or item.get("is_collection")
+            or any(attr_id in values for values in by_sku.values())
+        )
+        if sku_scoped_required:
+            for sku_id in sku_ids:
+                if not has_attribute_value(by_sku.get(sku_id, {}).get(attr_id) or common_by_id.get(attr_id)):
+                    missing_required.append(f"{attr_name} ({sku_id})")
+        elif not has_attribute_value(common_by_id.get(attr_id)):
+            missing_required.append(attr_name)
     add(
         "required_attributes",
         not missing_required,
@@ -659,33 +1097,60 @@ def build_preflight(
         config["vat"] != "unknown",
         "VAT must be confirmed before product creation.",
     )
-    dimensions = config["package_dimensions"]
-    weight = config["package_weight"]
-    product_dimensions = config.get("product_dimensions") or {}
-    product_weight = config.get("product_weight") or {}
+    final_measurements = (final_attributes_for_gate.get("sku_measurements") or {})
+
+    def sku_measurement_pair(sku_id: str) -> Tuple[Dict[str, Any], Dict[str, Any], Dict[str, Any], Dict[str, Any]]:
+        measurement = final_measurements.get(str(sku_id)) or {}
+        product_dimensions = _canonical_known_dimensions(
+            measurement.get("product_dimensions"),
+            config.get("product_dimensions") or {},
+        )
+        package_dimensions = _canonical_known_dimensions(
+            measurement.get("package_dimensions"),
+            config["package_dimensions"],
+        )
+        product_weight = _canonical_known_scalar(measurement.get("product_weight"))
+        package_weight = _canonical_known_scalar(measurement.get("package_weight"))
+        if product_weight is None:
+            product_weight = (config.get("product_weight") or {}).get("value_g")
+        if package_weight is None:
+            package_weight = config["package_weight"].get("value_g")
+        return product_dimensions, package_dimensions, {"value_g": product_weight}, {"value_g": package_weight}
+
+    package_measurements_ok = True
+    hierarchy_ok = True
+    for sku_id in sku_ids:
+        product_dimensions, dimensions, product_weight, weight = sku_measurement_pair(sku_id)
+        package_measurements_ok = package_measurements_ok and all(
+            float(dimensions.get(key) or 0) > 0 for key in ("length_mm", "width_mm", "height_mm")
+        ) and float(weight.get("value_g") or 0) > 0
+        hierarchy_ok = hierarchy_ok and (
+            float(weight.get("value_g") or 0) > float(product_weight.get("value_g") or 0) > 0
+            and all(
+                float(dimensions.get(key) or 0) > float(product_dimensions.get(key) or 0) > 0
+                for key in ("length_mm", "width_mm", "height_mm")
+            )
+        )
     add(
         "package_measurements",
-        all(dimensions[key] > 0 for key in ("length_mm", "width_mm", "height_mm"))
-        and weight["value_g"] > 0,
-        "Positive package dimensions and weight are required.",
+        package_measurements_ok,
+        "Every SKU requires positive package dimensions and package weight.",
     )
     add(
         "measurement_hierarchy",
-        float(weight.get("value_g") or 0) > float(product_weight.get("value_g") or 0) > 0
-        and all(
-            float(dimensions.get(key) or 0) > float(product_dimensions.get(key) or 0) > 0
-            for key in ("length_mm", "width_mm", "height_mm")
-        ),
-        "Package weight and every package dimension must be strictly greater than product measurements.",
+        hierarchy_ok,
+        "Every SKU package weight and every package dimension must be strictly greater than that SKU's product measurements.",
     )
-    generated_files_ok = all(
-        (ROOT / item["path"]).is_file() and item["qc_status"] == "pass"
-        for item in draft["images"]
+    image_gate = _sync_draft_image_qc_from_current_gate(product_dir, draft, image_gate)
+    generated_file_errors = image_gate.get("errors") or []
+    generated_files_ok = (
+        image_gate.get("status") == "PASS" and image_gate.get("passed") is True
     )
     add(
         "generated_images",
         generated_files_ok,
-        "Every generated image must exist locally and have qc_status=pass.",
+        "Every generated image must exist locally and pass the current hard image check."
+        + (": " + "; ".join(str(item) for item in generated_file_errors) if generated_file_errors else ""),
     )
     public_images_ok = all(
         isinstance(item["public_url"], str) and item["public_url"].startswith("https://")
@@ -727,10 +1192,13 @@ def build_preflight(
             + (": " + "; ".join(schema_errors) if schema_errors else "."),
         )
     tags = field_values.get("tags", {})
+    normalized_tags = tags.get("tags", []) if isinstance(tags.get("tags"), list) else []
     add(
         "field_completion_tags_count",
-        tags.get("count") == 30 and len(set(tags.get("tags", []))) == 30,
-        "Field completion requires exactly 30 unique Ozon hashtags.",
+        tags.get("count") == len(normalized_tags)
+        and len({str(tag).casefold() for tag in normalized_tags}) == len(normalized_tags)
+        and len(normalized_tags) <= 30,
+        "Field completion allows up to 30 unique Russian Ozon hashtags; an empty optional field is omitted.",
     )
     final_attributes = field_values.get("attributes", {})
     add(
@@ -785,12 +1253,118 @@ def _text_attribute(item: Dict[str, Any]) -> Dict[str, Any]:
 
 
 def _final_attribute_to_api(item: Dict[str, Any]) -> Optional[Dict[str, Any]]:
-    if item["value"] == "unknown":
+    dictionary_values = item.get("dictionary_values") or []
+    if dictionary_values:
+        values = [
+            {
+                "dictionary_value_id": value["dictionary_value_id"],
+                "value": str(value["value"]),
+            }
+            for value in dictionary_values
+            if value.get("dictionary_value_id") is not None and value.get("value") not in {None, "", "unknown"}
+        ]
+        if values:
+            return {"complex_id": 0, "id": item["attribute_id"], "values": values}
+    raw_value = item.get("target_value", item.get("value"))
+    if raw_value in {None, "unknown", ""}:
         return None
-    value: Dict[str, Any] = {"value": str(item["value"])}
+    value: Dict[str, Any] = {"value": str(raw_value)}
     if item.get("dictionary_value_id") is not None:
         value["dictionary_value_id"] = item["dictionary_value_id"]
     return {"complex_id": 0, "id": item["attribute_id"], "values": [value]}
+
+
+def _compiled_attributes_for_sku(final_attributes: Dict[str, Any], sku_id: str) -> List[Dict[str, Any]]:
+    common = list(final_attributes.get("common_attributes") or final_attributes.get("attributes") or [])
+    sku_specific = list((final_attributes.get("attributes_by_sku") or {}).get(str(sku_id)) or [])
+    by_id: Dict[int, Dict[str, Any]] = {}
+    for item in common:
+        if item.get("attribute_id") is not None:
+            by_id[int(item["attribute_id"])] = item
+    for item in sku_specific:
+        if item.get("attribute_id") is not None:
+            by_id[int(item["attribute_id"])] = item
+    return list(by_id.values())
+
+
+def _compiled_api_attributes_for_sku(
+    final_attributes: Dict[str, Any],
+    sku_id: str,
+    existing_ids: set[int],
+) -> List[Dict[str, Any]]:
+    result: List[Dict[str, Any]] = []
+    seen = set(existing_ids)
+    for item in _compiled_attributes_for_sku(final_attributes, sku_id):
+        converted = _final_attribute_to_api(item)
+        if converted and int(converted["id"]) not in seen:
+            result.append(converted)
+            seen.add(int(converted["id"]))
+    return result
+
+
+def _canonical_field_value(value: Any) -> Any:
+    if isinstance(value, dict):
+        return value.get("canonical_value", value.get("target_value", value.get("value")))
+    return value
+
+
+_UNKNOWN_SCALARS = {"", "unknown", "none", "null", "nan"}
+
+
+def _is_unknown_scalar(value: Any) -> bool:
+    if value is None:
+        return True
+    if isinstance(value, str):
+        return value.strip().casefold() in _UNKNOWN_SCALARS
+    return False
+
+
+def _canonical_known_scalar(value: Any) -> Any:
+    value = _canonical_field_value(value)
+    if _is_unknown_scalar(value):
+        return None
+    return value
+
+
+def _dimensions_are_positive(value: Any) -> bool:
+    if not isinstance(value, dict):
+        return False
+    try:
+        return all(
+            not _is_unknown_scalar(value.get(key))
+            and math.isfinite(float(value.get(key)))
+            and float(value.get(key)) > 0
+            for key in ("length_mm", "width_mm", "height_mm")
+        )
+    except (TypeError, ValueError):
+        return False
+
+
+def _canonical_known_dimensions(value: Any, fallback: Optional[Dict[str, Any]] = None) -> Dict[str, Any]:
+    value = _canonical_field_value(value)
+    if isinstance(value, dict):
+        dimensions = {
+            "length_mm": value.get("length_mm"),
+            "width_mm": value.get("width_mm"),
+            "height_mm": value.get("height_mm"),
+        }
+        if _dimensions_are_positive(dimensions):
+            return dimensions
+    return fallback or {}
+
+
+def _sku_package_measurement(final_attributes: Optional[Dict[str, Any]], sku_id: str, config: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+    if not final_attributes:
+        return config["package_dimensions"], config["package_weight"]
+    measurement = (final_attributes.get("sku_measurements") or {}).get(str(sku_id)) or {}
+    package_dimensions = _canonical_known_dimensions(
+        measurement.get("package_dimensions"),
+        config["package_dimensions"],
+    )
+    package_weight = _canonical_known_scalar(measurement.get("package_weight"))
+    if package_weight is None:
+        package_weight = config["package_weight"].get("value_g")
+    return package_dimensions, {"value_g": package_weight}
 
 
 def _resolve_rich_content_for_upload(
@@ -823,11 +1397,39 @@ def _resolve_rich_content_for_upload(
     serialized = json.dumps(resolved, ensure_ascii=False, separators=(",", ":"))
     updated = copy.deepcopy(final_attributes)
     rich_attribute_id = rich.get("attribute_id")
-    for item in updated["attributes"]:
+    if updated.get("common_attributes"):
+        target_key = "common_attributes"
+    else:
+        target_key = "attributes"
+        updated.setdefault("attributes", [])
+    target_section = updated[target_key]
+    found = False
+    for item in target_section:
         if rich_attribute_id is not None and item["attribute_id"] == rich_attribute_id:
             item["value"] = serialized
+            item["target_value"] = serialized
             item["evidence"] = ["rich-content.json resolved through production image tunnel"]
+            found = True
             break
+    if rich_attribute_id is not None and not found:
+        target_section.append({
+            "attribute_id": int(rich_attribute_id),
+            "attribute_name": "Rich-контент JSON",
+            "scope": "common",
+            "required": False,
+            "value": serialized,
+            "canonical_value": serialized,
+            "canonical_unit": "text",
+            "target_value": serialized,
+            "target_unit": "text",
+            "conversion_rule": "rich_content_image_url_resolution",
+            "source": "rich-content.json",
+            "mapping_method": "resolved_through_production_image_tunnel",
+            "confidence": 0.85,
+            "dictionary_value_id": None,
+            "evidence": ["rich-content.json resolved through production image tunnel"],
+        })
+    updated["attributes"] = updated.get("common_attributes") or updated.get("attributes") or []
     return updated
 
 
@@ -875,7 +1477,22 @@ def _current_upload_hashes(
         "category_id": draft["description_category_id"],
         "type_id": draft["type_id"],
         "attributes": [
-            item for item in final_attributes["attributes"] if item["value"] != "unknown"
+            item for item in (
+                final_attributes.get("common_attributes")
+                or final_attributes.get("attributes")
+                or []
+            )
+            if item.get("target_value", item.get("value")) != "unknown"
+        ],
+        "attributes_by_sku": [
+            {
+                "sku_id": item["source_sku_id"],
+                "attributes": [
+                    attr for attr in _compiled_attributes_for_sku(final_attributes, str(item["source_sku_id"]))
+                    if attr.get("target_value", attr.get("value")) != "unknown"
+                ],
+            }
+            for item in draft["skus"]
         ],
         "skus": [
             {
@@ -1054,18 +1671,21 @@ def build_upload_payload(product_dir: Path, mode: Optional[str] = None) -> Dict[
     config = load_json(output / "ozon-upload-config.json")
     draft = apply_upload_config(load_json(output / "ozon-draft.json"), config)
     final_attributes = load_json(output / "ozon-attributes-final.json")
+    canonical_tags = _canonical_tags_from_file(product_dir)
+    category_attributes_path = output / "ozon-category-attributes.json"
+    category_metadata = (
+        load_json(category_attributes_path)
+        if category_attributes_path.is_file() else {"attributes": []}
+    )
     colors = load_json(output / "color-variants.json")
     rich = load_json(output / "rich-content.json")
-    final_check = load_json(output / "final-upload-check.json")
+    image_gate = _sync_draft_image_qc_from_current_gate(product_dir, draft)
     pricing = load_json(output / "pricing-result.json")
     grouping = load_json(output / "variant-grouping-result.json")
     exists_check = build_product_exists_check(
         product_dir, draft, final_attributes, colors, config, grouping
     )
 
-    schema_errors = validate(final_check, SCHEMAS["final_upload_check"])
-    if schema_errors:
-        raise UploadGateError("final-upload-check.json is invalid: " + "; ".join(schema_errors))
     grouping_errors = validate(grouping, SCHEMAS["variant_grouping"])
     if grouping_errors:
         raise UploadGateError(
@@ -1116,40 +1736,26 @@ def build_upload_payload(product_dir: Path, mode: Optional[str] = None) -> Dict[
         and item.get("variant_scope") == "sku"
         and item.get("source_sku_id") not in {None, "", "all"}
     }
+    field_repair_log: List[Dict[str, Any]] = []
     api_items = build_import_items(
         draft,
         config,
         shared_template_urls or public_urls,
+        final_attributes=final_attributes,
         variant_grouping=grouping,
         variant_main_image_urls=variant_main_template_urls,
+        category_metadata=category_metadata,
+        field_repair_log=field_repair_log,
+        source=source,
+        canonical_tags=canonical_tags,
     )
-    optional_api_attributes = [
-        converted for converted in (
-            _final_attribute_to_api(item) for item in final_attributes["attributes"]
-        ) if converted is not None
-    ]
-    base_attribute_ids = {
-        int(config["brand"]["attribute_id"]),
-        int(config["model_name"]["attribute_id"]),
-        int(config["type"]["attribute_id"]),
-        *[int(item["attribute_id"]) for item in config.get("sku_colors", [])],
-    }
-    optional_api_attributes = [
-        item for item in optional_api_attributes if item["id"] not in base_attribute_ids
-    ]
     for item, variant in zip(api_items, variants):
-        item["attributes"].extend(copy.deepcopy(optional_api_attributes))
         item["color_image"] = (
             f"pending_upload:{variant['color_image']}"
-            if variant["color_image"] not in {"missing", "not_applicable"} else ""
+            if variant["color_image"] not in {"missing", "not_applicable"} else item.get("primary_image", "")
         )
 
-    blockers = list(final_check["errors"])
-    category_attributes_path = output / "ozon-category-attributes.json"
-    category_metadata = (
-        load_json(category_attributes_path)
-        if category_attributes_path.is_file() else {"attributes": []}
-    )
+    blockers = list(image_gate["errors"])
     blockers.extend(_remote_content_blockers(api_items, category_metadata))
     saved_category_conflicts = _saved_category_conflicts(output, draft)
     if exists_check["action"] == "update" and saved_category_conflicts:
@@ -1203,13 +1809,15 @@ def build_upload_payload(product_dir: Path, mode: Optional[str] = None) -> Dict[
             }
             for index, item in enumerate(draft["images"])
         ],
-        "attributes": final_attributes["attributes"],
+        "attributes": final_attributes.get("common_attributes") or final_attributes.get("attributes") or [],
+        "attributes_by_sku": final_attributes.get("attributes_by_sku") or {},
+        "sku_measurements": final_attributes.get("sku_measurements") or {},
         "variants": variants,
         "price": {
             "currency_code": config["currency_code"],
             "source": "ozon-upload-config confirmed SKU prices; pricing-result.json presence validated",
         },
-        "final_upload_check": final_check,
+        "image_upload_gate": image_gate,
         "product_exists_check": exists_check,
         "production_blockers": list(dict.fromkeys(blockers)),
         "api_request_template": {
@@ -1222,14 +1830,30 @@ def build_upload_payload(product_dir: Path, mode: Optional[str] = None) -> Dict[
     if errors:
         raise ValueError("ozon-upload-payload.json failed validation: " + "; ".join(errors))
     write_json_atomic(output / "ozon-upload-payload.json", payload)
+    compiler_repair_path = output / "ozon-field-repair-report.json"
+    compiler_repairs = load_json(compiler_repair_path) if compiler_repair_path.is_file() else {}
+    compiler_repairs.update({
+        "schema_version": "1.0.0",
+        "product_id": product_dir.name,
+        "generated_at": now(),
+        "payload_finalization": {
+            "repairs": field_repair_log,
+            "summary": {
+            "repaired_or_removed": len(field_repair_log),
+            "payload_item_count": len(api_items),
+            },
+        },
+    })
+    write_json_atomic(compiler_repair_path, compiler_repairs)
     return payload
 
 
 def assert_production_allowed(product_dir: Path, payload: Dict[str, Any]) -> None:
     require_production_mode()
-    final_check = payload["final_upload_check"]
-    if final_check.get("status") != "PASS" or not final_check.get("upload_allowed"):
-        raise UploadGateError("Production requires final-upload-check.status=PASS")
+    image_gate = payload.get("image_upload_gate") or {}
+    if image_gate.get("status") != "PASS" or not image_gate.get("passed"):
+        errors = "；".join(image_gate.get("errors") or ["图片未准备完成"])
+        raise UploadGateError("当前图片不完整，不能上传：" + errors)
     if payload["production_blockers"]:
         raise UploadGateError("; ".join(payload["production_blockers"]))
 
@@ -1242,10 +1866,13 @@ def build_import_items(
     color_image_urls: Optional[Dict[str, str]] = None,
     variant_grouping: Optional[Dict[str, Any]] = None,
     variant_main_image_urls: Optional[Dict[str, str]] = None,
+    category_metadata: Optional[Dict[str, Any]] = None,
+    field_repair_log: Optional[List[Dict[str, Any]]] = None,
+    source: Optional[Dict[str, Any]] = None,
+    canonical_tags: Optional[List[str]] = None,
 ) -> List[Dict[str, Any]]:
     prices = {item["source_sku_id"]: item["price"] for item in config["sku_prices"]}
     colors = {item["source_sku_id"]: item for item in config["sku_colors"]}
-    dimensions = config["package_dimensions"]
     variant_values = {
         item["sku_id"]: item.get("variant_attribute_values", [])
         for item in (variant_grouping or {}).get("variants", [])
@@ -1255,33 +1882,50 @@ def build_import_items(
         and (variant_grouping or {}).get("upload_strategy") == "separate_cards"
         and (variant_grouping or {}).get("platform_can_merge") is False
     )
+    metadata_by_id = {
+        int(item.get("attribute_id") or item.get("id") or 0): item
+        for item in (category_metadata or {}).get("attributes") or []
+        if item.get("attribute_id") is not None or item.get("id") is not None
+    }
+    repair_log = field_repair_log if field_repair_log is not None else []
     items = []
     for sku in draft["skus"]:
         sku_id = str(sku["source_sku_id"])
+        dimensions, package_weight = _sku_package_measurement(final_attributes, sku_id, config)
         variant_main = (variant_main_image_urls or {}).get(sku_id)
         offer_image_urls = list(dict.fromkeys(
             ([variant_main] if variant_main else []) + image_urls
         ))
         if not offer_image_urls:
             raise UploadGateError(f"SKU {sku_id} has no usable main or shared product images")
-        model_config = config["model_name"]
-        if separate_cards:
-            model_config = {
-                **model_config,
-                "value": f"{model_config['value']} {sku_id}",
-            }
         attributes = [
             _dictionary_attribute(config["brand"]),
-            _text_attribute(model_config),
             _dictionary_attribute(config["type"]),
         ]
+        model_config = config.get("model_name") or {}
+        if int(model_config.get("attribute_id") or 0) > 0:
+            if separate_cards:
+                model_config = {
+                    **model_config,
+                    "value": f"{model_config.get('value') or draft['title']} {sku_id}",
+                }
+            attributes.append(_text_attribute(model_config))
         if sku_id in colors:
             attributes.append(_dictionary_attribute(colors[sku_id]))
         for variant_value in variant_values.get(sku_id, []):
             if variant_value["attribute_id"] not in {item["id"] for item in attributes}:
+                attribute_id = int(variant_value["attribute_id"])
+                raw_variant_value = variant_value.get("value")
+                if attribute_id == 10096 and variant_value.get("dictionary_value_id") is None:
+                    continue
+                if is_color_name_attribute(attribute_id, variant_value.get("attribute_name")):
+                    normalized_color = normalize_russian_color_name(raw_variant_value)
+                    if not normalized_color:
+                        continue
+                    raw_variant_value = normalized_color
                 attribute_input = {
-                    "attribute_id": variant_value["attribute_id"],
-                    "value": variant_value["value"],
+                    "attribute_id": attribute_id,
+                    "value": raw_variant_value,
                 }
                 if variant_value.get("dictionary_value_id") is not None:
                     attribute_input["dictionary_value_id"] = variant_value["dictionary_value_id"]
@@ -1290,11 +1934,37 @@ def build_import_items(
                     attributes.append(_text_attribute(attribute_input))
         if final_attributes:
             existing_ids = {item["id"] for item in attributes}
-            for final_attribute in final_attributes["attributes"]:
-                converted = _final_attribute_to_api(final_attribute)
-                if converted and converted["id"] not in existing_ids:
-                    attributes.append(converted)
-                    existing_ids.add(converted["id"])
+            attributes.extend(_compiled_api_attributes_for_sku(final_attributes, sku_id, existing_ids))
+        hashtag_attribute_id = _hashtag_attribute_id(metadata_by_id)
+        if canonical_tags and hashtag_attribute_id and hashtag_attribute_id not in {int(item["id"]) for item in attributes}:
+            attributes.append({
+                "complex_id": 0,
+                "id": hashtag_attribute_id,
+                "values": [{"value": " ".join(canonical_tags)}],
+            })
+        compiled_by_id = {
+            int(item.get("attribute_id") or 0): item
+            for item in _compiled_attributes_for_sku(final_attributes or {}, sku_id)
+            if item.get("attribute_id") is not None
+        }
+        attributes = _repair_final_api_attributes(
+            attributes,
+            metadata=metadata_by_id,
+            compiled_by_id=compiled_by_id,
+            blocked_tag_terms=_payload_tag_terms(config, draft, sku, source),
+            canonical_tags=canonical_tags,
+            repair_log=repair_log,
+            sku_id=sku_id,
+        )
+        if canonical_tags and hashtag_attribute_id:
+            tag_values = [
+                value.get("value")
+                for attribute in attributes
+                if int(attribute.get("id") or 0) == hashtag_attribute_id
+                for value in attribute.get("values") or []
+            ]
+            if not tag_values:
+                raise UploadGateError(f"SKU {sku_id} is missing the Ozon hashtag attribute in the final import payload")
         common_name = str((variant_grouping or {}).get("common_product_name") or "").strip()
         if common_name.casefold() in {"", "unknown", "none", "null"}:
             common_name = str(draft["title"]).strip()
@@ -1316,24 +1986,25 @@ def build_import_items(
             "price": prices[sku_id],
             "currency_code": config["currency_code"],
             "vat": config["vat"],
-            "depth": dimensions["length_mm"],
-            "width": dimensions["width_mm"],
-            "height": dimensions["height_mm"],
+            "depth": ozon_dimension_mm(dimensions["length_mm"]),
+            "width": ozon_dimension_mm(dimensions["width_mm"]),
+            "height": ozon_dimension_mm(dimensions["height_mm"]),
             "dimension_unit": "mm",
-            "weight": ozon_weight_grams(config["package_weight"]["value_g"]),
+            "weight": ozon_weight_grams(package_weight["value_g"]),
             "weight_unit": "g",
             "images": offer_image_urls,
             "primary_image": offer_image_urls[0],
             "images360": [],
             "complex_attributes": [],
             "color_image": (
-                variant_main
-                if variant_main and "color" in (
-                    (variant_grouping or {}).get("mapping_requirements", {}).get("difference_types", [])
-                )
-                else (color_image_urls or {}).get(sku_id, "")
+                (color_image_urls or {}).get(sku_id)
+                or variant_main
+                or offer_image_urls[0]
             ),
         }
+        description = str(draft.get("description") or "").strip()
+        if description:
+            item["description"] = description
         if config["old_price"] is not None:
             item["old_price"] = config["old_price"]
         items.append(item)
@@ -1349,7 +2020,7 @@ def _write_update_request_summary(
 ) -> None:
     upload_config = load_json(product_dir / "output/ozon-upload-config.json")
     brand_attribute_id = int(upload_config["brand"]["attribute_id"])
-    model_attribute_id = int(upload_config["model_name"]["attribute_id"])
+    model_attribute_id = int((upload_config.get("model_name") or {}).get("attribute_id") or 0)
     variant_attribute_id = (grouping.get("variant_attribute") or {}).get("attribute_id")
     existing_by_offer = {
         item["offer_id"]: item["existing_product_id"]
@@ -1366,7 +2037,7 @@ def _write_update_request_summary(
             "type_id": item["type_id"],
             "brand": attributes.get(brand_attribute_id),
             "model_attribute_id": model_attribute_id,
-            "model_value": attributes.get(model_attribute_id),
+            "model_value": attributes.get(model_attribute_id) if model_attribute_id > 0 else None,
             "variant_attribute_id": variant_attribute_id,
             "variant_value": attributes.get(variant_attribute_id),
             "price": item["price"],
@@ -1417,8 +2088,9 @@ def prepare_upload(product_dir: Path) -> Dict[str, Any]:
     color_variants = load_json(colors_path) if colors_path.is_file() else None
     grouping = load_json(output / "variant-grouping-result.json")
     manifest = stage_images(product_dir, draft, checked_at, color_variants)
+    image_gate = _sync_draft_image_qc_from_current_gate(product_dir, draft)
     preflight = build_preflight(
-        product_dir, draft, status, config, metadata, manifest, checked_at
+        product_dir, draft, status, config, metadata, manifest, checked_at, image_gate=image_gate
     )
     _sync_draft_preflight(draft, preflight)
     preview = {
@@ -1450,6 +2122,9 @@ def prepare_upload(product_dir: Path) -> Dict[str, Any]:
                 str(item.get("source_sku_id")): f"https://pending.invalid/{item['staged_name']}"
                 for item in manifest["images"] if item["role"] == "variant_main"
             },
+            category_metadata=metadata,
+            source=load_json(product_dir / "input/source.json"),
+            canonical_tags=_canonical_tags_from_file(product_dir),
         ),
     }
     for name, value, schema_key in (
@@ -1534,9 +2209,9 @@ def _save_failure(
         "failed_step": step,
     })
     previous = status["status"]
-    status["status"] = "FAILED_HARD_BLOCKER"
+    status["status"] = "NEEDS_ATTENTION"
     status["current_step"] = step
-    status["history"].append({"from": previous, "to": "FAILED_HARD_BLOCKER", "at": at, "reason": str(error)})
+    status["history"].append({"from": previous, "to": "NEEDS_ATTENTION", "at": at, "reason": str(error)})
     status["ozon"]["upload_status"] = "failed"
     status["ozon"]["errors"].append({
         "step": step if step in {"ozon_upload", "ozon_update"} else "ozon_upload",
@@ -1769,29 +2444,40 @@ def execute_upload(
     require_production_mode()
     product_dir = product_dir.resolve()
     output = product_dir / "output"
-    # A returned task id is the terminal local handoff.  The workbench never
-    # performs a second import or post-upload readback for the same submission;
-    # later changes belong in the Ozon product-card backend.
     idempotency_path = output / "ozon-idempotency.json"
     idempotency = load_json(idempotency_path) if idempotency_path.is_file() else {}
-    if idempotency.get("api_write_completed") is True and idempotency.get("task_id"):
-        raise UploadGateError(
-            "The previous Ozon import task is still pending or already handed off; "
-            "a second write is forbidden."
+    existing_result = load_json(output / "ozon-result.json") if (output / "ozon-result.json").is_file() else {}
+    remote_failed = str(existing_result.get("status") or "").lower() == "failed"
+    if idempotency.get("api_write_completed") is True and idempotency.get("task_id") and not remote_failed:
+        existing_status = str(existing_result.get("status") or "").lower()
+        has_remote_product_id = any(
+            str(item.get("product_id") or "").strip() not in {"", "unknown", "0"}
+            for item in existing_result.get("items") or []
+            if isinstance(item, dict)
         )
-    # Never trust a historical final-upload-check PASS.  Rebuild the image
+        update_after_created = (
+            required_action == "update"
+            and existing_status in {"created", "updated"}
+            and has_remote_product_id
+        )
+        if not update_after_created:
+            raise UploadGateError(
+                "上一次 Ozon 导入任务还没有确认失败，禁止重复提交。请先执行只读状态查询。"
+            )
+    # Never trust a historical image report.  Rebuild the image
     # gate from the current image-plan and filesystem before any remote call,
     # especially before CREATE/UPDATE can be reached.
-    current_check = refresh_current_image_check(product_dir)
-    if current_check.get("status") != "PASS" or not current_check.get("upload_allowed"):
+    current_check = current_upload_image_gate(product_dir)
+    if current_check.get("status") != "PASS" or not current_check.get("passed"):
         raise UploadGateError("当前图片完整性检查失败：" + "；".join(current_check.get("errors") or ["图片未准备完成"]))
     # Input provenance is an independent hard gate.  It deliberately runs
     # after rebuilding the local image report so a stale PASS can never remain
     # visible, but still before the first Ozon read or write call.
-    try:
-        validate_formal_product_input(product_dir)
-    except ProductionInputError as exc:
-        raise UploadGateError(f"正式生产输入门禁失败：{exc}") from exc
+    if not _is_ozon_reference_draft_upload(product_dir):
+        try:
+            validate_formal_product_input(product_dir)
+        except ProductionInputError as exc:
+            raise UploadGateError(f"正式生产输入门禁失败：{exc}") from exc
     payload = build_upload_payload(product_dir, mode="production")
     assert_production_allowed(product_dir, payload)
     offer_ids = [item["offer_id"] for item in payload["variants"]]
@@ -1815,7 +2501,7 @@ def execute_upload(
         raise ValueError("ozon-upload-payload.json failed validation: " + "; ".join(payload_errors))
     write_json_atomic(output / "ozon-upload-payload.json", payload)
     action = exists_check["action"]
-    if idempotency.get("api_write_completed") is True and idempotency.get("task_id"):
+    if idempotency.get("api_write_completed") is True and idempotency.get("task_id") and not remote_failed:
         if action == "create":
             raise UploadGateError(
                 "An Ozon import task already exists; duplicate CREATE is forbidden."
@@ -1889,12 +2575,26 @@ def execute_upload(
                 item["slot"].removeprefix("color-"): item["public_url"]
                 for item in manifest["images"] if item["role"] == "color"
             }
+            public_image_failures = verify_public_image_urls(manifest)
+            if public_image_failures:
+                write_json_atomic(output / "ozon-images.json", manifest)
+                raise UploadGateError(
+                    "图片公网链接无法被真实下载，已在调用Ozon前停止："
+                    + "; ".join(public_image_failures[:8])
+                )
             resolved_final_attributes = _resolve_rich_content_for_upload(
                 output, final_attributes, manifest
             )
             checked_at = now()
             preflight = build_preflight(
-                product_dir, draft, status, config, metadata, manifest, checked_at
+                product_dir,
+                draft,
+                status,
+                config,
+                metadata,
+                manifest,
+                checked_at,
+                image_gate=_sync_draft_image_qc_from_current_gate(product_dir, draft),
             )
             _sync_draft_preflight(draft, preflight)
             if not preflight["upload_allowed"] or not draft["upload_allowed"]:
@@ -1921,6 +2621,9 @@ def execute_upload(
                 color_image_urls=color_image_urls,
                 variant_grouping=load_json(output / "variant-grouping-result.json"),
                 variant_main_image_urls=variant_main_image_urls,
+                category_metadata=metadata,
+                source=load_json(product_dir / "input/source.json"),
+                canonical_tags=_canonical_tags_from_file(product_dir),
             )
             if action == "update":
                 _write_update_request_summary(
@@ -1966,16 +2669,18 @@ def execute_upload(
             status["ozon"]["last_response"] = response
             previous = status.get("status")
             status.update({
-                "status": "HANDED_OFF_TO_OZON",
+                "status": "PENDING_REMOTE",
                 "current_step": "ozon_upload",
-                "progress": 100,
-                "next_action": "complete",
+                "progress": 99,
+                "next_action": "read_only_status_query",
+                "task_authorized": False,
+                "upload_priority_state": "waiting_remote",
             })
             status.setdefault("history", []).append({
                 "from": previous,
-                "to": "HANDED_OFF_TO_OZON",
+                "to": "PENDING_REMOTE",
                 "at": now(),
-                "reason": "Ozon accepted the import task; local processing is handed off to the Ozon product card.",
+                "reason": "Ozon accepted the import task; product card creation is waiting for read-only task result recovery.",
             })
             draft["upload_allowed"] = False
             draft["preflight"].update({
@@ -2199,7 +2904,7 @@ def recover_remote_import(
     if result["status"] == "failed":
         status.pop("remote_recovery", None)
         status.update({
-            "status": "FAILED_HARD_BLOCKER", "current_step": "ozon_status",
+            "status": "NEEDS_ATTENTION", "current_step": "ozon_status",
             "error_code": result.get("error_code") or "OZON_IMPORT_ITEM_ERROR",
             "error_message": result.get("error_message") or "Ozon import failed",
             "failed_step": "ozon_status", "next_action": "manual_rule_required",
@@ -2304,12 +3009,26 @@ def repair_uploaded_images(
             str(item.get("source_sku_id")): item["public_url"]
             for item in manifest["images"] if item["role"] == "variant_main"
         }
+        public_image_failures = verify_public_image_urls(manifest)
+        if public_image_failures:
+            write_json_atomic(output / "ozon-images.json", manifest)
+            raise UploadGateError(
+                "图片公网链接无法被真实下载，已在调用Ozon前停止："
+                + "; ".join(public_image_failures[:8])
+            )
         items = build_import_items(
             draft,
             config,
             image_urls,
+            final_attributes=load_json(output / "ozon-attributes-final.json")
+            if (output / "ozon-attributes-final.json").is_file() else None,
             variant_grouping=load_json(output / "variant-grouping-result.json"),
             variant_main_image_urls=variant_main_image_urls,
+            category_metadata=load_json(output / "ozon-category-attributes.json")
+            if (output / "ozon-category-attributes.json").is_file() else None,
+            source=load_json(product_dir / "input/source.json")
+            if (product_dir / "input/source.json").is_file() else None,
+            canonical_tags=_canonical_tags_from_file(product_dir),
         )
         response = client.create_products(items)
         task_id = response.get("result", {}).get("task_id")
@@ -2329,6 +3048,7 @@ def repair_uploaded_images(
         result = _initial_result(product_dir, config["shop_name"], now())
         result.update({
             "task_id": task_id, "status": "submitted", "moderation_status": "pending",
+            "action": "image_repair", "upload_action": "image_repair",
             "raw_response": response,
         })
         write_json_atomic(output / "ozon-idempotency.json", {
@@ -2337,7 +3057,14 @@ def repair_uploaded_images(
             "offer_ids": [item["offer_id"] for item in items], "request_timestamp": now(),
         })
         status["api_write_count"] = int(status.get("api_write_count") or 0) + 1
-        status.update({"status": "HANDED_OFF_TO_OZON", "current_step": "ozon_upload", "next_action": "complete"})
+        status.update({
+            "status": "PENDING_REMOTE",
+            "current_step": "ozon_upload",
+            "progress": 99,
+            "next_action": "read_only_status_query",
+            "task_authorized": False,
+            "upload_priority_state": "waiting_remote",
+        })
         status["ozon"]["task_id"] = str(task_id)
         status["ozon"]["last_response"] = response
         for image in manifest["images"]:

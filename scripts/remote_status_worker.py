@@ -19,7 +19,7 @@ from typing import Any, Dict
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 
-from multi_store_upload import PENDING_STATES, refresh_pending_stores  # noqa: E402
+from multi_store_upload import HANDOFF_STATE, PENDING_STATES, has_task_without_product, refresh_pending_stores  # noqa: E402
 from pipeline_runtime import now  # noqa: E402
 from store_publications import load_publications  # noqa: E402
 from task_database import due_pending_store_ids, record_remote_check  # noqa: E402
@@ -72,15 +72,41 @@ def release_pid() -> None:
 
 
 def run_once(root: Path = ROOT) -> Dict[str, Any]:
+    checked_products = 0
+    checked_stores = 0
+    failures = []
+    products_dir = root / "products"
+    for product_dir in sorted(products_dir.glob("P[0-9]*")):
+        if not product_dir.is_dir():
+            continue
+        due_store_ids = due_pending_store_ids(root, product_dir.name)
+        if not due_store_ids:
+            # JSON-only pending rows may not have been projected into SQLite yet.
+            publications = load_publications(product_dir)
+            due_store_ids = [
+                str(store_id)
+                for store_id, record in (publications.get("stores") or {}).items()
+                if str(record.get("status") or "") in PENDING_STATES
+                or (str(record.get("status") or "") == HANDOFF_STATE and has_task_without_product(record))
+            ]
+        if not due_store_ids:
+            continue
+        try:
+            result = refresh_pending_stores(root, product_dir, only_store_ids=due_store_ids)
+            checked = result.get("checked") or []
+            if checked:
+                checked_products += 1
+                checked_stores += len(checked)
+                record_remote_check(root, product_dir.name, [item["store_id"] for item in checked])
+        except Exception as exc:
+            failures.append({"product_id": product_dir.name, "error": str(exc)})
     return {
-        "checked_products": 0,
-        "checked_stores": 0,
+        "checked_products": checked_products,
+        "checked_stores": checked_stores,
         "write_api_calls": 0,
-        "read_api_calls": 0,
+        "read_api_calls": checked_stores,
         "inventory_api_calls": 0,
-        "failures": [],
-        "disabled": True,
-        "message": "远端回查已永久停用",
+        "failures": failures,
         "checked_at": now(),
     }
 
@@ -93,8 +119,6 @@ def main() -> int:
     args = parser.parse_args()
     if args.interval < 5:
         parser.error("interval must be at least 5 seconds")
-    _log("remote status worker disabled; no Ozon API call made")
-    return 0
     if not acquire_pid():
         _log("already running; exiting")
         return 0

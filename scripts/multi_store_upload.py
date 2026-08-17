@@ -14,8 +14,10 @@ import shutil
 import subprocess
 import sys
 import time
+from collections.abc import Mapping as RuntimeMapping
 from pathlib import Path
 from typing import Any, Callable, Dict, Iterable, Mapping, Optional
+import re
 
 try:
     from pipeline_runtime import load_json, normalize_checkpoint, now, write_json_atomic
@@ -34,6 +36,98 @@ PENDING_STATES = {"SUBMITTED", "QUEUED", "UPLOADING", "PENDING_REMOTE", "OZON_MO
 SUCCESS_STATES = {"SUCCESS", "IMPORTED", "UPLOADED", "ACTIVE"}
 HANDOFF_STATE = "HANDED_OFF_TO_OZON"
 RETRYABLE_STATES = {"SELECTED", "FAILED", "QUERY_ERROR"}
+ATTENTION_STATES = {"NEEDS_ATTENTION"}
+IMAGE_FAILURE_TOKENS = {
+    "all_image_failed",
+    "some_image_failed",
+    "primary_image_load_failed",
+    "pics_http_error",
+    "pics_reading_timeout",
+    "фото",
+    "изображ",
+    "картинк",
+    "图片",
+}
+VARIANT_FAILURE_TOKENS = {
+    "spu_already_exists_in_another_account",
+    "double_without_merger_offer",
+    "spu_already_exists_hint",
+    "duplicate",
+    "duplicates",
+    "дублируется",
+    "вариатив",
+    "merge",
+    "merger",
+}
+OZON_ISSUE_BUCKETS: Dict[str, Dict[str, Any]] = {
+    "image_link": {
+        "label": "图片链接失败",
+        "action": "repair_images",
+        "codes": {
+            "all_image_failed",
+            "some_image_failed",
+            "primary_image_load_failed",
+            "pics_http_error",
+            "pics_internal",
+            "pics_reading_timeout",
+            "pics_download_server_unavailable",
+        },
+        "tokens": {"photo", "image", "picture", "фото", "изображ", "картинк", "图片", "照片"},
+        "message": "Ozon 下载图片失败：不重新生图，只重新上传图片到可访问链接后重传图片。",
+    },
+    "numeric_contract": {
+        "label": "字段数值格式错误",
+        "action": "repair_attributes",
+        "codes": {"value_must_be_decimal", "value_min_limit"},
+        "tokens": {"value_must_be_decimal", "value_min_limit", "decimal", "min_limit", "数值格式"},
+        "message": "Ozon 字段数值不合规：重新编译属性并更新商品卡，不需要重做图片。",
+    },
+    "logistics_weight": {
+        "label": "体积重量异常",
+        "action": "repair_measurements",
+        "codes": {"ml_incorrect_volume_weight"},
+        "tokens": {"volume_weight", "вес", "重量", "体积"},
+        "message": "Ozon 认为体积重量异常：按采集资料和视觉事实修正包装尺寸重量后更新。",
+    },
+    "duplicate_spu": {
+        "label": "重复或变体合并问题",
+        "action": "repair_duplicate",
+        "codes": {"double_without_merger_offer", "spu_already_exists_in_another_account"},
+        "tokens": {"duplicate", "merger", "merge", "spu", "дублируется", "重复", "合并", "变体"},
+        "message": "Ozon 认为商品重复或需要合并：走重复/变体修复，不要重新创建第二张商品卡。",
+    },
+    "description_decline": {
+        "label": "简介审核失败",
+        "action": "repair_description",
+        "codes": {"description_decline"},
+        "tokens": {"description", "описан", "简介", "描述"},
+        "message": "Ozon 拒绝了简介：只修正文案，不动图片和已通过字段。",
+    },
+    "category_mismatch": {
+        "label": "类目不匹配",
+        "action": "repair_category",
+        "codes": {"category_mismatch", "category_incorrect"},
+        "tokens": {"category does not match", "категория не соответствует", "выбранная категория", "类目不匹配", "类目不对应"},
+        "message": "Ozon 认为类目和商品不匹配：重新选择正确类目并编译字段，不要重做图片。",
+    },
+    "store_auth": {
+        "label": "店铺授权失败",
+        "action": "repair_store",
+        "codes": {"unauthorized", "forbidden"},
+        "tokens": {"api-key", "api key", "unauthorized", "forbidden", "deactivated", "授权失败"},
+        "message": "店铺授权失败：检查店铺 API 配置后再继续，不会重复提交商品。",
+    },
+}
+OZON_ISSUE_PRIORITY = (
+    "store_auth",
+    "duplicate_spu",
+    "logistics_weight",
+    "category_mismatch",
+    "numeric_contract",
+    "description_decline",
+    "image_link",
+    "other",
+)
 STORE_ARTIFACTS = (
     "ozon-result.json", "ozon-write-receipt.json", "ozon-idempotency.json",
     "ozon-last-upload-hashes.json", "product-exists-check.json",
@@ -41,6 +135,7 @@ STORE_ARTIFACTS = (
     "ozon-preflight.json", "ozon-update-request-summary.json",
     "store-offer-id-map.json",
 )
+RUSSIAN_HASHTAG_RE = re.compile(r"^#[А-Яа-яЁё]{2,29}$")
 
 
 def _safe_store_id(value: str) -> str:
@@ -55,6 +150,68 @@ def store_artifact_dir(product_dir: Path, store_id: str) -> Path:
 
 def store_workspace(root: Path, product_id: str, store_id: str) -> Path:
     return root / "runtime/store-upload-workspaces" / product_id / _safe_store_id(store_id)
+
+
+def project_python(root: Path) -> str:
+    candidate = root / ".venv/bin/python"
+    return str(candidate) if candidate.is_file() else sys.executable
+
+
+def _field_completion_build_package():
+    sys.path.insert(0, str(ROOT / "ozon-field-completion"))
+    from ozon_field_completion import build_package  # noqa: WPS433
+
+    return build_package
+
+
+def _tags_are_current(product_dir: Path) -> bool:
+    tags_path = product_dir / "output/ozon-tags.json"
+    if not tags_path.is_file():
+        return True
+    try:
+        tags = load_json(tags_path).get("tags") or []
+    except Exception:
+        return False
+    return (
+        isinstance(tags, list)
+        and len(tags) <= 30
+        and len({str(item).casefold() for item in tags}) == len(tags)
+        and all(RUSSIAN_HASHTAG_RE.fullmatch(str(item).strip()) for item in tags)
+    )
+
+
+def _color_policy_blocked(product_dir: Path) -> bool:
+    policy_path = product_dir / "output/color-variant-policy.json"
+    if not policy_path.is_file():
+        return False
+    try:
+        return str(load_json(policy_path).get("status") or "").upper() == "BLOCK"
+    except Exception:
+        return True
+
+
+def ensure_upload_config_exists(product_dir: Path, *, force_refresh: bool = False) -> None:
+    """Materialize missing local upload files before any Ozon write can start."""
+    config_path = product_dir / "output/ozon-upload-config.json"
+    if (
+        not force_refresh
+        and config_path.is_file()
+        and _tags_are_current(product_dir)
+        and not _color_policy_blocked(product_dir)
+    ):
+        return
+    try:
+        _field_completion_build_package()(product_dir, write=True, pre_image=False)
+    except Exception as exc:  # pragma: no cover - exact schema failure is tested upstream
+        raise RuntimeError(
+            f"本地上传资料缺失或过期，上传前自动重新生成失败：{exc}"
+        ) from exc
+    if not config_path.is_file():
+        raise RuntimeError("本地上传资料缺少 ozon-upload-config.json，已在调用Ozon前停止")
+    if not _tags_are_current(product_dir):
+        raise RuntimeError("Ozon标签仍不符合当前规则，已在调用Ozon前停止")
+    if _color_policy_blocked(product_dir):
+        raise RuntimeError("主SKU颜色图仍不满足上传条件，已在调用Ozon前停止")
 
 
 def _load_env_file(path: Path, environ: Dict[str, str]) -> None:
@@ -125,6 +282,14 @@ def stop_workspace_image_channels(workspace: Path, wait_seconds: float = 12) -> 
 
 
 def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publication: Mapping[str, Any]) -> Path:
+    repair_images = image_repair_retryable(publication)
+    repair_variant = variant_repair_retryable(publication)
+    force_refresh = (
+        str(publication.get("status") or "") in {"FAILED", "QUERY_ERROR"}
+        or repair_images
+        or repair_variant
+    )
+    ensure_upload_config_exists(product_dir, force_refresh=force_refresh)
     workspace = store_workspace(root, product_dir.name, store_id)
     isolated = workspace / "products" / product_dir.name
     if workspace.exists():
@@ -142,15 +307,34 @@ def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publi
             if source.is_file():
                 shutil.copy2(source, output / name)
     status = normalize_checkpoint(load_json(isolated / "status.json"))
-    status.update({
-        "status": "OZON_READY", "current_step": "field_completion",
-        "next_action": "ozon_upload", "task_authorized": True,
-        "api_write_count": 0, "ozon": {"upload_status": "not_started", "errors": []},
-        "error_code": "unknown", "error_message": "unknown", "failed_step": "unknown",
-    })
+    if repair_images:
+        status.update({
+            "status": "UPLOADED", "current_step": "ozon_upload",
+            "next_action": "retry_failed_store", "task_authorized": True,
+            "api_write_count": int(publication.get("api_write_count") or 1),
+            "ozon": {"upload_status": "failed", "errors": [{"reason": publication.get("last_error") or "图片下载失败"}]},
+            "error_code": "STORE_IMAGE_UPLOAD_FAILED",
+            "error_message": publication.get("last_error") or "图片下载失败",
+            "failed_step": "ozon_upload",
+        })
+    elif repair_variant:
+        status.update({
+            "status": "WAITING_MANUAL_REVIEW", "current_step": "field_completion",
+            "next_action": "ozon_upload", "task_authorized": True,
+            "api_write_count": 0, "ozon": {"upload_status": "not_started", "errors": []},
+            "error_code": "unknown", "error_message": "unknown", "failed_step": "unknown",
+        })
+    else:
+        status.update({
+            "status": "WAITING_MANUAL_REVIEW", "current_step": "field_completion",
+            "next_action": "ozon_upload", "task_authorized": True,
+            "api_write_count": 0, "ozon": {"upload_status": "not_started", "errors": []},
+            "error_code": "unknown", "error_message": "unknown", "failed_step": "unknown",
+        })
     status["completed_steps"] = [step for step in status.get("completed_steps") or [] if step != "ozon_upload"]
     status["pending_steps"] = ["ozon_upload"]
     write_json_atomic(isolated / "status.json", status)
+    ensure_upload_config_exists(isolated, force_refresh=force_refresh)
     config_path = output / "ozon-upload-config.json"
     config = load_json(config_path)
     config["shop_name"] = store_id
@@ -176,10 +360,10 @@ def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publi
         missing = [sku_id for sku_id in draft_sku_ids if sku_id not in offer_ids]
         if missing:
             raise RuntimeError(
-                f"店铺 {store_id} 缺少SKU专属货号，已在上传前阻断：{', '.join(missing)}"
+                f"店铺 {store_id} 缺少SKU专属货号，上传前需要处理：{', '.join(missing)}"
             )
         if len({offer_ids[sku_id] for sku_id in draft_sku_ids}) != len(draft_sku_ids):
-            raise RuntimeError(f"店铺 {store_id} 存在重复SKU货号，已在上传前阻断")
+            raise RuntimeError(f"店铺 {store_id} 存在重复SKU货号，上传前需要处理")
         for sku in draft.get("skus") or []:
             sku["offer_id"] = offer_ids[str(sku.get("source_sku_id"))]
         if draft_sku_ids:
@@ -201,7 +385,10 @@ def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publi
             "product_id": product_dir.name,
             "store_id": store_id,
             "strategy": "store_specific_random_v1" if generated_mapping else "legacy_preserved",
-            "requires_create": generated_mapping,
+            "requires_create": generated_mapping and not repair_variant,
+            "requires_update": repair_variant,
+            "requires_image_repair": repair_images,
+            "requires_variant_repair": repair_variant,
             "prepared_at": now(),
             "sku_offer_ids": [
                 {"sku_id": sku_id, "offer_id": offer_ids[sku_id]}
@@ -217,14 +404,19 @@ def default_runner(root: Path, isolated: Path, store_id: str) -> Dict[str, Any]:
     log_path = isolated / "logs/store-upload.log"
     log_path.parent.mkdir(parents=True, exist_ok=True)
     command = [
-        sys.executable, str(root / "ozon-uploader/cli.py"),
+        project_python(root), str(root / "ozon-uploader/cli.py"),
         str(isolated), "--shop", store_id,
     ]
     offer_map_path = isolated / "output/store-offer-id-map.json"
     offer_map = load_json(offer_map_path) if offer_map_path.is_file() else {}
-    if offer_map.get("requires_create") is True:
-        command.extend(["--require-action", "create"])
-    command.append("--execute")
+    if offer_map.get("requires_image_repair") is True:
+        command.extend(["--repair-images", "--force-image-resubmit"])
+    else:
+        if offer_map.get("requires_update") is True:
+            command.extend(["--require-action", "update"])
+        elif offer_map.get("requires_create") is True:
+            command.extend(["--require-action", "create"])
+        command.append("--execute")
     with log_path.open("a", encoding="utf-8") as log:
         completed = subprocess.run(
             command,
@@ -258,6 +450,176 @@ def _unknown(value: Any) -> bool:
     return value in {None, "", "unknown", "UNKNOWN"}
 
 
+def _issue_text(issue: Any) -> str:
+    if isinstance(issue, RuntimeMapping):
+        return " ".join(
+            str(issue.get(key) or "")
+            for key in ("code", "field", "attribute_id", "message", "reason", "error", "level")
+        ).casefold()
+    return str(issue or "").casefold()
+
+
+def _issue_code(issue: Any) -> str:
+    if not isinstance(issue, RuntimeMapping):
+        return ""
+    return str(issue.get("code") or issue.get("error_code") or "").strip().casefold()
+
+
+def _issue_severity(issue: Any, default: str = "error") -> str:
+    if not isinstance(issue, RuntimeMapping):
+        return default
+    level = str(issue.get("level") or issue.get("severity") or default).casefold()
+    if "warning" in level or "warn" in level:
+        return "warning"
+    if "error" in level:
+        return "error"
+    return default
+
+
+def ozon_issue_bucket(issue: Any) -> str:
+    code = _issue_code(issue)
+    text = _issue_text(issue)
+    for bucket in ("store_auth", "duplicate_spu", "logistics_weight", "category_mismatch", "description_decline", "numeric_contract", "image_link"):
+        config = OZON_ISSUE_BUCKETS[bucket]
+        if code and code in config["codes"]:
+            return bucket
+    for bucket, config in OZON_ISSUE_BUCKETS.items():
+        if any(token in text for token in config["tokens"]):
+            return bucket
+    return "other"
+
+
+def _iter_store_result_issues(product_dir: Path, store_id: str) -> Iterable[Dict[str, Any]]:
+    result_path = store_artifact_dir(product_dir, store_id) / "ozon-result.json"
+    if not result_path.is_file():
+        return []
+    result = load_json(result_path)
+    issues: List[Dict[str, Any]] = []
+    for issue in result.get("errors") or []:
+        if isinstance(issue, RuntimeMapping):
+            issues.append({"store_id": store_id, "severity": _issue_severity(issue), **dict(issue)})
+        else:
+            issues.append({"store_id": store_id, "severity": "error", "message": str(issue)})
+    for issue in result.get("warnings") or []:
+        if isinstance(issue, RuntimeMapping):
+            issues.append({"store_id": store_id, "severity": _issue_severity(issue, "warning"), **dict(issue)})
+        else:
+            issues.append({"store_id": store_id, "severity": "warning", "message": str(issue)})
+    for item in result.get("items") or []:
+        if not isinstance(item, RuntimeMapping):
+            continue
+        offer_id = str(item.get("offer_id") or "unknown")
+        sku_id = str(item.get("source_sku_id") or item.get("sku_id") or "unknown")
+        for issue in item.get("errors") or []:
+            if isinstance(issue, RuntimeMapping):
+                issues.append({
+                    "store_id": store_id,
+                    "offer_id": offer_id,
+                    "sku_id": sku_id,
+                    "severity": _issue_severity(issue),
+                    **dict(issue),
+                })
+            else:
+                issues.append({
+                    "store_id": store_id,
+                    "offer_id": offer_id,
+                    "sku_id": sku_id,
+                    "severity": "error",
+                    "message": str(issue),
+                })
+    return issues
+
+
+def _iter_record_issues(record: Mapping[str, Any], store_id: str) -> Iterable[Dict[str, Any]]:
+    issues: List[Dict[str, Any]] = []
+    record_status = str(record.get("status") or "").upper()
+    if record_status in {"FAILED", "QUERY_ERROR"} and not _unknown(record.get("last_error")):
+        issues.append({"store_id": store_id, "severity": "error", "message": str(record.get("last_error"))})
+    for sku in record.get("sku_publications") or []:
+        if not isinstance(sku, RuntimeMapping):
+            continue
+        base = {
+            "store_id": store_id,
+            "offer_id": str(sku.get("offer_id") or "unknown"),
+            "sku_id": str(sku.get("sku_id") or "unknown"),
+        }
+        for key, default_severity in (("errors", "error"), ("warnings", "warning")):
+            for issue in sku.get(key) or []:
+                if isinstance(issue, RuntimeMapping):
+                    issues.append({**base, "severity": _issue_severity(issue, default_severity), **dict(issue)})
+                else:
+                    issues.append({**base, "severity": default_severity, "message": str(issue)})
+    return issues
+
+
+def summarize_ozon_issues(
+    product_dir: Path,
+    publications: Mapping[str, Any],
+) -> Dict[str, Any]:
+    """Classify Ozon feedback once so upload, recovery and UI share one answer."""
+    deduped: Dict[tuple[str, str, str, str, str], Dict[str, Any]] = {}
+    for store_id, record in (publications.get("stores") or {}).items():
+        if not record.get("selected"):
+            continue
+        for issue in [
+            *_iter_record_issues(record, str(store_id)),
+            *_iter_store_result_issues(product_dir, str(store_id)),
+        ]:
+            if not _issue_text(issue).strip():
+                continue
+            bucket = ozon_issue_bucket(issue)
+            normalized = {
+                **issue,
+                "bucket": bucket,
+                "bucket_label": OZON_ISSUE_BUCKETS.get(bucket, {}).get("label", "其他 Ozon 返回"),
+                "severity": _issue_severity(issue, str(issue.get("severity") or "error")),
+            }
+            key = (
+                str(normalized.get("store_id") or ""),
+                str(normalized.get("offer_id") or ""),
+                str(normalized.get("code") or normalized.get("error_code") or ""),
+                str(normalized.get("field") or normalized.get("attribute_id") or ""),
+                _issue_text(normalized)[:180],
+            )
+            deduped[key] = normalized
+    issues = list(deduped.values())
+    counts: Dict[str, int] = {}
+    severity_counts = {"error": 0, "warning": 0}
+    for issue in issues:
+        bucket = str(issue.get("bucket") or "other")
+        counts[bucket] = counts.get(bucket, 0) + 1
+        severity = str(issue.get("severity") or "error")
+        severity_counts["warning" if severity == "warning" else "error"] += 1
+    primary = next((bucket for bucket in OZON_ISSUE_PRIORITY if counts.get(bucket)), "none")
+    primary_config = OZON_ISSUE_BUCKETS.get(primary, {})
+    return {
+        "schema_version": "1.0.0",
+        "has_issues": bool(issues),
+        "primary_bucket": primary,
+        "primary_label": primary_config.get("label", "其他 Ozon 返回") if issues else "无",
+        "primary_action": primary_config.get("action", "inspect_ozon_result") if issues else "none",
+        "message": primary_config.get("message", "Ozon 返回了未归类问题，请查看原始结果。") if issues else "无 Ozon 问题",
+        "counts": counts,
+        "error_count": severity_counts["error"],
+        "warning_count": severity_counts["warning"],
+        "total": len(issues),
+        "samples": issues[:8],
+    }
+
+
+def ozon_issue_message(summary: Mapping[str, Any], fallback: str) -> str:
+    if not summary.get("has_issues"):
+        return fallback
+    return str(summary.get("message") or fallback)
+
+
+def has_task_without_product(record: Mapping[str, Any]) -> bool:
+    skus = list(record.get("sku_publications") or [])
+    return any(not _unknown(sku.get("task_id")) for sku in skus) and not any(
+        not _unknown(sku.get("ozon_product_id")) for sku in skus
+    )
+
+
 def credential_failure(error: Any) -> bool:
     text = str(error or "").casefold()
     return any(token in text for token in (
@@ -277,19 +639,77 @@ def definitely_retryable(record: Mapping[str, Any]) -> bool:
     return True
 
 
+def image_repair_retryable(record: Mapping[str, Any]) -> bool:
+    if str(record.get("status") or "") not in {"FAILED", "QUERY_ERROR"}:
+        return False
+    skus = list(record.get("sku_publications") or [])
+    if not skus:
+        return False
+    if int(record.get("api_write_count") or 0) <= 0:
+        return False
+    if not any(not _unknown(sku.get("ozon_product_id")) for sku in skus):
+        return False
+    parts = [record.get("last_error")]
+    for sku in skus:
+        parts.extend(sku.get("errors") or [])
+        parts.extend(sku.get("warnings") or [])
+    haystack = " ".join(str(part) for part in parts if part).casefold()
+    return any(token in haystack for token in IMAGE_FAILURE_TOKENS)
+
+
+def variant_repair_retryable(record: Mapping[str, Any]) -> bool:
+    if str(record.get("status") or "") not in {"FAILED", "QUERY_ERROR"}:
+        return False
+    skus = list(record.get("sku_publications") or [])
+    if not skus:
+        return False
+    if int(record.get("api_write_count") or 0) <= 0:
+        return False
+    if not any(not _unknown(sku.get("ozon_product_id")) for sku in skus):
+        return False
+    parts = [record.get("last_error")]
+    for sku in skus:
+        parts.extend(sku.get("errors") or [])
+        parts.extend(sku.get("warnings") or [])
+    haystack = " ".join(str(part) for part in parts if part).casefold()
+    return any(token in haystack for token in VARIANT_FAILURE_TOKENS)
+
+
+def stale_prewrite_pending(record: Mapping[str, Any]) -> bool:
+    """A previous local attempt stopped before any Ozon write identity existed."""
+    if str(record.get("status") or "") not in PENDING_STATES | {"UPLOADING"}:
+        return False
+    if int(record.get("api_write_count") or 0) > 0:
+        return False
+    for sku in record.get("sku_publications") or []:
+        if not _unknown(sku.get("task_id")) or not _unknown(sku.get("ozon_product_id")):
+            return False
+    return True
+
+
 def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_version: bool = True) -> None:
     status = dict(outcome.get("status") or {})
     result = dict(outcome.get("result") or {})
     idempotency = dict(outcome.get("idempotency") or {})
     write_count = int(status.get("api_write_count") or 0)
-    raw_status = str(status.get("status") or "FAILED_HARD_BLOCKER").upper()
-    if raw_status in {"ACTIVE", "UPLOADED"}:
+    raw_status = str(status.get("status") or "NEEDS_ATTENTION").upper()
+    has_task_id = (
+        not _unknown(result.get("task_id"))
+        or any(not _unknown(item.get("task_id")) for item in (result.get("items") or []))
+    )
+    result_failed = str(result.get("status") or "").upper() == "FAILED"
+    if raw_status in {"FAILED", "NEEDS_ATTENTION"} or result_failed:
+        store_status = "FAILED"
+    elif raw_status in {"ACTIVE", "UPLOADED"}:
         store_status = "SUCCESS"
+    elif has_task_id:
+        # A task_id only proves Ozon accepted the async import job.  The card is
+        # not confirmed until read-only recovery returns product IDs or a
+        # terminal validation error.
+        store_status = "PENDING_REMOTE"
     elif raw_status in {"PENDING_REMOTE", "OZON_MODERATION"}:
         store_status = "PENDING_REMOTE"
-    elif raw_status in {"SUBMITTED", "UPLOADING"} and any(not _unknown(item.get("task_id")) for item in (result.get("items") or [])):
-        # A task id is the local hand-off terminal.  No remote poll is needed
-        # to decide whether this product can leave the production pipeline.
+    elif raw_status in {"SUBMITTED", "UPLOADING"} and has_task_id:
         store_status = HANDOFF_STATE
     elif write_count > 0 and any(not _unknown(item.get("task_id")) for item in (result.get("items") or [])):
         store_status = HANDOFF_STATE
@@ -300,7 +720,16 @@ def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_
     items = result.get("items") or []
     by_sku = {str(item.get("source_sku_id") or item.get("sku_id") or ""): item for item in items}
     action = str(result.get("action") or result.get("upload_action") or "UNKNOWN").upper()
+    status_error_message = status.get("error_message")
     errors = result.get("errors") or (status.get("ozon") or {}).get("errors") or []
+    if not errors and raw_status in {"FAILED", "NEEDS_ATTENTION"} and not _unknown(status_error_message):
+        errors = [{
+            "step": "ozon_upload",
+            "reason": str(status_error_message),
+            "retryable": write_count == 0,
+        }]
+    if store_status != "FAILED":
+        errors = []
     for sku in record.get("sku_publications") or []:
         item = by_sku.get(str(sku.get("sku_id"))) or (items[0] if len(items) == 1 else {})
         item_action = str(item.get("action") or "UNKNOWN").upper()
@@ -320,7 +749,9 @@ def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_
         "submission_version": int(record.get("submission_version") or 0) + (1 if increment_version else 0),
         "last_submitted_at": now() if write_count else record.get("last_submitted_at"),
         "last_checked_at": now(),
-        "last_error": None if store_status != "FAILED" else (status.get("error_message") or "店铺上传失败"),
+        "last_error": None if store_status != "FAILED" else (
+            result.get("error_message") or status_error_message or "店铺上传失败"
+        ),
     })
 
 
@@ -334,18 +765,25 @@ def aggregate_product_status(
     selected = [item for item in (publications.get("stores") or {}).values() if item.get("selected")]
     states = {str(item.get("status") or "") for item in selected}
     total_writes = sum(int(item.get("api_write_count") or 0) for item in selected)
-    if states and states <= SUCCESS_STATES:
+    has_unsubmitted = bool(states & {"SELECTED"})
+    issue_summary = summarize_ozon_issues(product_dir, publications)
+    if states & {"FAILED", "QUERY_ERROR"}:
+        target, error = "NEEDS_ATTENTION", ozon_issue_message(
+            issue_summary,
+            "一家或多家店铺上传失败；只允许重试失败店铺",
+        )
+    elif has_unsubmitted and states & (SUCCESS_STATES | {HANDOFF_STATE} | PENDING_STATES):
+        target, error = "PARTIAL", "部分已选店铺尚未提交；可继续上传未完成店铺"
+    elif states and states <= SUCCESS_STATES:
         target, error = "UPLOADED", "unknown"
     elif states and states <= {HANDOFF_STATE}:
-        target, error = HANDOFF_STATE, "已提交Ozon，后续请在Ozon商品卡后台处理"
-    elif HANDOFF_STATE in states and not (states & {"FAILED", "QUERY_ERROR"}):
-        target, error = HANDOFF_STATE, "已提交Ozon，后续请在Ozon商品卡后台处理"
+        target, error = "PENDING_REMOTE", "已提交Ozon，等待Ozon生成商品卡"
+    elif HANDOFF_STATE in states:
+        target, error = "PENDING_REMOTE", "已提交Ozon，等待Ozon生成商品卡"
     elif states & PENDING_STATES:
         target, error = "PENDING_REMOTE", "unknown"
-    elif states & {"FAILED", "QUERY_ERROR"}:
-        target, error = "FAILED_HARD_BLOCKER", "一家或多家店铺上传失败；只允许重试失败店铺"
     else:
-        target, error = "OZON_READY", "unknown"
+        target, error = "WAITING_MANUAL_REVIEW", "unknown"
     published_skus = [
         sku
         for record in selected
@@ -356,38 +794,70 @@ def aggregate_product_status(
     first_product = next((str(sku.get("ozon_product_id")) for sku in published_skus if not _unknown(sku.get("ozon_product_id"))), "unknown")
     first_task = next((str(sku.get("task_id")) for sku in published_skus if not _unknown(sku.get("task_id"))), "unknown")
     first_store = next((str(store_id) for store_id, record in (publications.get("stores") or {}).items() if record.get("selected")), "unknown")
+    failed_errors = []
+    for store_id, record in (publications.get("stores") or {}).items():
+        if not record.get("selected") or str(record.get("status") or "") not in {"FAILED", "QUERY_ERROR"}:
+            continue
+        reason = record.get("last_error")
+        if _unknown(reason):
+            reason = error
+        failed_errors.append({
+            "store_id": str(store_id),
+            "step": "ozon_upload",
+            "reason": str(reason),
+            "bucket": issue_summary.get("primary_bucket", "other"),
+            "bucket_label": issue_summary.get("primary_label", "其他 Ozon 返回"),
+            "api_write_count": int(record.get("api_write_count") or 0),
+            "retryable": definitely_retryable(record)
+            or image_repair_retryable(record)
+            or variant_repair_retryable(record),
+        })
     ozon = dict(status.get("ozon") or {})
     ozon.update({
-        "upload_status": "handed_off" if target == HANDOFF_STATE else "uploaded" if target in {"UPLOADED", "ACTIVE"} else "uploading" if target == "PENDING_REMOTE" else "failed" if target == "FAILED_HARD_BLOCKER" else "not_started",
+        "upload_status": "handed_off" if target == HANDOFF_STATE else "uploaded" if target in {"UPLOADED", "ACTIVE"} else "uploading" if target == "PENDING_REMOTE" else "failed" if target in ATTENTION_STATES else "not_started",
         "product_id": first_product,
         "offer_id": first_offer,
         "task_id": first_task,
         "shop_name": first_store,
         "last_response": ozon.get("last_response"),
-        "errors": ozon.get("errors") or [],
+        "errors": failed_errors if target in ATTENTION_STATES else [],
+        "issue_summary": issue_summary,
     })
     status.update({
         "status": target, "current_step": "ozon_upload", "active_step": None,
         "progress": 100 if target in {"UPLOADED", HANDOFF_STATE} else 99 if target == "PENDING_REMOTE" else 95,
-        "completed_at": now() if target == "UPLOADED" else "unknown",
+        "completed_at": now() if target in {"UPLOADED", HANDOFF_STATE} else "unknown",
         "api_write_count": total_writes, "last_run_at": now(),
-        "error_code": "STORE_UPLOAD_FAILED" if target == "FAILED_HARD_BLOCKER" else "unknown",
-        "error_message": error, "failed_step": "ozon_upload" if target == "FAILED_HARD_BLOCKER" else "unknown",
-        "next_action": "retry_failed_store" if target == "FAILED_HARD_BLOCKER" else "read_only_status_query" if target == "PENDING_REMOTE" else "complete",
+        "error_code": (
+            f"OZON_{str(issue_summary.get('primary_bucket') or 'store_upload').upper()}"
+            if target in ATTENTION_STATES
+            else "unknown"
+        ),
+        "error_message": error, "failed_step": "ozon_upload" if target in ATTENTION_STATES else "unknown",
+        "next_action": "retry_failed_store" if target in ATTENTION_STATES else "ozon_upload" if target == "PARTIAL" else "read_only_status_query" if target in {"PENDING_REMOTE", HANDOFF_STATE} else "complete",
         "ozon": ozon,
+        "ozon_issue_summary": issue_summary,
     })
+    if target == "UPLOADED":
+        status["task_authorized"] = False
+        status["upload_priority_state"] = "completed"
+    if target in {HANDOFF_STATE, "PENDING_REMOTE"}:
+        status["task_authorized"] = False
+        status["upload_priority_state"] = "waiting_remote"
     if target in {"UPLOADED", HANDOFF_STATE, "PENDING_REMOTE"}:
         status["warnings"] = [
             warning for warning in status.get("warnings") or []
             if "等待用户检查并确认上传" not in str(warning)
+            and "等待用户手动上传" not in str(warning)
+            and "图片技术质检已通过" not in str(warning)
         ]
     history = status.setdefault("history", [])
     last_history_status = str((history[-1] if history else {}).get("to") or "unknown")
     transition_from = previous_status if last_history_status == "unknown" else last_history_status
     if transition_from != target:
-        if transition_from == "OZON_READY" and target == "PENDING_REMOTE":
+        if transition_from == "WAITING_MANUAL_REVIEW" and target == "PENDING_REMOTE":
             history.append({
-                "from": "OZON_READY",
+                "from": "WAITING_MANUAL_REVIEW",
                 "to": "UPLOADING",
                 "at": now(),
                 "reason": "The selected store upload started.",
@@ -411,6 +881,29 @@ def aggregate_product_status(
             "retry_count": int((status.get("retry_count_by_step") or {}).get("ozon_upload", 0)),
             "retryable": True, "error": None,
         })
+    if target in ATTENTION_STATES and (not ozon_steps or ozon_steps[-1].get("status") != "failed"):
+        failed_reason = next(
+            (
+                str(record.get("last_error"))
+                for record in selected
+                if str(record.get("status") or "") in {"FAILED", "QUERY_ERROR"}
+                and not _unknown(record.get("last_error"))
+            ),
+            error,
+        )
+        status["steps"].append({
+            "name": "ozon_upload", "status": "failed",
+            "started_at": now(), "finished_at": now(),
+            "retry_count": int((status.get("retry_count_by_step") or {}).get("ozon_upload", 0)),
+            "retryable": True,
+            "error": {
+                "step": "ozon_upload",
+                "reason": failed_reason,
+                "occurred_at": now(),
+                "retryable": True,
+            },
+        })
+    write_json_atomic(product_dir / "output/ozon-issue-summary.json", issue_summary)
     # After the explicit cutover SQLite is the only mutable task-state source.
     # status.json remains a compatibility snapshot for rollback and legacy
     # readers; it is not updated by asynchronous recovery.
@@ -430,7 +923,7 @@ def default_recovery_runner(root: Path, isolated: Path, store_id: str) -> Dict[s
     with log_path.open("a", encoding="utf-8") as log:
         completed = subprocess.run(
             [
-                sys.executable, str(root / "scripts/recover_ozon_results.py"),
+                project_python(root), str(root / "scripts/recover_ozon_results.py"),
                 "--product-dir", str(isolated), "--shop", store_id, "--timeout", "1",
             ],
             cwd=root, env=env, stdout=log, stderr=subprocess.STDOUT, check=False,
@@ -458,7 +951,10 @@ def refresh_pending_stores(
     for store_id, record in (publications.get("stores") or {}).items():
         if only is not None and str(store_id) not in only:
             continue
-        if str(record.get("status") or "") not in PENDING_STATES:
+        record_status = str(record.get("status") or "")
+        if record_status not in PENDING_STATES and not (
+            record_status == HANDOFF_STATE and has_task_without_product(record)
+        ):
             continue
         isolated = store_workspace(root, product_dir.name, store_id) / "products" / product_dir.name
         if not (isolated / "status.json").is_file():
@@ -476,6 +972,11 @@ def refresh_pending_stores(
         checked.append({"store_id": store_id, "status": record["status"]})
     save_publications(product_dir, publications)
     status = aggregate_product_status(product_dir, publications, root)
+    # SQLite owns publication state after cutover, but the workbench still has
+    # legacy readers that render status.json.  Materialize the read-only
+    # recovery snapshot so the UI does not stay stuck at PENDING_REMOTE after
+    # Ozon has returned product IDs.
+    write_json_atomic(product_dir / "status.json", status)
     return {
         "product_id": product_dir.name, "checked": checked, "status": status["status"],
         "write_api_calls": 0, "inventory_api_calls": 0,
@@ -499,10 +1000,18 @@ def execute_selected_stores(
         if not record.get("selected") or (only and store_id not in only):
             continue
         current = str(record.get("status") or "")
+        if stale_prewrite_pending(record):
+            record["status"] = "SELECTED"
+            record["last_error"] = "前次店铺上传在调用Ozon前中断，允许从本地断点重试"
+            current = "SELECTED"
         if current in PENDING_STATES or current in SUCCESS_STATES:
             skipped.append({"store_id": store_id, "reason": "already_submitted_or_pending"})
             continue
-        if not definitely_retryable(record):
+        if (
+            not definitely_retryable(record)
+            and not image_repair_retryable(record)
+            and not variant_repair_retryable(record)
+        ):
             skipped.append({"store_id": store_id, "reason": "ambiguous_state_blocks_resubmit"})
             continue
         isolated = prepare_isolated_product(root, product_dir, store_id, record)
@@ -511,7 +1020,7 @@ def execute_selected_stores(
         try:
             outcome = run(root, isolated, store_id)
         except Exception as exc:
-            outcome = {"returncode": 1, "status": {"status": "FAILED_HARD_BLOCKER", "api_write_count": 0, "error_message": str(exc)}, "result": {}}
+            outcome = {"returncode": 1, "status": {"status": "NEEDS_ATTENTION", "api_write_count": 0, "error_message": str(exc)}, "result": {}}
         _persist_store_artifacts(product_dir, store_id, isolated)
         _store_result(record, outcome)
         if credential_failure(record.get("last_error")):
@@ -522,6 +1031,12 @@ def execute_selected_stores(
         save_publications(product_dir, publications)
         attempted.append({"store_id": store_id, "status": record["status"], "api_write_count": record.get("api_write_count", 0)})
     status = aggregate_product_status(product_dir, publications, root)
+    # This is the synchronous, user-authorized upload path.  SQLite owns the
+    # publication identities after cutover, while status.json remains the
+    # workbench/batch compatibility snapshot.  Materialize the already
+    # aggregated result before run_batch validates/completes the step; no
+    # remote query or additional Ozon write is performed here.
+    write_json_atomic(product_dir / "status.json", status)
     return {
         "product_id": product_dir.name, "attempted": attempted, "skipped": skipped,
         "status": status["status"], "api_write_count": status["api_write_count"],

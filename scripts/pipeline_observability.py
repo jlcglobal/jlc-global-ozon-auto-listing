@@ -12,13 +12,11 @@ from typing import Any, Dict, Iterable
 
 
 ROOT = Path(__file__).resolve().parents[1]
-PIPELINE_CACHE_VERSION = "6"
+PIPELINE_CACHE_VERSION = "7"
 EXTERNAL_IMAGE_ADVISORY_SKILLS = [
     Path.home() / ".codex/skills/ecommerce-branding/SKILL.md",
 ]
-EXTERNAL_COPY_ADVISORY_SKILLS = [
-    Path.home() / ".codex/skills/keyword-research/SKILL.md",
-]
+EXTERNAL_COPY_ADVISORY_SKILLS = []
 
 STEP_OUTPUTS = {
     "validate_source": ["input/source.json", "input/raw-snapshot.json"],
@@ -29,21 +27,26 @@ STEP_OUTPUTS = {
     "offer_exists_check": ["output/offer-id-precheck.json"],
     "upload_feasibility": ["output/upload-feasibility.json"],
     "product_positioning": ["output/product-positioning.json"],
-    "ecommerce_design": ["output/ozon-ecommerce-design.json", "output/ecommerce-creative-brief.json"],
+    "ecommerce_design": [
+        "output/attribute-fill-input.json",
+        "output/attribute-fill-input.compact.json",
+        "output/ozon-ecommerce-design.json",
+    ],
     "russian_copy": [
-        "output/copy-ru.json", "output/marketplace-content-input.json",
+        "output/copy-ru.json",
+        "output/title-ru.json",
+        "output/description-ru.json",
+        "output/ozon-tags.json",
         "output/keyword-research-ru.json",
     ],
-    "style_selector": ["output/style-profile.json"],
     "image_plan": ["output/image-plan.json"],
     "image_generation": [],
     "image_qc": ["output/image-qc-report.json"],
-    "marketplace_content": ["output/ozon-draft.json", "output/title-ru.json", "output/description-ru.json", "output/keywords-ru.json"],
     "field_completion": [
+        "output/ozon-draft.json", "output/title-ru.json", "output/description-ru.json", "output/keyword-research-ru.json",
         "output/ozon-tags.json", "output/ozon-attributes-final.json",
         "output/attribute-coverage-report.json",
     ],
-    "final_upload_check": ["output/final-upload-check.json", "output/ozon-draft.json"],
     "ozon_upload": ["output/ozon-result.json"],
 }
 
@@ -55,7 +58,7 @@ STEP_INPUTS = {
     "offer_exists_check": ["output/pricing-result.json", "output/ozon-category.json"],
     "upload_feasibility": [
         "output/cost-analysis.json", "output/pricing-result.json", "output/ozon-category.json",
-        "output/ozon-category-attributes.json", "output/ozon-attributes.json", "output/offer-id-precheck.json",
+        "output/ozon-category-attributes.json", "output/ozon-attributes.json", "output/ozon-attributes-final.json", "output/offer-id-precheck.json",
     ],
     "product_positioning": ["output/product-analysis.json"],
     "ecommerce_design": [
@@ -64,57 +67,49 @@ STEP_INPUTS = {
         "output/cost-analysis.json", "output/pricing-result.json",
         "output/platform-grouping-result.json", "input/visual-preference.json",
     ],
-    "russian_copy": ["output/product-analysis.json", "output/product-positioning.json"],
-    "style_selector": ["output/product-analysis.json", "output/product-positioning.json", "input/visual-preference.json"],
+    "russian_copy": ["output/ozon-ecommerce-design.json", "input/category-selection.json"],
     "image_plan": [
-        "output/ozon-ecommerce-design.json", "output/product-analysis.json", "output/product-positioning.json", "output/style-profile.json",
+        "output/ozon-ecommerce-design.json", "output/product-analysis.json", "output/product-positioning.json",
         "output/cost-analysis.json", "output/title-ru.json", "output/description-ru.json",
         "output/ozon-tags.json", "output/ozon-attributes-final.json", "output/pricing-result.json",
         "output/platform-grouping-result.json", "input/visual-preference.json",
     ],
     "image_generation": [
-        "output/image-plan.json", "output/style-profile.json", "output/product-analysis.json",
+        "output/image-plan.json", "output/product-analysis.json",
         "output/product-positioning.json", "output/copy-ru.json", "output/image-regeneration-request.json",
     ],
     "image_qc": ["output/image-plan.json"],
-    "marketplace_content": [
-        "output/marketplace-content-input.json", "output/product-analysis.json",
-        "output/cost-analysis.json", "output/pricing-result.json", "output/profit-analysis.json",
-    ],
     "field_completion": [
-        "output/ozon-draft.json", "output/ozon-category.json", "output/ozon-category-attributes.json",
-        "output/title-ru.json", "output/description-ru.json", "output/keywords-ru.json",
+        "output/ozon-ecommerce-design.json", "output/ozon-draft.json", "output/ozon-category.json", "output/ozon-category-attributes.json",
+        "output/title-ru.json", "output/description-ru.json", "output/keyword-research-ru.json",
         "output/pricing-result.json",
     ],
-    "final_upload_check": [
-        "output/marketplace-content-input.json", "output/ozon-draft.json",
-        "output/ozon-tags.json", "output/ozon-attributes-final.json",
-        "output/image-plan.json", "output/image-qc-report.json", "output/pricing-result.json",
-    ],
     "ozon_upload": [
-        "output/final-upload-check.json", "output/ozon-draft.json", "output/ozon-upload-config.json",
+        "output/ozon-draft.json", "output/ozon-upload-config.json",
         "output/ozon-attributes-final.json", "output/rich-content.json", "output/color-variants.json",
     ],
 }
 
 ROOT_RULE_INPUTS = {
     "russian_copy": [
-        ".agents/skills/full-product-pipeline/SKILL.md",
-        "rules/russian-copy-rules.md",
-        *EXTERNAL_COPY_ADVISORY_SKILLS,
+        "scripts/ozon_ecommerce_designer_contract.py",
+        "templates/copy-ru.schema.json",
+        "templates/keyword-research-ru.schema.json",
+        "templates/ozon-tags.schema.json",
     ],
     "category_match": ["rules/ozon_category_profiles.json", "rules/ozon-rules.md"],
     "variant_rules": ["ozon-adapter/metadata/live-aspect-rules"],
     "measurements": ["pricing-engine/pricing_rules.json", "pricing-engine/shipping_rules.xlsx"],
-    "style_selector": ["rules/style_selector_rules.json", "rules/image_structure_rules.json"],
     "ecommerce_design": [
         ".agents/skills/ozon-ecommerce-designer/SKILL.md",
         ".agents/skills/ozon-ecommerce-designer/references/product-specific-image-standard.md",
+        "scripts/product_fact_merger.py",
+        "scripts/attribute_fill_input.py",
         "scripts/ozon_ecommerce_designer_contract.py",
         "templates/ozon-ecommerce-design.schema.json",
     ],
     "image_plan": [
-        "rules/image_structure_rules.json", "scripts/image_planner.py",
+        "scripts/image_planner.py",
         "templates/image-plan.schema.json", "config/pipeline-settings.json",
     ],
     "image_generation": [
@@ -124,12 +119,7 @@ ROOT_RULE_INPUTS = {
         "config/pipeline-settings.json", *EXTERNAL_IMAGE_ADVISORY_SKILLS,
     ],
     "image_qc": ["rules/image_qc_rules.json", "scripts/image_qc.py"],
-    "marketplace_content": ["rules/marketplace_content_rules.json"],
     "field_completion": ["ozon-field-completion/ozon_field_completion/service.py"],
-    "final_upload_check": [
-        "rules/marketplace_content_rules.json",
-        "ozon-field-completion/ozon_field_completion/service.py",
-    ],
 }
 
 

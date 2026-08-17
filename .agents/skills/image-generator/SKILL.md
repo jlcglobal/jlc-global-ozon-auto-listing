@@ -1,78 +1,165 @@
 ---
 name: image-generator
-description: Generate the current product's real 3:4 Ozon image package from validated source references.
+description: Generate one authorized Ozon image slot from the current product's compiled image plan and real references.
 ---
 
 # Image Generator
 
-Read `products/<product_id>/output/image-source-preflight.json`, `ecommerce-creative-brief.json`, `image-plan.json`, `style-profile.json`, `product-analysis.json`, `product-positioning.json`, `title-ru.json`, `description-ru.json`, `ozon-tags.json`, `ozon-attributes-final.json`, `pricing-result.json`, `platform-grouping-result.json`, and only the current collection's manifest-registered real files under `input/main-images`, `input/sku-images`, and `input/detail-images`.
+Process only the `product_id` and `slot` named by the batch runner. The batch is already authorized and unattended: do not ask questions, wait for confirmation, analyze another product, or change another slot.
 
-Formal production must reject manual-test paths, another product/collection,
-archived data and every output path as an input reference. Never infer a match
-from filename, image similarity, SKU name or capacity. `test-data/manual-input`
-and `test-data/manual-output` are isolated acceptance fixtures, not production
-sources.
+## Source of truth
 
-Before planning or regenerating, revalidate the batch-frozen collection ID and
-`source-manifest.json` SHA-256. A changed collection snapshot requires a new
-batch; never silently accept an in-place rewrite of both source and manifest.
+Read the named slot from `products/<product_id>/output/image-plan.json`. Its `prompt`, `sku_identity`, `russian_text`, `art_direction`, `overlay_plan`, `operation`, `reference_product_images`, and `output_path` are the complete image contract. Do not append a global house style or rerun product analysis, category matching, copywriting, pricing, attributes, or image planning.
 
-Before the first image call, verify that `image-plan.json -> listing_context.ready=true` and that every planned slot has a non-generic `prompt`. The pipeline has already analyzed the product and completed text/attributes; do not repeat product analysis, category matching, copy generation, price calculation or field completion. Generate all prompts first, then generate images.
+Use only manifest-registered real files from this product's `input/main-images`, `input/sku-images`, and `input/detail-images`. Resolve references to absolute paths before the built-in image call. Generated candidates and files from another product, archive, manual fixture, or output directory are never references.
 
-Do not invoke any external marketing, branding, photography, or image-generation Skill. Do not call OpenAI API, third-party AI API, or any credentialed image service. Use only the current Codex session's built-in image editing capability when the image plan explicitly permits AI reference editing.
+The SKU identity is compiled from the exact SKU title, every structured option, and that SKU's own reference image. It may be distinguished by color, dimensions, capacity, quantity, set composition, style, structure, material, accessories, or another real option. Never infer the SKU from image order or dimensions alone.
 
-Before every built-in image tool call, resolve every `reference_product_images` entry against the project root and pass only absolute filesystem paths such as `/Users/apple/Documents/crossborder-ai-factory/products/...`. Never pass a relative `products/...` path to the image tool. Output files must still be copied or saved to the relative `output_path` declared by `image-plan.json`, always below `output/generated-images/variant-main` or `output/generated-images/detail`.
+Reference priority is simple: for a SKU main image, the SKU's own reference is
+the identity lock. Current-product main and detail images are supporting
+references for visible structure, installation/use, dimensions shown in source
+text, and scene logic. They are useful evidence, not permission to redesign the
+product. If references are weak, generate a simpler faithful image rather than
+adding a new mechanism, material, accessory or exact number.
 
-The built-in image editor accepts at most five reference paths per call. A SKU main uses exactly its own SKU reference. A shared image uses at most five references, prioritizing the selected SKU references and then the clearest real main images.
+When the SKU's own reference is below 600 px, it locks variant identity and
+colour scope but cannot carry photoreal texture alone. In that case pass it
+together with the best current-product main images that show the same product
+(up to the five-reference limit): the SKU reference locks the variant, the
+larger real photos supply structure and material texture. Follow the colour
+scope named in the slot prompt: a `body` colour stays the dominant body colour;
+an `accent` colour (magnetic ring, lid, handle, trim) applies only to that
+part and stays prominent while the body keeps its own neutral/material colour.
+Never invent structure because a reference is small.
 
-## One pre-generation check
+If preflight is missing or stale, run the project Python (`.venv/bin/python3` when present, otherwise the current `sys.executable`) for `scripts/image_source_preflight.py products/<product_id>` once. Do not use bare system `python3`, because it may not have project dependencies such as Pillow. If the required SKU reference is missing, fail this slot. A reference below 600 pixels may identify the visible product and SKU, but it cannot prove small details, dimensions, capacity, certification, or comparison facts. Never rewrite `input`.
 
-Before generating any slot, inspect `output/image-source-preflight.json`. If it already says `PASS` and its preferred reference files still match the recorded dimensions and hashes, reuse it and do not run another check. Only when the report is missing or stale, run `python3 scripts/image_source_preflight.py products/<product_id>` once. Image generation is read-only with respect to `input`: preflight must not download, upgrade or rewrite a source image. A source-quality problem returns to the workbench collection step and is recorded in a new collection snapshot.
+## Generate the slot
 
-An authorized batch is unattended. When `status.json` has `task_authorized=true`, do not ask the user any question and do not wait for confirmation. Execute only the requested image-generation step and save the checkpoint.
+- `generate_from_reference` (default): the reference images are a FACT LOCK
+  only — they tell you WHAT the product is: its body structure, the magnetic
+  ring vs clamp distinction, colour, proportions and the SKU difference. The
+  built-in image tool generates a brand-new photoreal Ozon image plus clean
+  infographic typography from that fact lock. It must NOT copy the reference's
+  pixels, its 3D-render/CGI look, its Chinese text, its supplier brand or
+  watermark, and it must NOT reproduce a different variant's structure that
+  appears in a mixed gallery (for example a clamp arm on a magnetic mount).
+- `edit_real_image`: edit from the slot's real SKU/product references while keeping the same physical product (only when the plan explicitly names it).
+- `compose_from_real_images`: compose only source-backed comparison, dimensions, set composition, or other exact-evidence content (only when the plan explicitly names it).
+- `needs_human_input`: stop this slot and record the missing fact or reference.
 
-If any required SKU reference remains below 600 pixels, stop before generation and record the blocked SKU. Never enlarge, nearest-neighbour scale, pixel-replicate, or auto-cut a low-resolution thumbnail. Never treat a clean generated background as a completed product image.
+**Photoreal or FAIL (hard rule).** The saved image must read as a real
+photograph taken by a seller camera: real material texture, lens depth,
+environment light, soft shadows, believable reflections, photographic contrast.
+It must never look like a 3D render, CGI mockup, vector graphic, flat
+illustration, or a poster with a slogan headline. For `generate_from_reference`,
+the product body, structure and colours must still match the fact lock from the
+references exactly — generate the photo, do not copy the supplier poster. If
+the built-in tool cannot produce a photoreal result, or the saved image looks
+like a render/illustration/poster or copies a mixed-gallery variant, write a
+FAIL receipt for this slot and stop; do not keep correcting inside the same
+child process.
 
-Compare all selected SKU references once and record the confirmed differences in size, color, structure, quantity/configuration and accessories. Source facts and confirmed manual values take precedence; unknowns stay `unknown`. Do not repeat this full check for every image.
+Use only Codex's built-in image tool — no OpenAI API, no third-party image API,
+no local script. Generate by IMAGE-TO-IMAGE: attach the reference images to the
+image tool so it locks the product's real structure, colour and proportions.
+Keep the product exactly as the references show — do not invent, add or remove
+any part, mechanism or accessory, and do not copy a different variant's
+structure from a mixed gallery. Clean away everything that is NOT the product:
+the supplier promo background, Chinese text, seller logo/watermark, 3D-render
+look and any frame/banner, then place the unchanged product into a clean
+ecommerce scene and infographic layout per the slot prompt.
 
-## Image-type routing
+Follow the designer's slot-specific scene. Background, camera, light, text position, accent colors, and composition must be chosen dynamically for this product, SKU, buyer question, and available space. Do not impose a fixed background, palette, reusable card template, or left-text/right-product layout. Keep only typography quality, hierarchy, alignment, readability, and visual continuity consistent across the set.
 
-Follow each slot's `operation` in `image-plan.json`:
+Visible text is a whitelist, not an inspiration list. Render only the exact strings in the slot's `russian_text` or explicit `overlay_plan` text, once each if used. For size diagrams only, one combined source-backed dimension such as `101 × 68 × 146 мм` may be split into exact component line labels such as `101 мм`, `68 мм`, and `146 мм`; do not add any other words around them. The slot `prompt`, `strategy`, `purchase_reason`, `buyer_question`, `selling_goal`, `visual_goal`, SKU identity, verified facts, category names, prompt labels and hard rules are internal instructions and must never appear as visible text. If the slot is being retried after `unexpected_russian_text`, use a cleaner layout with fewer words and no badges, captions, paraphrases or decorative labels beyond the whitelist.
 
-- `compose_from_real_images`: required for SKU comparison, dimensions, color-accuracy, package-content and other exact-evidence images. Pass the real references to one built-in image composition/editing call that returns the final image with its exact Russian copy. AI must not redesign the product, and no later text pass is allowed.
-- `edit_real_image`: allowed for SKU main images and lifestyle/benefit/scene/detail images. Pass the actual local reference images to the built-in image editor. Preserve product identity, proportions, color, transparency, structure, openings, hardware, markings and accessory count. The scene may change; the product may not become a different model.
-- `needs_human_input`: stop that slot. Do not substitute another SKU, generic product or invented reference.
+Do not make poster text-pasting. Large readable commerce text is allowed when it labels real product proof: dimensions, folding/usage steps, color, SKU variant, visible structure, or a source-backed buyer benefit. The failure is generic background plus unrelated words. Visible Russian text must help explain the product photo or infographic, not replace it. The SKU reference locks the current variant; current-product main/detail references may support structure and usage when present. Do not invent a new product because a single reference is weak.
 
-Do not force every slot through `locked_product_compositor.py`. It may be used only when a clean, sufficiently large product-only source really supports deterministic compositing. A pixel hash match alone is not semantic QC and must never pass a fragmented, incomplete or unreadable product cutout.
+**Layout like a mature Ozon infographic, not a block of small text.** Every
+detail image must be structured as clear proof modules, never a paragraph of
+small print squeezed into a corner. Use: one clear large title; part callouts
+where each callout is a part name plus one short explanation with a thin leader
+line to the REAL part (structure/installation images); a comparison table with
+labelled rows (SKU comparison images); numbered step rows (usage/instruction);
+or icon-plus-short-label rows (benefit/scene images). Hierarchy must read
+title > section label > explanation at a glance. Each text module must sit on
+high-contrast space and align to the product or proof element.
 
-Generate exactly one SKU-specific main image for every selected SKU, then generate exactly eight product-specific shared detail images declared by `ecommerce-creative-brief.json` and `image-plan.json`. The eight commercial purposes are fixed only as buyer questions; scenes, palette, composition and copy are selected for this exact product. A shared image must use facts common to every selected SKU and must not imply that all variants are included in one order.
+For SKU main images, the product photo must sell first, but the main image must
+still name what the product is: a short product-type/name line, the SKU
+difference (colour/spec) and one core source-backed benefit note, then the
+subtle JLC GLOBAL watermark. Do not render the full listing title, SKU name or
+model as a huge headline block, and do not strip the image down to one floating
+label either. The visual quality target is premium Ozon product photography:
+believable lens depth, material texture, soft shadows, clean reflections, real
+environment light and restrained color grading before any text treatment.
 
-Generate all SKU main images before any detail image. Save each image immediately so it appears progressively in the workbench. The whole set targets five minutes; do not spend time producing alternative main candidates or a second full-set review.
+Do not add Chinese, garbled text, unsupported claims, seller marks, supplier decoration, or invented accessories. The product remains visually primary.
 
-Every image has one different buyer-decision job. Do not reuse the same composition with only a background change. The number and hierarchy of main/detail messages are determined only by the current slot's validated `overlay_plan`; the generator must not force a one-line headline, top caption, capacity box or three-card benefit row. Plain white-background product images, generic posters and reusable product templates are forbidden.
+Render text modules as polished ecommerce information design. Use compact
+Russian typography with clear hierarchy, strong contrast, disciplined spacing
+and alignment to a real proof element: product edge, measurement line, SKU
+tile, step panel, callout path or natural negative space. Do not repeat a
+default upper-left vertical-line title stack, random corner label, tiny spec
+pile, decorative badge strip, or large empty text panel. When the slot's text
+cannot be tied to product proof, use less text and make the product photograph
+carry the message.
 
-Use `references/manual-ozon-flow-2026-07-12/` only as the seller's ecommerce-quality baseline: a coherent Russian-language main-plus-detail set with a prominent product, real usage context, SKU choice, structure and purchase guidance. Never copy that reference product's facts into the current product. A technical preview, white-background cutout, isolated product rendering, or repeated card layout is not a completed ecommerce image.
+Preserve the current SKU's product type, product-body structure, color, visible proportions and dimensions, specification, openings/interfaces, confirmed included accessory count, and exact set composition. Reference-scene props, food, plants, tableware, stands, cleaning tools, decoration, or unconfirmed display items are not hard accessories unless current product facts explicitly say they are included. The scene may change; the physical product and SKU may not.
 
-When `input/operator-guidance.json -> image_detail_roles` is present, follow its exact eight product-specific roles after validating that every claim and reference is grounded in the current product. This override controls commercial storytelling only; it cannot bypass source-image checks or change product facts.
+Save one 3:4 PNG of at least 900x1200 to the slot's declared `output_path`, without overwriting input. Never create an alternative or touch a passed slot.
 
-The `size_spec` image reads only `output/cost-analysis.json -> product_dimensions`. Confirmed measurements use `Размеры`; estimates use `Примерные размеры`. Package measurements must never be presented as product measurements.
+Use at most one built-in image generation/edit call per slot invocation. If that
+call returns no usable saved image, or the generated image has a factual hard
+failure such as wrong product, wrong SKU, invented accessory, changed structure,
+wrong SKU colour (a `body` colour painted only as a dot, or an `accent` colour
+missing from its part / wrongly repainting the whole body), unreadable Russian,
+unrelated poster text, a slogan headline block, a 3D-render/CGI/illustration
+look instead of a real photograph, or invented structure (for example a clamp
+arm or bracket on a magnetic mount), write a FAIL receipt
+for this slot and stop. Do not keep correcting inside the same child process.
+The parent batch runner owns targeted retries and will preserve passed slots.
 
-All final images are portrait 3:4 PNG, at least 900×1200. Reject Chinese text, seller watermarks, 1688 decorations, false parameters, false certification, invented accessories, wrong SKU colors and visibly deformed product structures.
+## Slot receipt
 
-Use the exact `russian_text`, `art_direction` and `overlay_plan` from the plan. Every slot gets exactly one built-in image-model call that must produce the faithful product scene and the complete final Russian typography together. Include every `russian_text` line verbatim and in order in the prompt; translate the validated `overlay_plan` into model-native hierarchy, placement, color and treatment instructions for that same call. Never save, display or approve an intermediate text-free base. Never call `designer_directed_overlay.py`, the legacy generic overlay or the ecommerce layout renderer. Never ask the image model to draw an empty typography container: blank rounded rectangles, empty text boxes, placeholder cards, bordered empty panels and decorative empty frames are forbidden. A non-size detail image with `russian_text=unknown` or incomplete art direction is blocked before generation.
+After the image is saved, check only:
 
-Product acceptance is semantic: the final image must preserve the product type, color, visible structure, lid/handle/openings, accessory count, SKU differences and believable overall proportions. Pixel-for-pixel identity is not required. Missing, garbled, misspelled or unreadable Russian is a hard failure; retry only that slot once with a targeted correction.
+- the file is readable and 3:4;
+- the current product/SKU is correct;
+- product-body structure, color, visible dimensions/proportions, specification, confirmed included accessories, quantity, and set composition are unchanged;
+- the image reads as a real seller photograph (photoreal texture, lens depth, environment light), not a 3D render, CGI mockup, vector or flat illustration;
+- Russian text is readable and there is no Chinese or garbling.
+- there is no unrelated poster text-pasting and no slogan headline block: large text is acceptable only when it is integrated with product proof, dimensions, steps, SKU choice or usage explanation.
+- for `main-` SKU images only, record whether the product is the visual lead and whether the text works as ecommerce information. Treat this as quality telemetry unless the product is wrong, hidden, unreadable, or factually changed.
 
-## Per-image hard gate only
+Do not fail on subjective aesthetics, text size, a chosen background, layout, text position, palette, or an empty decorative area unless it hides/misrepresents the product, makes Russian unreadable, or creates unrelated poster text with no product proof.
 
-As soon as one image is saved, inspect only these hard failures: wrong product/SKU, wrong color, invented accessory or function, obvious deformation, Chinese/garbage text, unreadable Russian, large blank placeholder box or empty bordered panel, unreadable file or wrong 3:4 ratio. If one occurs, retry only that slot once and continue the remaining product set. Do not wait for a full-set inspection, and do not rerun passed images. Never upload or display a hard-failed image as a completed result.
+Write only `output/image-slot-results/<slot>.json` with `product_id`, `slot`, `output_path`, `status`, `attempt`, `sha256`, `dimensions`, `hard_failures`, `checked_at`, `generation_source`, `designer_prompt_followed`, `visual_acceptance`, and `local_script_generation`.
 
-Update `output/image-hard-gate.json` after each saved image. It contains `mode: hard_failures_only`, `checked_slots`, `critical_failures`, and `issues`. When every planned slot has been checked, run `python3 scripts/image_qc.py products/<product_id> --hard-gate --write` once to produce the compatibility report used by the existing pipeline.
+For non-main detail slots, `visual_acceptance` may be omitted. For any `main-` SKU image, include it when practical:
 
-Generated candidates never become sources. Rejected, interrupted or failed
-candidates move below `output/rejected-generation`. Only an explicit workbench
-confirmation copies a candidate below `output/accepted-images`. Manual upload
-is forbidden until the accepted tree contains exactly the planned N SKU mains
-and eight shared details recorded with current hashes in
-`output/accepted-images/manifest.json`. Regeneration invalidates its previous
-accepted copy and never overwrites `input`.
+```json
+{
+  "visual_acceptance": {
+    "status": "PASS",
+    "checks": {
+      "product_visually_dominant": true,
+      "text_integrated_not_poster": true,
+      "title_not_dominating_product": true,
+      "main_three_second_click": true
+    },
+    "failures": []
+  }
+}
+```
+
+If any visual-quality check is weak but the product/SKU facts, structure,
+color, readable Russian and technical image requirements are correct, keep
+`status="PASS"` and record the weakness in `visual_acceptance.quality_notes`.
+Write `status="FAIL"` only for factual identity errors, hidden/wrong product,
+unreadable/garbled text, or technical image failures.
+
+A PASS receipt must contain `generation_source="built_in_image_tool"`, `designer_prompt_followed=true`, and `local_script_generation=false`. If the built-in image tool is unavailable, write FAIL with `built_in_image_tool_unavailable`; never substitute a local script.
+
+Do not edit shared checkpoints, `image-plan.json`, `status.json`, Ozon data, inventory, or any other slot. Finish with only `DONE <slot>`.

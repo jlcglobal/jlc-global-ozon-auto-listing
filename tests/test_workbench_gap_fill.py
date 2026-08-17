@@ -11,6 +11,7 @@ from unittest.mock import patch
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT / "scripts"))
 from pipeline_runtime import create_batch  # noqa: E402
+from image_asset_boundaries import write_asset_contract  # noqa: E402
 from production_input_guard import write_source_manifest  # noqa: E402
 from store_publications import (  # noqa: E402
     final_snapshot, load_publications, publication_summary, reconcile_update_version,
@@ -62,10 +63,10 @@ def make_root(root: Path) -> Path:
     write(product / "output/ozon-category.json", {"category_id": 1, "type_id": 2, "category_name": "Категория", "confidence": .92})
     write(product / "output/ozon-attributes.json", {"summary": {"required_count": 1, "mapped_count": 1}, "missing_required_attributes": [], "attributes": [{"attribute_id": 1, "attribute_name": "Бренд", "value": "Нет бренда", "required": True, "source": "default"}]})
     write(product / "output/pricing-result.json", {"exchange_rate": {"value": 12}, "sku_pricing": [{"sku_id": "sku-a", "purchase_cost_cny": 10, "base_cost_cny": 20, "selling_price_rub": 500, "estimated_profit_cny": 15, "profit_rate_markup": .5}, {"sku_id": "sku-b", "purchase_cost_cny": 12, "base_cost_cny": 22, "selling_price_rub": 560, "estimated_profit_cny": 18, "profit_rate_markup": .5}]})
-    image = product / "output/images/main/main-001.png"
+    image = product / "output/generated-images/variant-main/main-001.png"
     image.parent.mkdir(parents=True, exist_ok=True)
     image.write_bytes(b"old-image")
-    write(product / "output/image-plan.json", {"main_images": [{"slot": "main-001", "image_type": "main", "output_path": "products/P000101/output/images/main/main-001.png"}], "detail_images": []})
+    write(product / "output/image-plan.json", {"main_images": [{"slot": "main-001", "image_type": "main", "output_path": "products/P000101/output/generated-images/variant-main/main-001.png"}], "detail_images": []})
     write(product / "output/image-qc-report.json", {"score": 88, "decision": "pass", "issues": []})
     return product
 
@@ -188,45 +189,116 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
         snapshot = final_snapshot(self.product, ["shop-a"], "B-TEST")
         self.assertFalse(snapshot["inventory_fields_included"])
 
-    def test_19_new_batch_defaults_to_manual_upload(self):
+    def test_19_new_batch_defaults_to_automatic_submission(self):
         batch = create_batch(self.root, ["P000101"], target_store_ids=["shop-a"])
-        self.assertTrue(batch["manual_upload_required"])
-        self.assertFalse(batch["auto_upload"])
+        self.assertFalse(batch["manual_upload_required"])
+        self.assertTrue(batch["auto_upload"])
 
-    def test_20_auto_upload_is_current_batch_only(self):
+    def test_19b_workbench_queue_projection_appends_valid_history(self):
+        batch = create_batch(self.root, ["P000101"], target_store_ids=["shop-a"])
+        with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
+            workbench.mark_products_queued_for_batch(batch)
+        status = json.loads((self.product / "status.json").read_text(encoding="utf-8"))
+        self.assertEqual(status["status"], "QUEUED")
+        self.assertEqual(status["history"][-1]["to"], "QUEUED")
+        self.assertEqual(status["history"][-1]["from"], "COLLECTED")
+
+    def test_20_explicit_legacy_manual_mode_does_not_change_new_default(self):
         auto = create_batch(self.root, ["P000101"], target_store_ids=["shop-a"], auto_upload=True)
-        manual = create_batch(self.root, ["P000101"], target_store_ids=["shop-a"])
+        manual = create_batch(self.root, ["P000101"], target_store_ids=["shop-a"], auto_upload=False)
+        default = create_batch(self.root, ["P000101"], target_store_ids=["shop-a"])
         self.assertTrue(auto["auto_upload"])
         self.assertFalse(manual["auto_upload"])
+        self.assertTrue(default["auto_upload"])
 
     def test_manual_ready_product_uses_clear_upload_wording(self):
-        self.assertEqual(workbench.workflow_bucket("OZON_READY"), "等待人工检查")
+        self.assertEqual(workbench.workflow_bucket("WAITING_MANUAL_REVIEW"), "等待上传")
         self.assertEqual(workbench.workflow_bucket("CONTENT_GENERATED"), "待继续")
+        self.assertEqual(workbench.workflow_bucket("PARTIAL"), "待继续")
         self.assertEqual(
-            workbench.product_primary_action({"status": {"status": "OZON_READY"}}),
-            {"key": "review_upload", "label": "检查商品并确认上传"},
+            workbench.product_primary_action({"status": {"status": "WAITING_MANUAL_REVIEW"}}),
+            {"key": "review_upload", "label": "确认上传"},
+        )
+        with patch.object(workbench, "running_batch_pid", return_value=None):
+            self.assertEqual(
+                workbench.product_primary_action({
+                    "status": {
+                        "status": "WAITING_MANUAL_REVIEW",
+                        "task_authorized": True,
+                        "auto_upload": True,
+                        "manual_confirmation_required": False,
+                        "next_action": "ozon_upload",
+                        "pending_steps": ["ozon_upload"],
+                    }
+                }),
+                {"key": "fix", "label": "继续生产"},
+            )
+        self.assertEqual(
+            workbench.product_primary_action({"status": {"status": "PARTIAL"}}),
+            {"key": "review_upload", "label": "继续上传未完成店铺"},
         )
         self.assertEqual(
             workbench.product_primary_action({"status": {"status": "CONTENT_GENERATED"}}),
             {"key": "fix", "label": "继续生成"},
         )
         self.assertEqual(
+            workbench.product_primary_action({"status": {"status": "STOPPED"}}),
+            {"key": "fix", "label": "继续生成"},
+        )
+        self.assertEqual(
+            workbench.product_primary_action({"status": {"status": "FAILED"}}),
+            {"key": "fix", "label": "查看并继续"},
+        )
+        authorized_paused = {
+            "status": {
+                "status": "PRICED",
+                "task_authorized": True,
+                "current_step": "upload_feasibility",
+                "next_action": "product_positioning",
+                "failed_step": "unknown",
+                "pending_steps": ["product_positioning"],
+            }
+        }
+        with patch.object(workbench, "running_batch_pid", return_value=None):
+            self.assertEqual(
+                workbench.product_primary_action(authorized_paused),
+                {"key": "fix", "label": "继续生成"},
+            )
+        with patch.object(workbench, "running_batch_pid", return_value=12345):
+            self.assertEqual(
+                workbench.product_primary_action(authorized_paused),
+                {"key": "status", "label": "查看进度"},
+            )
+        self.assertEqual(workbench.workflow_bucket("NEEDS_ATTENTION"), "需要处理")
+        self.assertEqual(
             workbench.manual_upload_product_ids({
                 "auto_upload": False,
-                "products": [{"product_id": "P000101", "status": "OZON_READY"}],
+                "products": [{"product_id": "P000101", "status": "WAITING_MANUAL_REVIEW"}],
             }),
             ["P000101"],
         )
 
-    def test_manual_ready_product_without_image_contract_is_blocked_in_ui_contract(self):
+    def test_manual_ready_product_without_image_contract_waits_for_operator_upload(self):
         plan = json.loads((self.product / "output/image-plan.json").read_text(encoding="utf-8"))
-        state = workbench.production_contract_state(
+        state = workbench.production_readiness_state(
             self.product,
             {"status": "WAITING_MANUAL_REVIEW"},
             plan,
         )
-        self.assertTrue(state["blocking"])
-        self.assertEqual(state["state"], "image_contract_missing")
+        self.assertFalse(state["blocking"])
+        self.assertEqual(state["state"], "ready_for_operator_upload")
+
+    def test_manual_ready_product_with_auto_image_review_waits_for_operator_upload(self):
+        write_asset_contract(self.product, collection_id="COL-P000101-GAPFILL", manual_confirmation_required=False)
+        plan = json.loads((self.product / "output/image-plan.json").read_text(encoding="utf-8"))
+        state = workbench.production_readiness_state(
+            self.product,
+            {"status": "WAITING_MANUAL_REVIEW"},
+            plan,
+        )
+        self.assertFalse(state["blocking"])
+        self.assertEqual(state["state"], "ready_for_operator_upload")
+        self.assertFalse(state["manual_image_confirmation_required"])
 
     def test_21_batch_saves_target_stores(self):
         batch = create_batch(self.root, ["P000101"], target_store_ids=["shop-a", "shop-b"])
@@ -266,10 +338,13 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
         self.assertGreater(score["overall_score"], 0)
         self.assertTrue(score["pricing_advice"]["minimum_rules_respected"])
 
-    def test_29_ai_suggestion_is_non_blocking(self):
+    def test_29_ai_suggestion_is_automatically_accepted_and_non_blocking(self):
         with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
             suggestions = workbench.workbench_product_detail("P000101")["ai_suggestions"]
         self.assertTrue(suggestions[0]["non_blocking"])
+        self.assertEqual(suggestions[0]["status"], "accept")
+        self.assertTrue(suggestions[0]["auto_applied"])
+        self.assertFalse(any(item["status"] == "pending" for item in suggestions))
 
     def test_30_search_supports_sku_and_source_url(self):
         with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
@@ -303,11 +378,11 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
         with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
             result = await workbench.replace_workbench_image("P000101", "main-001", FakeRequest({"data_url": encoded}))
         self.assertEqual(result["bytes"], 9)
-        self.assertEqual((self.product / "output/images/main/main-001.png").read_bytes(), b"new-image")
+        self.assertEqual((self.product / "output/generated-images/variant-main/main-001.png").read_bytes(), b"new-image")
 
     def test_33b_image_url_changes_when_generated_file_changes(self):
         plan = json.loads((self.product / "output/image-plan.json").read_text())
-        image_path = self.product / "output/images/main/main-001.png"
+        image_path = self.product / "output/generated-images/variant-main/main-001.png"
         with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
             first = workbench.workbench_images(self.product, plan, {}, {"status": "STOPPED"})[0]
             image_path.write_bytes(b"replacement-image-with-a-different-size")
@@ -316,6 +391,35 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
         self.assertIn("?v=", first["url"])
         self.assertNotEqual(first["url"], second["url"])
         self.assertIn("&download=1", second["download_url"])
+
+    def test_33bb_image_progress_shows_all_active_slots_without_returning_full_prompts(self):
+        plan = {
+            "main_images": [
+                {
+                    "slot": f"main-00{index}",
+                    "image_type": "main",
+                    "output_path": f"products/P000101/output/generated-images/variant-main/main-00{index}.png",
+                    "prompt": "long prompt " * 10000,
+                    "prompt_brief": f"brief {index}",
+                }
+                for index in range(1, 4)
+            ],
+            "detail_images": [],
+        }
+        status = {
+            "status": "CONTENT_GENERATED",
+            "current_step": "image_generation",
+            "active_image_slots": ["main-002", "main-003"],
+            "image_slot_retry_count_by_slot": {"main-002": 1},
+        }
+        with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
+            images = workbench.workbench_images(self.product, plan, {}, status)
+        by_slot = {item["slot"]: item for item in images}
+        self.assertEqual(by_slot["main-002"]["state"], "GENERATING")
+        self.assertEqual(by_slot["main-003"]["state"], "GENERATING")
+        self.assertEqual(by_slot["main-002"]["retry_count"], 1)
+        self.assertNotIn("prompt", by_slot["main-002"])
+        self.assertEqual(by_slot["main-002"]["prompt_brief"], "brief 2")
 
     def test_33c_generated_image_response_disables_browser_cache(self):
         with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
@@ -354,10 +458,12 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
             result = await workbench.save_workbench_draft("P000101", FakeRequest({"title_ru": "Новый"}))
         self.assertIn("title_ru", result["locked_fields"])
 
-    async def test_36_tag_length_limit_is_enforced(self):
+    async def test_36_tag_values_are_normalized_on_save(self):
         with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
-            with self.assertRaises(workbench.HTTPException):
-                await workbench.save_workbench_draft("P000101", FakeRequest({"tags": ["#" + "т" * 31]}))
+            result = await workbench.save_workbench_draft("P000101", FakeRequest({"tags": ["#" + "т" * 31, "#товар_1000"]}))
+        self.assertTrue(result["saved"])
+        draft = json.loads((self.product / "output/workbench-draft.json").read_text(encoding="utf-8"))
+        self.assertEqual(draft["tags"], ["#" + "т" * 29, "#товар"])
 
     async def test_37_immutable_risk_rule_cannot_be_downgraded(self):
         with patch.object(workbench, "ROOT", self.root), patch.object(workbench, "PRODUCTS_DIR", self.root / "products"):
@@ -369,8 +475,21 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
         script = (ROOT / "collector/local-ingest/static/workbench.js").read_text(encoding="utf-8")
         for text in ("添加Ozon店铺", "创建商品批次", "自动模式已关闭"):
             self.assertIn(text, html)
-        for text in ("上传至 ${state.selectedStoreIds.size} 家店铺", "店铺发布状态", "按店铺修改售价（可选）", "安全停止", "失败原因：", "上架成功：", "caf-listing-success:", "const resumeCheckpoint"):
+        for text in (
+            "上传至 ${state.selectedStoreIds.size} 家店铺",
+            "店铺发布状态",
+            "按店铺修改售价（可选）",
+            "失败原因：",
+            "上架成功：",
+            "caf-listing-success:",
+            "function startProductRun",
+            "下一步任务",
+            "选择可处理商品",
+            "继续上传所选",
+        ):
             self.assertIn(text, script)
+        self.assertIn('data-batch-action="stop"', script)
+        self.assertIn('data-batch-action-source="manual_toolbar_v2"', script)
 
     def test_39_store_cny_price_override_is_saved_without_changing_master(self):
         select_stores(
@@ -383,13 +502,14 @@ class WorkbenchGapFillTest(unittest.IsolatedAsyncioTestCase):
         master = json.loads((self.product / "output/pricing-result.json").read_text())
         self.assertEqual(master["sku_pricing"][0]["selling_price_rub"], 500)
 
-    async def test_40_global_auto_mode_can_switch_between_manual_and_auto(self):
+    async def test_40_global_settings_cannot_reintroduce_manual_upload(self):
         with patch.object(workbench, "ROOT", self.root):
-            self.assertFalse(workbench.workbench_settings()["auto_mode_enabled"])
+            self.assertTrue(workbench.workbench_settings()["auto_mode_enabled"])
             result = await workbench.update_workbench_settings(FakeRequest({"auto_mode_enabled": True}))
             self.assertTrue(result["auto_mode_enabled"])
             result = await workbench.update_workbench_settings(FakeRequest({"auto_mode_enabled": False}))
-            self.assertFalse(result["auto_mode_enabled"])
+            self.assertTrue(result["auto_mode_enabled"])
+            self.assertEqual(result["default_review_mode"], "automatic")
             self.assertEqual(result["ozon_write_api_calls"], 0)
             self.assertEqual(result["inventory_api_calls"], 0)
 

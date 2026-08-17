@@ -30,13 +30,23 @@ def write_png(path: Path) -> None:
     Image.new("RGB", (900, 1200), (238, 242, 246)).save(path, format="PNG")
 
 
-def image_contract_product(root: Path, sku_count: int = 3) -> tuple[Path, list[Path]]:
+def image_contract_product(
+    root: Path,
+    sku_count: int = 3,
+    *,
+    manual_confirmation_required: bool = True,
+    planned_with_qc: bool = False,
+) -> tuple[Path, list[Path]]:
     product = root / "products/P999921"
     generated = product / "output/generated-images"
     (generated / "variant-main").mkdir(parents=True)
     (generated / "detail").mkdir(parents=True)
     (product / "input/sku-images").mkdir(parents=True)
-    write_asset_contract(product, collection_id="COL-P999921-IMAGES", manual_confirmation_required=True)
+    write_asset_contract(
+        product,
+        collection_id="COL-P999921-IMAGES",
+        manual_confirmation_required=manual_confirmation_required,
+    )
     mains = []
     candidates = []
     draft_skus = []
@@ -46,7 +56,7 @@ def image_contract_product(root: Path, sku_count: int = 3) -> tuple[Path, list[P
         candidates.append(path)
         mains.append({
             "slot": f"main-sku-{index}", "source_sku_id": f"sku-{index}",
-            "output_path": str(path), "status": "generated",
+            "output_path": str(path), "status": "planned" if planned_with_qc else "generated",
         })
         draft_skus.append({"source_sku_id": f"sku-{index}"})
     details = []
@@ -54,10 +64,24 @@ def image_contract_product(root: Path, sku_count: int = 3) -> tuple[Path, list[P
         path = generated / "detail" / f"detail-{index:03d}.png"
         write_png(path)
         candidates.append(path)
-        details.append({"slot": f"detail-{index:03d}", "output_path": str(path), "status": "generated"})
+        details.append({
+            "slot": f"detail-{index:03d}",
+            "output_path": str(path),
+            "status": "planned" if planned_with_qc else "generated",
+        })
     (product / "output/image-plan.json").write_text(json.dumps({
         "main_images": mains, "detail_images": details,
     }), encoding="utf-8")
+    if planned_with_qc:
+        checked = [
+            {"slot": item["slot"], "path": item["output_path"]}
+            for item in [*mains, *details]
+        ]
+        (product / "output/image-qc-report.json").write_text(json.dumps({
+            "schema_version": "1.0.0",
+            "decision": "pass",
+            "images_checked": checked,
+        }), encoding="utf-8")
     (product / "output/ozon-draft.json").write_text(json.dumps({"skus": draft_skus}), encoding="utf-8")
     return product, candidates
 
@@ -75,6 +99,32 @@ class ImageAssetBoundaryTests(unittest.TestCase):
             self.assertTrue(after["passed"], after["errors"])
             self.assertEqual(len(after["main_images"]), 3)
             self.assertEqual(len(after["detail_images"]), 8)
+
+    def test_auto_image_review_uses_qc_passed_candidates_without_accepted_manifest(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product, _ = image_contract_product(
+                Path(directory),
+                sku_count=2,
+                manual_confirmation_required=False,
+                planned_with_qc=True,
+            )
+            result = current_image_completeness(product)
+            self.assertTrue(result["passed"], result["errors"])
+            self.assertEqual({item["asset_state"] for item in result["main_images"]}, {"candidate"})
+            self.assertFalse((product / "output/accepted-images/manifest.json").exists())
+
+    def test_auto_image_review_still_blocks_missing_detail_image(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product, _ = image_contract_product(
+                Path(directory),
+                sku_count=1,
+                manual_confirmation_required=False,
+                planned_with_qc=True,
+            )
+            (product / "output/generated-images/detail/detail-008.png").unlink()
+            result = current_image_completeness(product)
+            self.assertFalse(result["passed"])
+            self.assertTrue(any("detail-008" in error for error in result["errors"]))
 
     def test_reject_moves_only_candidate_and_invalidates_accepted_copy(self):
         with tempfile.TemporaryDirectory() as directory:

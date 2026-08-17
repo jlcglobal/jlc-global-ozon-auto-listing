@@ -23,13 +23,15 @@ from ozon_uploader import (  # noqa: E402
     prepare_upload,
 )
 from ozon_uploader.client import OzonUploadApiError  # noqa: E402
+from ozon_uploader.images import sha256_file, stage_images  # noqa: E402
 from ozon_uploader.service import (  # noqa: E402
     SCHEMAS, _images_ingested, _is_official_ozon_image_url, _parse_import_result,
     _remote_content_blockers, _remote_terminal_errors, _resolve_rich_content_for_upload, build_import_items,
-    build_product_exists_check, current_image_completeness, load_json, recover_remote_import,
-    refresh_current_image_check, sync_image_channel_status, validate,
-    ozon_weight_grams,
+    build_preflight, build_product_exists_check, current_image_completeness, load_json, recover_remote_import,
+    current_upload_image_gate, sync_image_channel_status, validate,
+    ozon_weight_grams, verify_public_image_urls,
 )
+from ozon_uploader import image_channels  # noqa: E402
 
 
 class RecordingTransport:
@@ -104,7 +106,6 @@ class RemoteContentGateTests(unittest.TestCase):
         ]}
         self.assertEqual(_remote_content_blockers(items, metadata), [])
 
-
 class FakeTunnel:
     def __init__(self, directory):
         self.directory = directory
@@ -126,6 +127,93 @@ class FakeTunnel:
         return None
 
 
+class FakeChannelProcess:
+    pid = 43210
+
+
+class ImageChannelRetryTests(unittest.TestCase):
+    def test_public_image_ssl_eof_probe_is_diagnostic_not_blocking(self):
+        manifest = {
+            "images": [{
+                "slot": "main-a",
+                "role": "variant_main",
+                "local_path": "output/generated-images/variant-main/a.png",
+                "staged_name": "a.png",
+                "public_url": "https://example.test/a.png",
+                "sha256": "a" * 64,
+                "status": "served",
+                "ozon_image_id": "unknown",
+                "ozon_url": "unknown",
+                "error": "unknown",
+            }],
+        }
+        reason = "[SSL: UNEXPECTED_EOF_WHILE_READING] EOF occurred in violation of protocol"
+        with patch("ozon_uploader.service._verify_public_image_url", return_value={"ok": False, "reason": reason}):
+            failures = verify_public_image_urls(manifest)
+
+        self.assertEqual(failures, [])
+        self.assertEqual(manifest["images"][0]["status"], "served")
+        self.assertIn("local public image probe unavailable", manifest["images"][0]["error"])
+
+    def test_restarts_public_channel_when_first_url_fails_validation(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product_dir = Path(directory) / "products" / "PTEST001"
+            output = product_dir / "output"
+            (output / "ozon-image-staging").mkdir(parents=True)
+            state_path = output / "image-channel-state.json"
+            manifest = {
+                "schema_version": "1.0.0",
+                "product_id": "PTEST001",
+                "images": [{
+                    "slot": "main-1",
+                    "role": "variant_main",
+                    "source_sku_id": "1",
+                    "staged_name": "01-main.png",
+                    "sha256": "sha",
+                    "public_url": "unknown",
+                    "status": "pending",
+                    "error": "unknown",
+                }],
+            }
+            urls = iter([
+                "https://bad-public-url.example.test",
+                "https://good-public-url.example.test",
+            ])
+
+            def fake_popen(*args, **kwargs):
+                state_path.write_text(json.dumps({
+                    "status": "running",
+                    "worker_pid": 43210,
+                    "public_url": next(urls),
+                }), encoding="utf-8")
+                return FakeChannelProcess()
+
+            attempts = []
+
+            def fake_apply(product, value, public_url):
+                attempts.append(public_url)
+                if "bad-public-url" in public_url:
+                    raise image_channels.ImageTunnelError("public url unavailable")
+                for item in value["images"]:
+                    item["public_url"] = f"{public_url}/{item['staged_name']}"
+                    item["status"] = "served"
+                value["tunnel_url"] = public_url
+                return value
+
+            with patch.object(image_channels, "running_channel_count", return_value=0), \
+                 patch.object(image_channels, "process_alive", return_value=False), \
+                 patch.object(image_channels.subprocess, "Popen", side_effect=fake_popen), \
+                 patch.object(image_channels, "apply_public_urls", side_effect=fake_apply), \
+                 patch.dict(os.environ, {"OZON_IMAGE_CHANNEL_START_ATTEMPTS": "2"}):
+                result = image_channels.start_image_channel(product_dir, manifest)
+
+            self.assertEqual(attempts, [
+                "https://bad-public-url.example.test",
+                "https://good-public-url.example.test",
+            ])
+            self.assertEqual(result["images"][0]["public_url"], "https://good-public-url.example.test/01-main.png")
+
+
 def client(transport):
     return OzonWriteClient(
         OzonConfig(client_id="test", api_key="secret", shop_name="zhonglian1"),
@@ -142,7 +230,7 @@ def copy_product(temp_dir, product_id="P000004"):
     return target
 
 
-def reset_to_ozon_ready(product_dir, task_authorized=False):
+def reset_to_waiting_manual_review(product_dir, task_authorized=False):
     for name in (
         "ozon-idempotency.json", "image-channel-state.json", "image-channel.stop",
         "ozon-image-transfer.json", "ozon-image-update-receipt.json",
@@ -150,7 +238,7 @@ def reset_to_ozon_ready(product_dir, task_authorized=False):
         (product_dir / "output" / name).unlink(missing_ok=True)
     status_path = product_dir / "status.json"
     status = load_json(status_path)
-    status["status"] = "OZON_READY"
+    status["status"] = "WAITING_MANUAL_REVIEW"
     status["current_step"] = "ozon_preflight"
     status["task_authorized"] = task_authorized
     status["ozon"] = {
@@ -183,15 +271,6 @@ def mark_all_color_variants_mapped_for_mock(product_dir):
             item["reason"] = "Test fixture supplies an explicitly verified variant image."
     value["summary"] = {"total": len(value["variants"]), "mapped": len(value["variants"]), "missing": 0}
     path.write_text(json.dumps(value, ensure_ascii=False, indent=2) + "\n")
-    check_path = product_dir / "output/final-upload-check.json"
-    check = load_json(check_path)
-    for item in check["checks"]:
-        if item["name"] == "color_variant_images":
-            item["passed"] = True
-    check["status"] = "PASS"
-    check["upload_allowed"] = True
-    check["errors"] = []
-    check_path.write_text(json.dumps(check, ensure_ascii=False, indent=2) + "\n")
 
 
 def block_main_color_variant_for_mock(product_dir):
@@ -213,15 +292,6 @@ def block_main_color_variant_for_mock(product_dir):
     }]
     policy["warning_variants"] = []
     policy_path.write_text(json.dumps(policy, ensure_ascii=False, indent=2) + "\n")
-    check_path = product_dir / "output/final-upload-check.json"
-    check = load_json(check_path)
-    for item in check["checks"]:
-        if item["name"] == "color_variant_images":
-            item["passed"] = False
-    check["status"] = "FAIL"
-    check["upload_allowed"] = False
-    check["errors"] = ["The main SKU must have a safe color image."]
-    check_path.write_text(json.dumps(check, ensure_ascii=False, indent=2) + "\n")
 
 
 class RichContentVariantMainResolutionTest(unittest.TestCase):
@@ -266,8 +336,92 @@ class RichContentVariantMainResolutionTest(unittest.TestCase):
             self.assertEqual(image["srcMobile"], "https://images.example.test/main-sku-1.png")
             self.assertEqual(final_attributes["attributes"][0]["value"], "unresolved")
 
+    def test_missing_rich_attribute_is_added_before_upload(self):
+        with tempfile.TemporaryDirectory() as directory:
+            output = Path(directory)
+            content = {
+                "version": 0.3,
+                "content": [{
+                    "widgetName": "raShowcase", "type": "billboard",
+                    "blocks": [{
+                        "img": {
+                            "src": "asset://main-sku-1",
+                            "srcMobile": "asset://main-sku-1",
+                        },
+                        "title": {"content": ["Title"]},
+                        "text": {"content": ["Text"]},
+                    }],
+                }],
+            }
+            (output / "rich-content.json").write_text(json.dumps({
+                "status": "ready_for_upload",
+                "attribute_id": 11254,
+                "content": content,
+            }))
+            final_attributes = {"attributes": []}
+            manifest = {"images": [{
+                "slot": "main-sku-1",
+                "role": "variant_main",
+                "public_url": "https://images.example.test/main-sku-1.png",
+            }]}
+
+            resolved = _resolve_rich_content_for_upload(output, final_attributes, manifest)
+
+            self.assertEqual(len(resolved["attributes"]), 1)
+            self.assertEqual(resolved["attributes"][0]["attribute_id"], 11254)
+            self.assertIn("https://images.example.test/main-sku-1.png", resolved["attributes"][0]["value"])
+            self.assertEqual(final_attributes["attributes"], [])
+
 
 class OzonPayloadScalarContractTest(unittest.TestCase):
+    def test_separate_cards_receive_distinct_model_values(self):
+        draft = {
+            "title": "Прозрачная витрина",
+            "description_category_id": 17027919,
+            "type_id": 95109,
+            "skus": [
+                {"source_sku_id": "sku-with-shelf", "offer_id": "offer-1"},
+                {"source_sku_id": "sku-without-shelf", "offer_id": "offer-2"},
+            ],
+        }
+        config = {
+            "sku_prices": [
+                {"source_sku_id": "sku-with-shelf", "price": "1000"},
+                {"source_sku_id": "sku-without-shelf", "price": "900"},
+            ],
+            "sku_colors": [],
+            "brand": {"attribute_id": 85, "dictionary_value_id": 1, "value": "Нет бренда"},
+            "model_name": {"attribute_id": 9048, "value": "205244030958"},
+            "type": {"attribute_id": 8229, "dictionary_value_id": 2, "value": "Шкаф-витрина"},
+            "currency_code": "RUB",
+            "vat": "0",
+            "old_price": None,
+            "package_dimensions": {"length_mm": 300, "width_mm": 200, "height_mm": 150},
+            "package_weight": {"value_g": 1200},
+        }
+        grouping = {
+            "variant_mapping_status": "SEPARATE_CARDS_REQUIRED",
+            "upload_strategy": "separate_cards",
+            "platform_can_merge": False,
+            "variants": [],
+        }
+
+        items = build_import_items(
+            draft,
+            config,
+            ["https://images.example.test/main.png"],
+            variant_grouping=grouping,
+        )
+
+        model_values = [
+            next(attribute for attribute in item["attributes"] if attribute["id"] == 9048)["values"][0]["value"]
+            for item in items
+        ]
+        self.assertEqual(model_values, [
+            "205244030958 sku-with-shelf",
+            "205244030958 sku-without-shelf",
+        ])
+
     def test_fractional_estimated_weight_is_rounded_up_to_int32_grams(self):
         value = ozon_weight_grams(448.5)
         self.assertEqual(value, 449)
@@ -279,9 +433,54 @@ class OzonPayloadScalarContractTest(unittest.TestCase):
                 with self.assertRaises(UploadGateError):
                     ozon_weight_grams(value)
 
+    def test_unknown_sku_package_measurement_uses_current_config_fallback(self):
+        draft = {
+            "title": "Термокружка",
+            "description_category_id": 17000001,
+            "type_id": 90001,
+            "skus": [{"source_sku_id": "sku-1", "offer_id": "P000123-sku-1"}],
+        }
+        config = {
+            "sku_prices": [{"source_sku_id": "sku-1", "price": "900.00"}],
+            "sku_colors": [],
+            "product_dimensions": {"length_mm": 120, "width_mm": 120, "height_mm": 250},
+            "product_weight": {"value_g": 500},
+            "package_dimensions": {"length_mm": 130, "width_mm": 130, "height_mm": 263},
+            "package_weight": {"value_g": 575},
+            "brand": {"attribute_id": 31, "dictionary_value_id": 1, "value": "Нет бренда"},
+            "model_name": {"attribute_id": 32, "value": "P000123"},
+            "type": {"attribute_id": 33, "dictionary_value_id": 2, "value": "Термокружка"},
+            "currency_code": "RUB", "vat": "0", "old_price": None,
+        }
+        final_attributes = {
+            "sku_measurements": {
+                "sku-1": {
+                    "package_dimensions": {
+                        "canonical_value": "unknown",
+                        "canonical_unit": "mm",
+                    },
+                    "package_weight": {
+                        "canonical_value": "unknown",
+                        "canonical_unit": "g",
+                    },
+                }
+            }
+        }
+        items = build_import_items(
+            draft,
+            config,
+            ["https://images.example.test/main.png"],
+            final_attributes=final_attributes,
+        )
+        self.assertEqual(items[0]["depth"], 130)
+        self.assertEqual(items[0]["width"], 130)
+        self.assertEqual(items[0]["height"], 263)
+        self.assertEqual(items[0]["weight"], 575)
+
     def test_active_payload_contract_contains_no_inventory_fields(self):
         draft = {
             "title": "Контейнер для хранения",
+            "description": "Практичный контейнер для хранения помогает организовать вещи дома. Подходит для полки, шкафа и повседневного использования.",
             "description_category_id": 17000001,
             "type_id": 90001,
             "skus": [{"source_sku_id": "sku-1", "offer_id": "P000123-sku-1"}],
@@ -298,7 +497,266 @@ class OzonPayloadScalarContractTest(unittest.TestCase):
         }
         items = build_import_items(draft, config, ["https://images.example.test/main.png"])
         self.assertEqual(len(items), 1)
+        self.assertEqual(items[0]["description"], draft["description"])
         self.assertTrue(all("stock" not in item and "warehouse_id" not in item for item in items))
+
+    def test_color_image_falls_back_to_sku_main_image(self):
+        draft = {
+            "title": "Фигурка",
+            "description_category_id": 17000001,
+            "type_id": 90001,
+            "skus": [{"source_sku_id": "sku-1", "offer_id": "P000123-sku-1"}],
+        }
+        config = {
+            "sku_prices": [{"source_sku_id": "sku-1", "price": "900.00"}],
+            "sku_colors": [],
+            "package_dimensions": {"length_mm": 110, "width_mm": 110, "height_mm": 110},
+            "package_weight": {"value_g": 510},
+            "brand": {"attribute_id": 31, "dictionary_value_id": 1, "value": "Нет бренда"},
+            "model_name": {"attribute_id": 32, "value": "P000123"},
+            "type": {"attribute_id": 33, "dictionary_value_id": 2, "value": "Фигурка"},
+            "currency_code": "RUB", "vat": "0", "old_price": None,
+        }
+        items = build_import_items(
+            draft,
+            config,
+            ["https://images.example.test/detail.png"],
+            variant_main_image_urls={"sku-1": "https://images.example.test/main.png"},
+        )
+        self.assertEqual(items[0]["primary_image"], "https://images.example.test/main.png")
+        self.assertEqual(items[0]["color_image"], "https://images.example.test/main.png")
+
+    def test_model_attribute_zero_is_local_only_and_not_sent_to_payload(self):
+        draft = {
+            "title": "Перчатки",
+            "description_category_id": 17000001,
+            "type_id": 90001,
+            "skus": [{"source_sku_id": "sku-1", "offer_id": "P000027-sku-1"}],
+        }
+        config = {
+            "sku_prices": [{"source_sku_id": "sku-1", "price": "900.00"}],
+            "sku_colors": [],
+            "package_dimensions": {"length_mm": 300, "width_mm": 200, "height_mm": 150},
+            "package_weight": {"value_g": 449},
+            "brand": {
+                "attribute_id": 31,
+                "dictionary_value_id": 126745801,
+                "value": "Нет бренда",
+            },
+            "model_name": {"attribute_id": 0, "value": "123456789012"},
+            "type": {"attribute_id": 8229, "dictionary_value_id": 93171, "value": "Перчатки"},
+            "currency_code": "RUB",
+            "vat": "0",
+            "old_price": None,
+        }
+        items = build_import_items(draft, config, ["https://images.example.test/main.png"])
+        attribute_ids = [attribute["id"] for attribute in items[0]["attributes"]]
+        self.assertNotIn(0, attribute_ids)
+        self.assertIn(31, attribute_ids)
+        self.assertIn(8229, attribute_ids)
+
+    def test_variant_color_name_is_normalized_before_payload(self):
+        draft = {
+            "title": "Портативный блендер",
+            "description_category_id": 17000001,
+            "type_id": 90001,
+            "skus": [{"source_sku_id": "sku-1", "offer_id": "P000009-sku-1"}],
+        }
+        config = {
+            "sku_prices": [{"source_sku_id": "sku-1", "price": "900.00"}],
+            "sku_colors": [],
+            "package_dimensions": {"length_mm": 300, "width_mm": 200, "height_mm": 150},
+            "package_weight": {"value_g": 449},
+            "brand": {"attribute_id": 31, "dictionary_value_id": 1, "value": "Нет бренда"},
+            "model_name": {"attribute_id": 32, "value": "553829441028"},
+            "type": {"attribute_id": 33, "dictionary_value_id": 2, "value": "Блендер"},
+            "currency_code": "RUB", "vat": "0", "old_price": None,
+        }
+        grouping = {"variants": [{
+            "sku_id": "sku-1",
+            "variant_attribute_values": [{
+                "attribute_id": 10097,
+                "attribute_name": "Название цвета",
+                "value": "卡其色1.9L",
+            }],
+        }]}
+        items = build_import_items(
+            draft, config, ["https://images.example.test/main.png"], variant_grouping=grouping
+        )
+        color_values = [
+            value["value"]
+            for attribute in items[0]["attributes"]
+            if attribute["id"] == 10097
+            for value in attribute["values"]
+        ]
+        self.assertEqual(color_values, ["хаки"])
+
+    def test_variant_color_name_without_color_is_omitted_before_payload(self):
+        draft = {
+            "title": "Портативный блендер",
+            "description_category_id": 17000001,
+            "type_id": 90001,
+            "skus": [{"source_sku_id": "sku-1", "offer_id": "P000009-sku-1"}],
+        }
+        config = {
+            "sku_prices": [{"source_sku_id": "sku-1", "price": "900.00"}],
+            "sku_colors": [],
+            "package_dimensions": {"length_mm": 300, "width_mm": 200, "height_mm": 150},
+            "package_weight": {"value_g": 449},
+            "brand": {"attribute_id": 31, "dictionary_value_id": 1, "value": "Нет бренда"},
+            "model_name": {"attribute_id": 32, "value": "553829441028"},
+            "type": {"attribute_id": 33, "dictionary_value_id": 2, "value": "Блендер"},
+            "currency_code": "RUB", "vat": "0", "old_price": None,
+        }
+        grouping = {"variants": [{
+            "sku_id": "sku-1",
+            "variant_attribute_values": [{
+                "attribute_id": 10097,
+                "attribute_name": "Название цвета",
+                "value": "601–800 мл",
+            }],
+        }]}
+        items = build_import_items(
+            draft, config, ["https://images.example.test/main.png"], variant_grouping=grouping
+        )
+        self.assertFalse(any(attribute["id"] == 10097 for attribute in items[0]["attributes"]))
+
+    def test_p000021_style_payload_repair_removes_false_cable_length_and_keeps_height(self):
+        """Regression for the local P000021 failure: height is not cable length."""
+        draft = {
+            "title": "Электрическая щетка для гриля",
+            "description_category_id": 1,
+            "type_id": 2,
+            "skus": [{"source_sku_id": "sku-a", "offer_id": "P000021-sku-a"}],
+        }
+        config = {
+            "sku_prices": [{"source_sku_id": "sku-a", "price": "1000"}],
+            "sku_colors": [],
+            "brand": {"attribute_id": 85, "dictionary_value_id": 1, "value": "Нет бренда"},
+            "model_name": {"attribute_id": 9048, "value": "123456789012"},
+            "type": {"attribute_id": 8229, "dictionary_value_id": 2, "value": "Щетка для гриля"},
+            "currency_code": "RUB", "vat": "0", "old_price": None,
+            "package_dimensions": {"length_mm": 300, "width_mm": 200, "height_mm": 150},
+            "package_weight": {"value_g": 1200},
+        }
+        metadata = {"attributes": [
+            {"attribute_id": 5391, "attribute_name": "Длина шнура, м", "required": False, "type": "Decimal"},
+            {"attribute_id": 4788, "attribute_name": "Высота, см", "required": False, "type": "Decimal", "constraints": {"minimum": 1, "maximum": 100}},
+            {"attribute_id": 23171, "attribute_name": "#Хештеги", "required": False, "type": "String"},
+            {"attribute_id": 9163, "attribute_name": "Пол", "required": True, "type": "String", "allowed_values": [
+                {"id": 22880, "value": "Мужской"},
+                {"id": 22881, "value": "Женский"},
+            ]},
+        ]}
+        final_attributes = {
+            "common_attributes": [
+                {
+                    "attribute_id": 23171,
+                    "value": "#щеткадлягриля #таннес #модель_два #чисткарешетки #щетка100",
+                    "target_value": "#щеткадлягриля #таннес #модель_два #чисткарешетки #щетка100",
+                },
+                {
+                    "attribute_id": 9163,
+                    "value": "Мужской; Женский",
+                    "target_value": "Мужской; Женский",
+                    "dictionary_value_id": None,
+                    "dictionary_values": [
+                        {"dictionary_value_id": 22880, "value": "Мужской"},
+                        {"dictionary_value_id": 22881, "value": "Женский"},
+                    ],
+                },
+            ],
+            "attributes_by_sku": {"sku-a": [
+                {"attribute_id": 5391, "value": 260, "target_value": 260, "canonical_value": 260,
+                 "source": "source.product_attributes.sku_measurement_table", "evidence": ["Высота товара 260 мм"]},
+                {"attribute_id": 4788, "value": 11, "target_value": 11, "canonical_value": 110,
+                 "source": "source.product_attributes.sku_measurement_table", "evidence": ["Высота товара 110 мм"]},
+            ]},
+            "sku_measurements": {"sku-a": {
+                "package_dimensions": {"canonical_value": {"length_mm": 300, "width_mm": 200, "height_mm": 150}},
+                "package_weight": {"canonical_value": 1200},
+            }},
+        }
+        repairs = []
+        items = build_import_items(
+            draft, config, ["https://images.example.test/main.png"],
+            final_attributes=final_attributes, category_metadata=metadata,
+            source={"brand": "Таннес"}, field_repair_log=repairs,
+        )
+        attributes = {item["id"]: item["values"] for item in items[0]["attributes"]}
+        self.assertNotIn(5391, attributes)
+        self.assertEqual(attributes[4788][0]["value"], "11")
+        self.assertEqual(attributes[23171], [{"value": "#щеткадлягриля"}, {"value": "#чисткарешетки"}])
+        self.assertEqual(attributes[9163], [
+            {"dictionary_value_id": 22880, "value": "Мужской"},
+            {"dictionary_value_id": 22881, "value": "Женский"},
+        ])
+        self.assertTrue(any(item["attribute_id"] == 5391 for item in repairs))
+        self.assertTrue(all("stock" not in item and "warehouse_id" not in item for item in items))
+
+        # An optional numeric field outside the current live Ozon range is
+        # removed automatically; it is never rewritten into a fabricated value.
+        out_of_range = copy.deepcopy(final_attributes)
+        out_of_range["attributes_by_sku"]["sku-a"][1]["value"] = 101
+        out_of_range["attributes_by_sku"]["sku-a"][1]["target_value"] = 101
+        range_repairs = []
+        range_items = build_import_items(
+            draft, config, ["https://images.example.test/main.png"],
+            final_attributes=out_of_range, category_metadata=metadata,
+            source={"brand": "Таннес"}, field_repair_log=range_repairs,
+        )
+        range_attributes = {item["id"]: item["values"] for item in range_items[0]["attributes"]}
+        self.assertNotIn(4788, range_attributes)
+        self.assertTrue(any(item["attribute_id"] == 4788 for item in range_repairs))
+
+    def test_import_payload_uses_canonical_tags_file_over_stale_compiled_tags(self):
+        draft = {
+            "title": "Кофеварка для колд брю",
+            "description_category_id": 1,
+            "type_id": 2,
+            "skus": [{
+                "source_sku_id": "sku-a",
+                "source_sku_name": "9号冰滴",
+                "offer_id": "P000123-sku-a",
+            }],
+        }
+        config = {
+            "sku_prices": [{"source_sku_id": "sku-a", "price": "1000"}],
+            "sku_colors": [],
+            "brand": {"attribute_id": 85, "dictionary_value_id": 1, "value": "Нет бренда"},
+            "model_name": {"attribute_id": 9048, "value": "coffee-model"},
+            "type": {"attribute_id": 8229, "dictionary_value_id": 2, "value": "Кофеварка"},
+            "currency_code": "RUB",
+            "vat": "0",
+            "old_price": None,
+            "package_dimensions": {"length_mm": 300, "width_mm": 200, "height_mm": 150},
+            "package_weight": {"value_g": 1200},
+        }
+        metadata = {"attributes": [
+            {"attribute_id": 23171, "attribute_name": "#Хештеги", "required": False, "type": "String", "is_collection": False},
+        ]}
+        stale_final_attributes = {
+            "common_attributes": [{
+                "attribute_id": 23171,
+                "value": "#канистрадлятоплива #металлическаяканистра",
+                "target_value": "#канистрадлятоплива #металлическаяканистра",
+            }],
+        }
+        repairs = []
+
+        items = build_import_items(
+            draft,
+            config,
+            ["https://images.example.test/main.png"],
+            final_attributes=stale_final_attributes,
+            category_metadata=metadata,
+            field_repair_log=repairs,
+            canonical_tags=["#кофеварка", "#колдбрю"],
+        )
+
+        attributes = {item["id"]: item["values"] for item in items[0]["attributes"]}
+        self.assertEqual(attributes[23171], [{"value": "#кофеварка #колдбрю"}])
+        self.assertTrue(any(item.get("reason") == "canonical_ozon_tags_file" for item in repairs))
 
     def test_active_client_rejects_inventory_and_unlisted_endpoints(self):
         transport = RecordingTransport()
@@ -320,7 +778,7 @@ class OzonPayloadScalarContractTest(unittest.TestCase):
             }))
             transport = RecordingTransport()
             with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
-                with self.assertRaisesRegex(UploadGateError, "second write is forbidden"):
+                with self.assertRaisesRegex(UploadGateError, "禁止重复提交"):
                     execute_upload(product, client(transport))
             self.assertEqual(transport.calls, [])
 
@@ -356,487 +814,194 @@ class OzonPayloadScalarContractTest(unittest.TestCase):
             self.assertEqual(second["action"], "skip")
 
 
-@unittest.skipUnless(os.environ.get("CAF_RUN_LEGACY_FIXTURES") == "1", "legacy runtime fixture suite is isolated from active tests")
-class Stage42OzonUploaderTest(unittest.TestCase):
-    def test_declined_remote_product_stops_image_channel_without_write(self):
-        with tempfile.TemporaryDirectory() as directory:
-            product_dir = Path(directory) / "products/P999999"
-            output = product_dir / "output"
-            output.mkdir(parents=True)
-            (Path(directory) / "image-channel-queue.json").write_text(json.dumps({
-                "items": [{
-                    "product_id": "P999999", "offer_ids": ["offer-1"],
-                    "expected_image_count": 2, "check_count": 0,
-                    "status": "WAITING_OZON_CDN",
-                }],
-            }))
-            (output / "image-channel-state.json").write_text(json.dumps({"status": "running"}))
-            (output / "ozon-images.json").write_text(json.dumps({
-                "images": [{"status": "submitted", "error": "unknown"}],
-            }))
-            response = {"items": [{
-                "offer_id": "offer-1",
-                "statuses": {"validation_status": "success", "moderate_status": "declined"},
-                "errors": [{"code": "DESCRIPTION_DECLINE", "level": "ERROR_LEVEL_ERROR"}],
-                "primary_image": ["https://temporary.trycloudflare.com/main.png"],
-                "images": ["https://temporary.trycloudflare.com/main.png"],
-            }]}
-            self.assertEqual(_remote_terminal_errors(response)[0]["code"], "DESCRIPTION_DECLINE")
-            result = sync_image_channel_status(product_dir, object(), product_response=response)
-            self.assertEqual(result["status"], "REMOTE_DECLINED")
-            self.assertEqual(load_json(Path(directory) / "image-channel-queue.json")["items"], [])
-            self.assertEqual(load_json(output / "ozon-image-transfer.json")["status"], "REMOTE_DECLINED")
-            self.assertEqual((output / "image-channel.stop").read_text().strip(), "ozon_product_declined")
-
-    def test_media_confirmation_requires_success_full_count_and_official_cdn(self):
-        transfer = load_json(ROOT / "products/P000004/output/ozon-image-transfer.json")
-        response = transfer["response"]
-        offer_ids = [item["offer_id"] for item in response["items"]]
-        self.assertTrue(_images_ingested(response, offer_ids, 4))
-        self.assertTrue(_is_official_ozon_image_url("https://ir.ozone.ru/s3/image.jpg"))
-        self.assertFalse(_is_official_ozon_image_url("https://example.com/image.jpg"))
-
-        temporary = copy.deepcopy(response)
-        temporary["items"][0]["primary_image"] = ["https://sample.trycloudflare.com/main.png"]
-        self.assertFalse(_images_ingested(temporary, offer_ids, 4))
-
-        missing = copy.deepcopy(response)
-        missing["items"][0]["images"] = missing["items"][0]["images"][:-1]
-        self.assertFalse(_images_ingested(missing, offer_ids, 4))
-
-        pending = copy.deepcopy(response)
-        pending["items"][0]["statuses"]["validation_status"] = "pending"
-        self.assertFalse(_images_ingested(pending, offer_ids, 4))
-
-    def test_new_schemas_and_real_upload_config_validate(self):
-        for schema in SCHEMAS.values():
-            self.assertIsInstance(load_json(schema), dict)
-        config = load_json(ROOT / "products/P000004/output/ozon-upload-config.json")
-        self.assertEqual(validate(config, SCHEMAS["config"]), [])
-        self.assertEqual(config["currency_code"], "CNY")
-        self.assertEqual(config["stock_mode"], "not_set")
-
-    def test_prepare_is_blocked_and_does_not_call_write_api(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            reset_to_ozon_ready(product_dir)
-            preview = prepare_upload(product_dir)
-            self.assertFalse(preview["preflight"]["upload_allowed"])
-            failed = {item["name"] for item in preview["preflight"]["checks"] if not item["passed"]}
-            self.assertEqual(failed, {"batch_task_authorized", "public_images"})
-            transport = RecordingTransport()
-            with self.assertRaises(UploadGateError):
-                execute_upload(product_dir, client(transport))
-            self.assertEqual(transport.calls, [])
-
-    def test_user_started_batch_needs_no_per_product_review(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            reset_to_ozon_ready(product_dir, task_authorized=True)
-            preview = prepare_upload(product_dir)
-            failed = {item["name"] for item in preview["preflight"]["checks"] if not item["passed"]}
-            self.assertEqual(failed, {"public_images"})
-            status = load_json(product_dir / "status.json")
-            self.assertEqual(status["status"], "OZON_READY")
-            self.assertTrue(status["task_authorized"])
-
-    def test_pending_remote_task_blocks_any_second_write(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            output = product_dir / "output"
-            (output / "ozon-idempotency.json").write_text(json.dumps({
-                "schema_version": "1.0.0",
-                "payload_hash": "abc",
-                "task_id": 70001,
-                "api_write_completed": True,
-                "offer_ids": ["existing-offer"],
-                "request_timestamp": "2026-07-11T00:00:00+00:00",
-            }), encoding="utf-8")
-            status_path = product_dir / "status.json"
-            status = load_json(status_path)
-            status["status"] = "PENDING_REMOTE"
-            status_path.write_text(json.dumps(status, ensure_ascii=False), encoding="utf-8")
-            transport = RecordingTransport()
-            with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
-                with self.assertRaisesRegex(UploadGateError, "still pending"):
-                    execute_upload(product_dir, client(transport))
-            self.assertEqual(transport.calls, [])
-
-    def test_payload_uses_cny_sku_prices_and_contains_no_stock(self):
-        output = ROOT / "products/P000004/output"
-        draft = load_json(output / "ozon-draft.json")
-        config = load_json(output / "ozon-upload-config.json")
-        config["vat"] = "0"
-        items = build_import_items(draft, config, ["https://images.example.test/main.png"])
-        prices = {item["offer_id"]: item["price"] for item in items}
-        self.assertEqual(set(prices.values()), {"90.00", "100.00"})
-        self.assertTrue(all(item["currency_code"] == "CNY" for item in items))
-        self.assertTrue(all(item["weight"] == 150 for item in items))
-        self.assertTrue(all(item["depth"] == 170 and item["width"] == 120 and item["height"] == 50 for item in items))
-        self.assertTrue(all("stock" not in item and "warehouse_id" not in item for item in items))
-
-    def test_client_rejects_inventory_and_unlisted_endpoints(self):
-        transport = RecordingTransport()
-        uploader = client(transport)
-        for endpoint in ("/v2/products/stocks", "/v1/product/pictures/import", "/v2/product/update"):
-            with self.assertRaisesRegex(ValueError, "uploader allowlist"):
-                uploader._post_json(endpoint, {})
-        self.assertEqual(transport.calls, [])
-
-    def test_authorized_batch_mock_upload_creates_three_cards_without_stock(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            status_path = product_dir / "status.json"
-            status = reset_to_ozon_ready(product_dir, task_authorized=True)
-            status_path.write_text(json.dumps(status, ensure_ascii=False, indent=2) + "\n")
-            config_path = product_dir / "output/ozon-upload-config.json"
-            config = load_json(config_path)
-            config["vat"] = "0"
-            config_path.write_text(json.dumps(config, ensure_ascii=False, indent=2) + "\n")
-            mark_all_color_variants_mapped_for_mock(product_dir)
-
-            transport = RecordingTransport()
-            with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
-                with patch("ozon_uploader.service.PersistentImageTunnel", FakeTunnel):
-                    with patch("ozon_uploader.service._ensure_image_status_monitor"):
-                        result = execute_upload(product_dir, client(transport))
-            self.assertEqual(result["status"], "submitted")
-            self.assertEqual(result["task_id"], 70001)
-            self.assertEqual([call[0] for call in transport.calls], [
-                OzonWriteClient.PRODUCT_INFO_LIST_ENDPOINT,
-                OzonWriteClient.PRODUCT_IMPORT_ENDPOINT,
-            ])
-            payload_items = transport.calls[1][1]["items"]
-            self.assertTrue(all("stock" not in item for item in payload_items))
-            final_status = load_json(status_path)
-            self.assertEqual(final_status["status"], "HANDED_OFF_TO_OZON")
-            self.assertEqual(final_status["ozon"]["shop_name"], "zhonglian1")
-            self.assertFalse(load_json(product_dir / "output/ozon-draft.json")["upload_allowed"])
-            self.assertTrue((product_dir / "output/ozon-idempotency.json").is_file())
-            self.assertEqual(load_json(product_dir / "output/ozon-image-transfer.json")["status"], "waiting_ozon_cdn")
-
-    def test_invalid_import_response_is_recorded_as_failure(self):
-        class BrokenTransport(RecordingTransport):
-            def __call__(self, endpoint, payload):
-                self.calls.append((endpoint, payload))
-                return {"result": {}}
-
-        self.assertIsInstance(OzonUploadApiError("/v3/product/import", "bad"), RuntimeError)
-
-    def test_dry_run_is_default_and_writes_complete_payload_without_api(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            with patch.dict(os.environ, {}, clear=True):
-                payload = build_upload_payload(product_dir)
-            self.assertEqual(payload["upload_mode"], "dry-run")
-            self.assertFalse(payload["api_writes_performed"])
-            self.assertNotIn("stock", payload)
-            self.assertTrue(all("stock" not in item for item in payload["variants"]))
-            self.assertEqual(len(payload["variants"]), 3)
-            self.assertEqual({item["price"] for item in payload["variants"]}, {"90.00", "100.00"})
-            self.assertEqual(len(payload["attributes"]), 38)
-            self.assertTrue((product_dir / "output/ozon-upload-payload.json").is_file())
-
-    def test_same_source_sharpener_dry_run_is_one_group_with_three_offers(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir, "P000005")
-            payload = build_upload_payload(product_dir, mode="dry-run")
-            group = payload["product_group"]
-            self.assertEqual(group["product_group_count"], 1)
-            self.assertEqual(group["variant_count"], 3)
-            self.assertTrue(group["must_merge"])
-            self.assertEqual(group["variant_mapping_status"], "SEPARATE_CARDS_REQUIRED")
-            self.assertIsNone(group["variant_attribute"])
-            self.assertFalse(any("separate cards" in item for item in payload["production_blockers"]))
-            items = payload["api_request_template"]["body"]["items"]
-            self.assertEqual(len(items), 3)
-            model_values = {
-                next(attr for attr in item["attributes"] if attr["id"] == 9048)["values"][0]["value"]
-                for item in items
-            }
-            self.assertEqual(len(model_values), 3)
-            self.assertTrue(all(value.startswith("Электрическая точилка для ножей P000005 ") for value in model_values))
-            self.assertEqual(len({item["name"] for item in items}), 3)
-            self.assertTrue(all(
-                not any(attribute["id"] == 4384 for attribute in item["attributes"])
-                for item in items
-            ))
-
-    def test_production_blocks_failed_final_check_but_existing_means_update(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            block_main_color_variant_for_mock(product_dir)
-            with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
-                payload = build_upload_payload(product_dir)
-                with self.assertRaisesRegex(UploadGateError, "status=PASS"):
-                    assert_production_allowed(product_dir, payload)
-            self.assertEqual(payload["product_exists_check"]["action"], "update")
-            self.assertFalse(any("already exists" in item for item in payload["production_blockers"]))
-
-    def test_existing_offers_are_update_not_duplicate_create(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            payload = build_upload_payload(product_dir, mode="dry-run")
-            check = payload["product_exists_check"]
-            self.assertTrue(check["exists"])
-            self.assertEqual(check["action"], "update")
-            self.assertEqual({item["action"] for item in check["offers"]}, {"update"})
-            self.assertEqual(len({item["offer_id"] for item in check["offers"]}), 3)
-
-    def test_dry_run_reports_saved_cross_category_conflict(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            output = product_dir / "output"
-            draft = load_json(output / "ozon-draft.json")
-            grouping = load_json(output / "variant-grouping-result.json")
-            (output / "grouping-verification.json").write_text(json.dumps({
-                "last_api_response": {"items": [{
-                    "offer_id": item["offer_id"],
-                    "id": 900000 + index,
-                    "description_category_id": 999001,
-                    "type_id": 999002,
-                } for index, item in enumerate(grouping["variants"])]},
-            }), encoding="utf-8")
-            payload = build_upload_payload(product_dir, mode="dry-run")
-            self.assertEqual(payload["product_exists_check"]["action"], "update")
-            self.assertTrue(any(
-                "cross-category UPDATE is blocked" in blocker
-                for blocker in payload["production_blockers"]
-            ))
-
-    def test_unchanged_uploaded_hashes_select_skip(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            first = build_upload_payload(product_dir, mode="dry-run")
-            hashes = first["product_exists_check"]["current_hashes"]
-            (product_dir / "output/ozon-last-upload-hashes.json").write_text(
-                json.dumps(hashes, ensure_ascii=False, indent=2) + "\n"
-            )
-            second = build_upload_payload(product_dir, mode="dry-run")
-            self.assertEqual(second["product_exists_check"]["action"], "skip")
-
-    def test_missing_offers_select_create(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            (product_dir / "output/ozon-result.json").unlink()
-            payload = build_upload_payload(product_dir, mode="dry-run")
-            self.assertFalse(payload["product_exists_check"]["exists"])
-            self.assertEqual(payload["product_exists_check"]["action"], "create")
-
-    def test_existing_live_offers_enter_update_flow(self):
-        class ExistingTransport(RecordingTransport):
-            def __init__(self):
-                super().__init__()
-                self.existing = {
-                    "P000004-3993658310173": 5440271945,
-                    "P000004-3993658310175": 5440271889,
-                    "P000004-3993658310174": 5440271935,
-                }
-
-            def __call__(self, endpoint, payload):
-                if endpoint == OzonWriteClient.PRODUCT_INFO_LIST_ENDPOINT and not self.offers:
-                    self.calls.append((endpoint, copy.deepcopy(payload)))
-                    return {
-                        "items": [
-                            {
-                                "id": self.existing[offer_id],
-                                "offer_id": offer_id,
-                                "images": ["https://cdn.example.test/1.jpg"],
-                                "primary_image": ["https://cdn.example.test/0.jpg"],
-                                "errors": [],
-                            }
-                            for offer_id in payload["offer_id"]
-                        ]
-                    }
-                if endpoint == OzonWriteClient.IMPORT_INFO_ENDPOINT:
-                    self.calls.append((endpoint, copy.deepcopy(payload)))
-                    return {
-                        "result": {
-                            "items": [
-                                {
-                                    "offer_id": offer_id,
-                                    "product_id": self.existing[offer_id],
-                                    "status": "imported",
-                                    "errors": [],
-                                }
-                                for offer_id in self.offers
-                            ]
-                        }
-                    }
-                return super().__call__(endpoint, payload)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            (product_dir / "output/ozon-idempotency.json").unlink(missing_ok=True)
-            mark_all_color_variants_mapped_for_mock(product_dir)
-            transport = ExistingTransport()
-            with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
-                with patch("ozon_uploader.service.PersistentImageTunnel", FakeTunnel):
-                    with patch("ozon_uploader.service._ensure_image_status_monitor"):
-                        result = execute_upload(product_dir, client(transport))
-            self.assertEqual(result["status"], "submitted")
-            check = load_json(product_dir / "output/product-exists-check.json")
-            self.assertEqual(check["action"], "update")
-            self.assertEqual({item["action"] for item in check["offers"]}, {"update"})
-            imported_offers = {
-                item["offer_id"] for item in transport.calls[1][1]["items"]
-            }
-            self.assertEqual(imported_offers, set(transport.existing))
-            status = load_json(product_dir / "status.json")
-            self.assertEqual(status["history"][-2]["to"], "UPLOADING")
-            self.assertEqual(status["history"][-1]["to"], "PENDING_REMOTE")
-            self.assertTrue((product_dir / "output/ozon-idempotency.json").is_file())
-
-    def test_cross_category_update_is_blocked_before_import(self):
-        class DifferentCategoryTransport(RecordingTransport):
-            def __call__(self, endpoint, payload):
-                self.calls.append((endpoint, copy.deepcopy(payload)))
-                if endpoint == OzonWriteClient.PRODUCT_INFO_LIST_ENDPOINT:
-                    return {"items": [{
-                        "id": 5440271945 + index,
-                        "offer_id": offer_id,
-                        "description_category_id": 999001,
-                        "type_id": 999002,
-                    } for index, offer_id in enumerate(payload["offer_id"])]}
-                return super().__call__(endpoint, payload)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            reset_to_ozon_ready(product_dir, task_authorized=True)
-            transport = DifferentCategoryTransport()
-            with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
-                with self.assertRaisesRegex(UploadGateError, "cross-category UPDATE"):
-                    execute_upload(product_dir, client(transport), required_action="update")
-            self.assertEqual(
-                [endpoint for endpoint, _ in transport.calls],
-                [OzonWriteClient.PRODUCT_INFO_LIST_ENDPOINT],
-            )
-            report = load_json(product_dir / "output/ozon-category-migration-block.json")
-            self.assertEqual(report["status"], "BLOCKED")
-
-    def test_pending_import_converges_from_live_product_info_without_write(self):
-        class PendingButCreatedTransport:
-            def __init__(self):
-                self.calls = []
-
-            def __call__(self, endpoint, payload):
-                self.calls.append((endpoint, copy.deepcopy(payload)))
-                if endpoint == OzonWriteClient.IMPORT_INFO_ENDPOINT:
-                    return {"result": {"items": [
-                        {"offer_id": "P000009-5651472715741", "product_id": 0, "status": "pending", "errors": []},
-                        {"offer_id": "P000009-5651472715755", "product_id": 0, "status": "pending", "errors": []},
-                    ]}}
-                if endpoint == OzonWriteClient.PRODUCT_INFO_LIST_ENDPOINT:
-                    return {"items": [
-                        {
-                            "offer_id": offer_id, "id": product_id,
-                            "statuses": {"validation_status": "success", "moderate_status": "pending"},
-                            "model_info": {"model_id": 777}, "images": [], "primary_image": [],
-                        }
-                        for offer_id, product_id in (
-                            ("P000009-5651472715741", 5450526030),
-                            ("P000009-5651472715755", 5450438296),
-                        )
-                    ]}
-                if endpoint == OzonWriteClient.PRODUCT_ATTRIBUTES_ENDPOINT:
-                    return {"result": []}
-                raise AssertionError(endpoint)
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir, "P000009")
-            queue_path = product_dir.parent.parent / "remote-pending-queue.json"
-            queue_path.write_text(json.dumps({"items": [{"product_id": "P000009"}]}))
-            transport = PendingButCreatedTransport()
-            with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
-                result = recover_remote_import(product_dir, client(transport), timeout_seconds=1)
-            self.assertEqual(result["status"], "created")
-            self.assertEqual(
-                {item["product_id"] for item in result["items"]},
-                {5450526030, 5450438296},
-            )
-            self.assertEqual(load_json(product_dir / "status.json")["status"], "OZON_MODERATION")
-            self.assertEqual(load_json(queue_path)["items"], [])
-            self.assertNotIn(
-                OzonWriteClient.PRODUCT_IMPORT_ENDPOINT,
-                [endpoint for endpoint, _ in transport.calls],
-            )
-
-    def test_imported_item_with_error_level_is_failed(self):
-        response = {"result": {"items": [{
-            "offer_id": "P000004-3993658310173",
-            "product_id": 5440271945,
-            "status": "imported",
-            "errors": [{"code": "content_warning", "level": "error"}],
-        }]}}
-        result = _parse_import_result(
-            ROOT / "products/P000004", "zhonglian1", 70001, response,
-        )
-        self.assertEqual(result["status"], "failed")
-        self.assertEqual(result["errors"][0]["code"], "content_warning")
-        self.assertEqual(result["warnings"], [])
-
-    def test_imported_item_with_warning_level_remains_successful(self):
-        response = {"result": {"items": [{
-            "offer_id": "P000004-3993658310173",
-            "product_id": 5440271945,
-            "status": "imported",
-            "errors": [{"code": "content_warning", "level": "warning"}],
-        }]}}
-        result = _parse_import_result(
-            ROOT / "products/P000004", "zhonglian1", 70001, response,
-        )
-        self.assertEqual(result["status"], "created")
-        self.assertEqual(result["errors"], [])
-        self.assertEqual(result["warnings"][0]["code"], "content_warning")
-
-    def test_direct_write_is_impossible_in_default_dry_run_mode(self):
-        with tempfile.TemporaryDirectory() as temp_dir:
-            product_dir = copy_product(temp_dir)
-            transport = RecordingTransport()
-            with patch.dict(os.environ, {}, clear=True):
-                with self.assertRaisesRegex(UploadGateError, "UPLOAD_MODE"):
-                    execute_upload(product_dir, client(transport))
-            self.assertEqual(transport.calls, [])
-
-    def test_client_itself_rejects_network_calls_in_dry_run(self):
-        transport = RecordingTransport()
-        with patch.dict(os.environ, {}, clear=True):
-            with self.assertRaisesRegex(ValueError, "UPLOAD_MODE=production"):
-                client(transport).create_products([])
-        self.assertEqual(transport.calls, [])
-
 class LiveImageGateTest(unittest.TestCase):
-    def test_stale_final_pass_cannot_bypass_missing_detail_images_before_write(self):
-        """The upload entrypoint must re-check image-plan files, not trust old PASS."""
+    def test_stage_images_keeps_color_sample_alias_when_sku_main_exists(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P999998"
+            source = product / "output/generated-images/variant-main/sku-green.png"
+            source.parent.mkdir(parents=True)
+            from PIL import Image
+
+            Image.new("RGB", (900, 1200), color=(42, 96, 68)).save(source)
+            draft = {
+                "images": [{
+                    "slot": "main-sku-green",
+                    "role": "main",
+                    "variant_scope": "sku",
+                    "source_sku_id": "sku-green",
+                    "path": "products/P999998/output/generated-images/variant-main/sku-green.png",
+                }],
+            }
+            color_variants = {
+                "variants": [{
+                    "sku_id": "sku-green",
+                    "status": "mapped",
+                    "image": "products/P999998/output/generated-images/variant-main/sku-green.png",
+                }],
+            }
+
+            manifest = stage_images(product, draft, "2026-07-30T00:00:00Z", color_variants)
+
+            self.assertEqual(validate(manifest, SCHEMAS["images"]), [])
+            by_role = {item["role"]: item for item in manifest["images"]}
+            self.assertIn("variant_main", by_role)
+            self.assertIn("color", by_role)
+            self.assertEqual(by_role["color"]["slot"], "color-sku-green")
+            self.assertEqual(by_role["color"]["source_sku_id"], "sku-green")
+            self.assertEqual(by_role["color"]["local_path"], by_role["variant_main"]["local_path"])
+            self.assertEqual(by_role["color"]["staged_name"], by_role["variant_main"]["staged_name"])
+            self.assertEqual(by_role["color"]["sha256"], by_role["variant_main"]["sha256"])
+
+    def test_stage_images_adds_jlc_global_watermark_to_staged_copy_only(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P999999"
+            source = product / "output/generated-images/detail/detail-001.png"
+            source.parent.mkdir(parents=True)
+            from PIL import Image
+
+            Image.new("RGB", (900, 1200), color=(238, 241, 235)).save(source)
+            before_hash = sha256_file(source)
+            draft = {
+                "images": [{
+                    "slot": "detail-001",
+                    "role": "detail",
+                    "path": "products/P999999/output/generated-images/detail/detail-001.png",
+                }],
+            }
+
+            manifest = stage_images(product, draft, "2026-07-27T00:00:00Z")
+
+            item = manifest["images"][0]
+            staged = product / "output/ozon-image-staging" / item["staged_name"]
+            self.assertEqual(validate(manifest, SCHEMAS["images"]), [])
+            self.assertTrue(staged.is_file())
+            self.assertEqual(sha256_file(source), before_hash)
+            self.assertNotEqual(sha256_file(staged), before_hash)
+            self.assertEqual(item["sha256"], sha256_file(staged))
+            self.assertTrue(item["watermark_applied"])
+
+    def test_stale_draft_qc_status_does_not_block_current_passed_images(self):
+        with tempfile.TemporaryDirectory() as directory:
+            product = Path(directory) / "products/P000018"
+            output = product / "output"
+            image_root = output / "generated-images"
+            (image_root / "variant-main").mkdir(parents=True)
+            (image_root / "detail").mkdir(parents=True)
+            from PIL import Image
+            import io
+
+            buffer = io.BytesIO()
+            Image.new("RGB", (16, 16), color=(240, 240, 240)).save(buffer, format="PNG")
+            png = buffer.getvalue()
+            slots = [("main-sku-1", "variant-main/sku-1.png", "sku-1")]
+            slots.extend((f"detail-{index:03d}", f"detail/detail-{index:03d}.png", "all") for index in range(1, 9))
+            for _slot, rel, _sku in slots:
+                (image_root / rel).write_bytes(png)
+            plan = {
+                "main_images": [{
+                    "slot": "main-sku-1",
+                    "source_sku_id": "sku-1",
+                    "output_path": "products/P000018/output/generated-images/variant-main/sku-1.png",
+                    "status": "planned",
+                }],
+                "detail_images": [
+                    {
+                        "slot": f"detail-{index:03d}",
+                        "source_sku_id": "all",
+                        "output_path": f"products/P000018/output/generated-images/detail/detail-{index:03d}.png",
+                        "status": "planned",
+                    }
+                    for index in range(1, 9)
+                ],
+            }
+            (output / "image-plan.json").write_text(json.dumps(plan), encoding="utf-8")
+            (output / "image-qc-report.json").write_text(json.dumps({
+                "decision": "pass",
+                "images_checked": [
+                    {"slot": slot, "path": f"products/P000018/output/generated-images/{rel}"}
+                    for slot, rel, _sku in slots
+                ],
+            }), encoding="utf-8")
+            draft = {
+                "category": {"metadata_source": "ozon_seller_api"},
+                "description_category_id": 1,
+                "type_id": 2,
+                "stock": {"quantity": None, "warehouse_id": "unknown"},
+                "skus": [{"source_sku_id": "sku-1", "stock": None}],
+                "images": [
+                    {
+                        "slot": slot,
+                        "role": "main" if slot.startswith("main") else "detail",
+                        "path": f"products/P000018/output/generated-images/{rel}",
+                        "qc_status": "not_checked",
+                    }
+                    for slot, rel, _sku in slots
+                ],
+            }
+            (output / "ozon-draft.json").write_text(json.dumps(draft), encoding="utf-8")
+            config = {
+                "shop_name": "zhonglian1",
+                "brand": {"attribute_id": 31, "dictionary_value_id": 1, "value": "Нет бренда"},
+                "type": {"attribute_id": 32, "dictionary_value_id": 2, "value": "Контейнер"},
+                "sku_colors": [],
+                "sku_prices": [{"source_sku_id": "sku-1", "price": "100.00"}],
+                "currency_code": "CNY",
+                "vat": "0",
+                "stock_mode": "not_set",
+                "product_dimensions": {"length_mm": 100, "width_mm": 90, "height_mm": 80},
+                "package_dimensions": {"length_mm": 110, "width_mm": 100, "height_mm": 90},
+                "product_weight": {"value_g": 100},
+                "package_weight": {"value_g": 120},
+            }
+            metadata = {"category_id": 1, "type_id": 2, "attributes": [
+                {"attribute_id": 31, "allowed_values": [{"id": 1, "value": "Нет бренда"}]},
+                {"attribute_id": 32, "allowed_values": [{"id": 2, "value": "Контейнер"}]},
+            ]}
+            manifest = {
+                "images": [
+                    {
+                        "slot": slot,
+                        "role": "variant_main" if slot.startswith("main") else "detail",
+                        "local_path": f"products/P000018/output/generated-images/{rel}",
+                        "public_url": "https://images.example.test/image.png",
+                    }
+                    for slot, rel, _sku in slots
+                ],
+            }
+
+            preflight = build_preflight(
+                product, draft, {"task_authorized": True}, config, metadata, manifest, "2026-07-20T00:00:00Z"
+            )
+            generated = next(item for item in preflight["checks"] if item["name"] == "generated_images")
+            self.assertTrue(generated["passed"])
+            self.assertTrue(all(item["qc_status"] == "pass" for item in draft["images"]))
+
+    def test_current_image_gate_blocks_missing_detail_images_before_write(self):
+        """The upload entrypoint must re-check image-plan files before any write."""
         with tempfile.TemporaryDirectory() as directory:
             product = Path(directory) / "products/P000005"
             output = product / "output"
             output.mkdir(parents=True)
-            main = product / "output/images/main/sku-1.png"
+            main = product / "output/generated-images/variant-main/sku-1.png"
             main.parent.mkdir(parents=True)
             main.write_bytes(bytes.fromhex(
                 "89504e470d0a1a0a0000000d49484452000000010000000108060000001f15c489"
                 "0000000d49444154789c6360f8cfc000000301010018dd8db40000000049454e44ae426082"
             ))
             plan = {
-                "main_images": [{"slot": "main-sku-1", "source_sku_id": "sku-1", "output_path": "output/images/main/sku-1.png", "status": "generated"}],
-                "detail_images": [{"slot": f"detail-{index:03d}", "output_path": f"output/images/detail/detail-{index:03d}.png", "status": "generated"} for index in range(1, 9)],
+                "main_images": [{"slot": "main-sku-1", "source_sku_id": "sku-1", "output_path": "output/generated-images/variant-main/sku-1.png", "status": "generated"}],
+                "detail_images": [{"slot": f"detail-{index:03d}", "output_path": f"output/generated-images/detail/detail-{index:03d}.png", "status": "generated"} for index in range(1, 9)],
             }
             (output / "image-plan.json").write_text(json.dumps(plan), encoding="utf-8")
             (output / "ozon-draft.json").write_text(json.dumps({"skus": [{"source_sku_id": "sku-1"}]}), encoding="utf-8")
-            (output / "final-upload-check.json").write_text(json.dumps({
-                "schema_version": "1.0.0", "product_id": "P000005", "status": "PASS",
-                "upload_allowed": True, "checks": [{"name": "images_qc", "passed": True, "detail": "old"}],
-                "errors": [], "warnings": [],
-            }), encoding="utf-8")
-            (product / "status.json").write_text(json.dumps({"status": "OZON_READY"}), encoding="utf-8")
+            (product / "status.json").write_text(json.dumps({"status": "WAITING_MANUAL_REVIEW"}), encoding="utf-8")
             transport = RecordingTransport()
             with patch.dict(os.environ, {"UPLOAD_MODE": "production"}):
                 with self.assertRaises(UploadGateError):
                     execute_upload(product, client(transport))
-            refreshed = load_json(output / "final-upload-check.json")
-            self.assertEqual(refreshed["status"], "FAIL")
-            self.assertFalse(refreshed["upload_allowed"])
+            image_gate = current_upload_image_gate(product)
+            self.assertEqual(image_gate["status"], "FAIL")
+            self.assertFalse(image_gate["passed"])
             self.assertEqual(len(transport.calls), 0)
             self.assertFalse(current_image_completeness(product)["passed"])
 

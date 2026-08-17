@@ -53,7 +53,7 @@
       "additionalProperties": false,
       "required": ["status", "errors", "warnings", "checked_at"],
       "properties": {
-        "status": { "type": "string", "enum": ["not_checked", "pass", "failed"] },
+        "status": { "type": "string", "enum": ["not_checked", "pass", "failed", "submitted"] },
         "errors": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "warnings": { "type": "array", "items": { "type": "string", "minLength": 1 } },
         "checked_at": { "$ref": "#/$defs/unknownableString" }

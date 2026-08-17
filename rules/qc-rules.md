@@ -36,14 +36,14 @@
 - 失败必须记录原因。
 - 未知信息必须保留为 `unknown`。
 
-## 风格一致性检查
+## 视觉一致性检查
 
 每个 `qc-report.json` 必须包含以下检查：
 
-- `selected_style_match`: 图片是否符合 `style-profile.json` 选定风格。
+- `visual_direction_match`: 图片是否符合 `ozon-ecommerce-design.json` 选定的商品视觉方向。
 - `electronics_not_overly_home`: 电子产品是否被错误做成温馨家居风。
 - `outdoor_has_outdoor_scene`: 户外产品是否有真实户外场景。
 - `kitchen_has_kitchen_home_feel`: 厨房用品是否具备厨房或餐厨生活感。
-- `style_product_conflict`: 风格是否与商品类型、使用场景或购买动机冲突。
+- `visual_product_conflict`: 视觉方向是否与商品类型、使用场景或购买动机冲突。
 
-非当前品类的专项检查写为 `not_applicable`，不得省略。风格不匹配时至少为 `review_required`；明显冲突时必须为 `fail`。
+非当前品类的专项检查写为 `not_applicable`，不得省略。视觉方向不匹配时重新生成对应图片；明显商品身份冲突时必须为 `fail`。

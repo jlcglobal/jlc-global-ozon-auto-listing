@@ -100,10 +100,10 @@ class BatchConfirmationTest(unittest.IsolatedAsyncioTestCase):
             patch.object(workbench, "materialize_active_experience"),
         )
 
-    async def test_manual_workbench_batch_runs_immediately_then_waits_for_final_review(self):
+    async def test_workbench_batch_runs_immediately_and_uses_automatic_submission(self):
         contexts = self.patches()
         with contexts[0], contexts[1], contexts[2], contexts[3], contexts[4], contexts[5], \
-             patch.object(workbench, "workbench_settings", return_value={"auto_mode_enabled": False}), \
+             patch.object(workbench, "workbench_settings", return_value={"auto_mode_enabled": True}), \
              patch.object(workbench, "launch_or_enqueue_batch", return_value={"status": "started", "batch_id": "B-AUTO", "queue_position": 0}) as launch:
             result = await workbench.create_workbench_batch(FakeRequest({
                 "product_ids": ["P000101"], "store_ids": ["shop-a"],
@@ -111,19 +111,19 @@ class BatchConfirmationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "started")
         launch.assert_called_once()
         saved = json.loads(next((self.root / "batches").glob("B-*/batch.json")).read_text())
-        self.assertFalse(saved["auto_upload"])
+        self.assertTrue(saved["auto_upload"])
         self.assertEqual(saved["status"], "QUEUED")
-        self.assertEqual(saved["review_mode"], "manual")
+        self.assertEqual(saved["review_mode"], "automatic")
 
     async def test_authorized_failure_resumes_without_second_confirmation(self):
         write_json(self.product / "status.json", {
-            "product_id": "P000101", "status": "FAILED_HARD_BLOCKER",
+            "product_id": "P000101", "status": "NEEDS_ATTENTION",
             "current_step": "image_plan", "failed_step": "image_plan", "progress": 59,
             "task_authorized": True, "api_write_count": 0,
             "ozon": {"upload_status": "not_started"},
         })
         retry_batch = {
-            "batch_id": "B-RETRY", "product_count": 1, "auto_upload": False,
+            "batch_id": "B-RETRY", "product_count": 1, "auto_upload": True,
             "products": [{"product_id": "P000101"}],
         }
         with patch.object(workbench, "ROOT", self.root), \
@@ -143,7 +143,7 @@ class BatchConfirmationTest(unittest.IsolatedAsyncioTestCase):
         self.assertEqual(result["status"], "started")
         self.assertTrue(result["resumed_from_checkpoint"])
         launch.assert_called_once_with(retry_batch, "resume_failed_product")
-        snapshot.assert_not_called()
+        snapshot.assert_called_once_with(self.product, ["shop-a"], "B-RETRY")
 
     async def test_authorized_content_checkpoint_resumes_with_store_selection(self):
         write_json(self.product / "status.json", {
@@ -172,6 +172,37 @@ class BatchConfirmationTest(unittest.IsolatedAsyncioTestCase):
         self.assertTrue(result["resumed_from_checkpoint"])
         launch.assert_called_once_with(retry_batch, "resume_checkpoint")
         select_stores.assert_called_once()
+
+    async def test_continue_from_card_uses_saved_store_selection(self):
+        write_json(self.product / "status.json", {
+            "product_id": "P000101", "status": "NEEDS_ATTENTION",
+            "current_step": "image_generation", "failed_step": "image_generation",
+            "progress": 71, "task_authorized": True, "api_write_count": 0,
+            "ozon": {"upload_status": "not_started"},
+        })
+        workbench.select_stores(self.product, ["shop-a"], ["shop-a"])
+        retry_batch = {
+            "batch_id": "B-CARD-CONTINUE", "product_count": 1, "auto_upload": False,
+            "products": [{"product_id": "P000101", "target_store_ids": ["shop-a"]}],
+        }
+        with patch.object(workbench, "ROOT", self.root), \
+             patch.object(workbench, "PRODUCTS_DIR", self.root / "products"), \
+             patch.object(workbench, "connected_store_ids", return_value=["shop-a"]), \
+             patch.object(workbench, "reserved_product_batches", return_value={}), \
+             patch.object(workbench, "materialize_active_experience"), \
+             patch.object(workbench, "create_batch", return_value=retry_batch) as create_batch, \
+             patch.object(workbench, "save_batch_owner"), \
+             patch.object(workbench, "launch_or_enqueue_batch", return_value={"status": "started", "pid": 123, "queue_position": 0}) as launch:
+            result = await workbench.run_single_workbench_product(
+                "P000101", FakeRequest({"auto_upload": False})
+            )
+        self.assertEqual(result["status"], "started")
+        self.assertEqual(result["target_store_ids"], ["shop-a"])
+        self.assertEqual(result["target_store_id_source"], "saved_product_selection")
+        self.assertTrue(result["resumed_from_checkpoint"])
+        create_batch.assert_called_once()
+        self.assertEqual(create_batch.call_args.kwargs["target_store_ids"], ["shop-a"])
+        launch.assert_called_once_with(retry_batch, "resume_failed_product")
 
     def test_confirmation_prefers_sku_image_and_exposes_local_reference(self):
         batch = workbench.create_batch(self.root, ["P000101"], ["shop-a"], auto_upload=False)

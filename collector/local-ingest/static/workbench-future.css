@@ -206,6 +206,11 @@ input, textarea, select { border-color: #dcdde3; color: var(--text); background:
 .store-selector-popover { color: var(--text); background: #fff; border-color: var(--line); border-radius: 15px; box-shadow: 0 18px 48px rgba(39,39,55,.18); }
 .store-option { border-color: var(--line); border-radius: 11px; background: #f8f8fa; }
 .store-option input { accent-color: var(--violet); }
+.store-group-presets { border-color: #cfd6ee; background: #f6f7ff; }
+.store-group-presets > p { color: #4c467d; }
+.store-group-preset { color: var(--text); border-color: #c7cae4; background: #fff; border-radius: 9px; }
+.store-group-preset small { color: var(--muted); }
+.store-group-preset:hover:not(:disabled), .store-group-preset.selected { color: #322f62; border-color: var(--violet); background: #efedff; }
 .future-review-alerts:empty { display: none; }
 .future-review-alerts { max-height: min(220px, 24vh); margin-bottom: 10px; overflow-y: auto; padding-right: 3px; scrollbar-width: thin; }
 .future-review-alerts .task-summary, .future-review-alerts .live-progress { margin: 0 0 8px; }

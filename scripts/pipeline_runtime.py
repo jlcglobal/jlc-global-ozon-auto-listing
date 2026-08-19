@@ -28,6 +28,7 @@ PHASE_A_STEPS = [
 PHASE_B_STEPS = [
     "product_positioning", "ecommerce_design", "russian_copy", "field_completion",
     "image_plan", "image_generation", "image_qc",
+    "store_variant_assets",
     "ozon_upload",
 ]
 PIPELINE_STEPS = [*PHASE_A_STEPS, *PHASE_B_STEPS]
@@ -59,6 +60,7 @@ STEP_STATUS = {
     "upload_feasibility": "PRICED",
     "image_generation": "IMAGES_GENERATED",
     "image_qc": "IMAGES_GENERATED",
+    "store_variant_assets": "IMAGES_GENERATED",
     "field_completion": "CONTENT_GENERATED",
     "ozon_upload": "UPLOADING",
 }
@@ -135,6 +137,15 @@ def reconcile_completed_artifacts(product_dir: Path, status: Dict[str, Any]) -> 
 def normalize_checkpoint(status: Dict[str, Any]) -> Dict[str, Any]:
     status.pop("review", None)
     completed = list(dict.fromkeys(status.get("completed_steps") or ["collect_source"]))
+    # This is a no-op for ordinary single-store products.  Mark it complete
+    # while normalizing legacy checkpoints so an already upload-ready product
+    # does not regress merely because the multi-store asset stage was added.
+    if (
+        "image_qc" in completed
+        and "store_variant_assets" not in completed
+        and status.get("requires_store_variant_assets") is not True
+    ):
+        completed.append("store_variant_assets")
     # These legacy steps only rechecked outputs already produced by the
     # preceding step. Keep old products resumable without scheduling them.
     completed = [

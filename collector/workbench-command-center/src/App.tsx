@@ -32,6 +32,8 @@ import {
   bindSkuImage,
   deleteProductImage,
   deleteLocalProduct,
+  generateKeywordGrowthReport,
+  keywordGrowthReportDownloadUrl,
   loadBatchConfirmation,
   regenerateProductImage,
   retryFailedProductStores,
@@ -234,6 +236,7 @@ export default function App() {
   const [actionBusy, setActionBusy] = useState(false);
   const [stopBusy, setStopBusy] = useState(false);
   const [commandResult, setCommandResult] = useState<CommandResult | null>(null);
+  const [generatingKeywordGrowthReport, setGeneratingKeywordGrowthReport] = useState(false);
   const [drawerOpen, setDrawerOpen] = useState(false);
   const [drawerProductId, setDrawerProductId] = useState("");
   const [drawerFocus, setDrawerFocus] = useState<ProductDrawerFocus>("overview");
@@ -462,6 +465,18 @@ export default function App() {
       || "";
     if (preferred) setSelectedStoreId(preferred);
   }, [selectedStoreId, shops?.default_shop, shops?.items]);
+
+  useEffect(() => {
+    if (!selectedStoreId) return;
+    // The initial shop is selected after the shops request resolves. Always
+    // load that shop's own local Ozon catalog cache; never retain an unscoped
+    // cache left by another shop.
+    void refreshSearchVisibilityPlan(selectedStoreId).catch(() => null);
+    // refreshSearchVisibilityPlan is intentionally invoked only when the shop
+    // changes. Including its unstable hook identity would turn this into a
+    // request loop.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [selectedStoreId]);
 
   useEffect(() => {
     const liveProduct = products?.items.find(isActiveProductionProduct) || products?.items.find(isQueuedProductionProduct);
@@ -1039,6 +1054,23 @@ export default function App() {
     }
   }
 
+  async function handleGenerateKeywordGrowthReport() {
+    setCommandResult(null);
+    setGeneratingKeywordGrowthReport(true);
+    try {
+      const result = await generateKeywordGrowthReport();
+      setCommandResult({
+        tone: "ok",
+        message: `${result.notice || "关键词周报已生成"}（${result.keyword_count} 个关键词）`,
+      });
+      window.open(keywordGrowthReportDownloadUrl(), "_blank");
+    } catch (err) {
+      setCommandResult({ tone: "danger", message: err instanceof Error ? err.message : "关键词周报生成失败" });
+    } finally {
+      setGeneratingKeywordGrowthReport(false);
+    }
+  }
+
   async function handleStopBatch() {
     setStopBusy(true);
     setCommandResult(null);
@@ -1083,6 +1115,8 @@ export default function App() {
             canStopBatch={Boolean(system?.batch_running || batches?.running_pid)}
             stoppingBatch={stopBusy}
             onStopBatch={handleStopBatch}
+            onGenerateKeywordGrowthReport={handleGenerateKeywordGrowthReport}
+            generatingKeywordGrowthReport={generatingKeywordGrowthReport}
           />
           <div className="cockpit-grid">
             <PipelinePanel

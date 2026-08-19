@@ -974,6 +974,32 @@ def apply_upload_config(draft: Dict[str, Any], config: Dict[str, Any]) -> Dict[s
     return result
 
 
+def _compiled_model_name_config(
+    final_attributes: Optional[Dict[str, Any]],
+    fallback: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Prefer the compiler's product-level model name over a stale config."""
+    configured_id = int((fallback or {}).get("attribute_id") or 0)
+    if not final_attributes or configured_id <= 0:
+        return fallback or {}
+    for attribute in final_attributes.get("common_attributes") or final_attributes.get("attributes") or []:
+        if int(attribute.get("attribute_id") or attribute.get("id") or 0) != configured_id:
+            continue
+        value = str(
+            attribute.get("target_value")
+            or attribute.get("value")
+            or attribute.get("canonical_value")
+            or ""
+        ).strip()
+        if value and value.casefold() not in {"unknown", "none", "null"}:
+            return {
+                **fallback,
+                "value": value,
+                "source": "ozon_attributes_final_compiled_model_name",
+            }
+    return fallback or {}
+
+
 def build_preflight(
     product_dir: Path,
     draft: Dict[str, Any],
@@ -1902,8 +1928,18 @@ def build_import_items(
             _dictionary_attribute(config["brand"]),
             _dictionary_attribute(config["type"]),
         ]
-        model_config = config.get("model_name") or {}
+        # The category compiler owns the model field used by Ozon to merge
+        # variants.  A legacy upload config must not overwrite it.
+        model_config = _compiled_model_name_config(
+            final_attributes,
+            config.get("model_name") or {},
+        )
         if int(model_config.get("attribute_id") or 0) > 0:
+            # Attribute 9048 is Ozon's "model name for grouping".  Colour
+            # variants share one value so Ozon merges them into one card; a
+            # size/measurement group Ozon cannot merge (SEPARATE_CARDS_REQUIRED)
+            # needs a distinct per-SKU model name so Ozon does not fold them
+            # back into a single card.
             if separate_cards:
                 model_config = {
                     **model_config,

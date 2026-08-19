@@ -30,10 +30,17 @@ def now_iso() -> str:
 
 def project_relative(path: Path) -> str:
     resolved = path.resolve()
+    # A store-variant image workspace lives below the project root too.  Its
+    # source images must still be expressed as the portable product contract
+    # path, never as ``runtime/.../products/...``: that latter form resolves
+    # outside the isolated product when the design validator reads it back.
+    parts = resolved.parts
+    if "products" in parts:
+        products_index = parts.index("products")
+        return str(Path(*parts[products_index:]))
     try:
         return str(resolved.relative_to(ROOT.resolve()))
     except ValueError:
-        parts = resolved.parts
         try:
             products_index = parts.index("products")
         except ValueError:

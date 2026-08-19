@@ -158,7 +158,7 @@ async function loadPreview() {
         }
         activePageKind = isOzonPage ? "ozon" : "1688";
         latestCapture = await sendToTab(tab.id, { type: isOzonPage ? "COLLECTOR_OZON_PREVIEW" : "COLLECTOR_PREVIEW" });
-        if (!latestCapture || !latestCapture.is_collectable) {
+        if (!latestCapture || !latestCapture.is_collectable || latestCapture.error_code) {
             els.status.textContent = latestCapture?.reason || "当前页面不可采集";
             setResult(latestCapture || {});
             return;
@@ -187,9 +187,9 @@ async function loadPreview() {
             ? "可采集（SKU图片已完整加载）"
             : `可采集（SKU图片${skuCheck.withImages}/${skuCheck.total}，缺图已标记）`;
         els.title.textContent = latestCapture.title_cn || "unknown";
-        els.mainCount.textContent = latestCapture.main_images.length;
-        els.skuCount.textContent = latestCapture.skus.length;
-        els.detailCount.textContent = latestCapture.detail_images.length;
+        els.mainCount.textContent = Array.isArray(latestCapture.main_images) ? latestCapture.main_images.length : 0;
+        els.skuCount.textContent = Array.isArray(latestCapture.skus) ? latestCapture.skus.length : 0;
+        els.detailCount.textContent = Array.isArray(latestCapture.detail_images) ? latestCapture.detail_images.length : 0;
         els.capture.disabled = false;
         els.previewToggle.disabled = false;
         els.debugExport.disabled = false;

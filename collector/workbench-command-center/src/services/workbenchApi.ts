@@ -369,6 +369,24 @@ export function loadTrafficPerformancePlan() {
   return readJson<TrafficPerformancePlan>("/api/workbench/market-intelligence/traffic-performance/latest");
 }
 
+export interface KeywordGrowthReportResponse {
+  available: boolean;
+  excel_path: string;
+  keyword_count: number;
+  generated_at: string;
+  notice: string;
+}
+
+export function generateKeywordGrowthReport() {
+  return postJson<KeywordGrowthReportResponse>(
+    "/api/workbench/market-intelligence/keyword-growth-report",
+  );
+}
+
+export function keywordGrowthReportDownloadUrl() {
+  return assetUrl("/api/workbench/market-intelligence/keyword-growth-report/latest");
+}
+
 export function createOzonReferenceTasks(items: OzonReferenceTaskInput[], storeIds: string[]) {
   return postJson<CreateOzonReferenceTasksResponse>("/api/workbench/ozon-reference-tasks", {
     items,

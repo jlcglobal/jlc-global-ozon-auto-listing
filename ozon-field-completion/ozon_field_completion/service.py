@@ -2102,6 +2102,30 @@ def _auto_upload_config(
     }
 
 
+def _sync_upload_config_model_from_compiled_attributes(
+    config: Dict[str, Any], attributes: Dict[str, Any],
+) -> None:
+    """Make the legacy upload config follow the compiled Ozon merge key."""
+    model = config.get("model_name") or {}
+    model_attribute_id = int(model.get("attribute_id") or 0)
+    if model_attribute_id <= 0:
+        return
+    for attribute in attributes.get("common_attributes") or attributes.get("attributes") or []:
+        if int(attribute.get("attribute_id") or attribute.get("id") or 0) != model_attribute_id:
+            continue
+        value = str(
+            attribute.get("target_value")
+            or attribute.get("value")
+            or attribute.get("canonical_value")
+            or ""
+        ).strip()
+        if value and value.casefold() not in {"unknown", "none", "null"}:
+            model["value"] = value
+            model["source"] = "ozon_attributes_final_compiled_model_name"
+            config["model_name"] = model
+        return
+
+
 def build_package(
     product_dir: Path, write: bool = True, *, pre_image: bool = False,
 ) -> Dict[str, Any]:
@@ -2210,6 +2234,7 @@ def build_package(
     color_policy = build_color_variant_policy(product_dir.name, source, colors)
     build_attribute_fill_input(product_dir)
     attrs = compile_product_attributes(product_dir)
+    _sync_upload_config_model_from_compiled_attributes(config, attrs)
     # Field completion is the single draft outlet.  A new product legitimately
     # has no ozon-draft.json yet; create the deterministic base draft before
     # Rich Content tries to synchronize its image slots.
@@ -2246,6 +2271,7 @@ def build_package(
     if failures:
         raise ValueError("Field-completion schema validation failed: " + json.dumps(failures, ensure_ascii=False))
     if write:
+        write_json_atomic(config_path, config)
         for name, value in package.items():
             write_json_atomic(output / name, value)
         if workbench:

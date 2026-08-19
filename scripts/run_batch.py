@@ -800,6 +800,119 @@ def keep_prewrite_ozon_upload_automatic(product_dir: Path, step: str, reason: st
     return status
 
 
+def route_missing_multi_store_assets_automatically(
+    product_dir: Path,
+    step: str,
+    reason: str,
+) -> Dict[str, Any] | None:
+    """Rebuild absent multi-store variants before any Ozon write."""
+    if step != "ozon_upload" or "多店商品缺少" not in reason:
+        return None
+    design_path = product_dir / "output" / "ozon-ecommerce-design.json"
+    try:
+        design = load_json(design_path) if design_path.is_file() else {}
+    except (OSError, ValueError, json.JSONDecodeError):
+        design = {}
+    rewind_to = "store_variant_assets" if design.get("store_variants") else "ecommerce_design"
+    rewind_index = PIPELINE_STEPS.index(rewind_to)
+    invalidated = set(PIPELINE_STEPS[rewind_index:])
+    status = load_json(product_dir / "status.json")
+    previous = str(status.get("status") or "unknown")
+    status["completed_steps"] = [
+        item for item in (status.get("completed_steps") or []) if item not in invalidated
+    ]
+    status["pending_steps"] = [item for item in PIPELINE_STEPS if item not in status["completed_steps"]]
+    status.update({
+        "status": "IMAGES_GENERATED" if rewind_to == "store_variant_assets" else "PROCESSING",
+        "current_step": rewind_to,
+        "next_action": rewind_to,
+        "failed_step": "unknown",
+        "error_code": "unknown",
+        "error_message": "unknown",
+        "human_message": None,
+        "attention_required": False,
+        "active_step": None,
+        "last_run_at": now(),
+    })
+    warning = f"多店资料不完整，系统已自动回到 {rewind_to} 补齐各店独立资料和图片；无需人工操作。"
+    if warning not in status.setdefault("warnings", []):
+        status["warnings"].append(warning)
+    status.setdefault("history", []).append({
+        "from": previous,
+        "to": status["status"],
+        "at": now(),
+        "reason": f"Automatic multi-store asset repair before upload: {reason}",
+    })
+    write_json_atomic(product_dir / "status.json", status)
+    return status
+
+
+def continue_store_variant_assets_automatically(
+    product_dir: Path,
+    step: str,
+    reason: str,
+) -> Dict[str, Any] | None:
+    """Keep a long multi-store image run automatic instead of surfacing a blocker."""
+    if step != "store_variant_assets":
+        return None
+    try:
+        try:
+            from store_variant_assets import selected_store_ids, variant_asset_dir
+        except ModuleNotFoundError:
+            from scripts.store_variant_assets import selected_store_ids, variant_asset_dir
+        stores = selected_store_ids(product_dir)
+        ready = [store for store in stores if (variant_asset_dir(product_dir, store) / "asset-manifest.json").is_file()]
+    except (OSError, ValueError, json.JSONDecodeError):
+        stores, ready = [], []
+    pending = [store for store in stores if store not in ready]
+    status = load_json(product_dir / "status.json")
+    retries = status.setdefault("retry_count_by_step", {})
+    retries[step] = int(retries.get(step) or 0) + 1
+    status.update({
+        "status": "IMAGES_GENERATED",
+        "current_step": step,
+        "next_action": step,
+        "failed_step": "unknown",
+        "error_code": "unknown",
+        "error_message": "unknown",
+        "human_message": f"多店独立图片正在自动补齐：已完成 {len(ready)}/{len(stores)} 家，待补 {', '.join(pending) or '无'}。",
+        "attention_required": False,
+        "active_step": None,
+        "last_run_at": now(),
+        "store_variant_progress": {"total": len(stores), "ready_store_ids": ready, "pending_store_ids": pending},
+    })
+    warning = f"多店独立图片生成中断，系统将保留已通过图位并从断点自动继续；已完成 {len(ready)}/{len(stores)} 家。"
+    if warning not in status.setdefault("warnings", []):
+        status["warnings"].append(warning)
+    write_json_atomic(product_dir / "status.json", status)
+    return status
+
+
+def refresh_store_variant_progress(product_dir: Path) -> Dict[str, Any]:
+    """Persist the manifest-backed store count after a successful variant run."""
+    try:
+        try:
+            from store_variant_assets import selected_store_ids, variant_asset_dir
+        except ModuleNotFoundError:
+            from scripts.store_variant_assets import selected_store_ids, variant_asset_dir
+        stores = selected_store_ids(product_dir)
+        ready = []
+        for store_id in stores:
+            manifest_path = variant_asset_dir(product_dir, store_id) / "asset-manifest.json"
+            manifest = load_json(manifest_path) if manifest_path.is_file() else {}
+            if str(manifest.get("status") or "").upper() == "PASS":
+                ready.append(store_id)
+    except (OSError, ValueError, json.JSONDecodeError):
+        stores, ready = [], []
+    pending = [store_id for store_id in stores if store_id not in ready]
+    status = load_json(product_dir / "status.json")
+    status["store_variant_progress"] = {
+        "total": len(stores), "ready_store_ids": ready, "pending_store_ids": pending,
+    }
+    write_json_atomic(product_dir / "status.json", status)
+    return status
+
+
 def requested_image_slots_from_request(value: Dict[str, Any] | None) -> set[str]:
     """Read explicit image-regeneration slot names from all supported keys."""
     if not isinstance(value, dict):
@@ -1720,8 +1833,34 @@ def run_local_step(product_dir: Path, step: str, settings: Dict[str, Any], log_p
             "output/image-source-preflight.json",
         ])
         # The connected-Codex designer is the only commercial source.
-        # image-plan is generated directly from ozon-ecommerce-design.json.
-        run_checked([python, "scripts/ozon_ecommerce_designer_contract.py", str(product_dir), "--materialize"], log_path, timeout, product_dir)
+        # For an allowed multi-store group the master image lane deliberately
+        # becomes the first selected store's lane.  The remaining stores are
+        # generated in isolated workspaces by store_variant_assets after this
+        # lane has passed QC, instead of reusing the first store's pictures.
+        design_path = product_dir / "output/ozon-ecommerce-design.json"
+        design = load_json(design_path)
+        try:
+            try:
+                from store_variant_assets import selected_store_ids
+                from ozon_ecommerce_designer_contract import materialize, store_variant_design
+            except ModuleNotFoundError:
+                from scripts.store_variant_assets import selected_store_ids
+                from scripts.ozon_ecommerce_designer_contract import materialize, store_variant_design
+            selected_stores = selected_store_ids(product_dir)
+            projected_store_variant = len(selected_stores) > 1 and bool(design.get("store_variants"))
+            if projected_store_variant:
+                materialize(product_dir, store_variant_design(design, selected_stores[0]))
+                status = load_json(product_dir / "status.json")
+                status["requires_store_variant_assets"] = True
+                write_json_atomic(product_dir / "status.json", status)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"多店图片方案投影失败：{exc}") from exc
+        # ``materialize`` above already wrote the selected store's copy and
+        # plan.  Re-materializing from the generic file here used to replace
+        # that projection with whichever top-level variant happened to be
+        # persisted last, making the primary lane depend on registry order.
+        if not projected_store_variant:
+            run_checked([python, "scripts/ozon_ecommerce_designer_contract.py", str(product_dir), "--materialize"], log_path, timeout, product_dir)
         run_checked([python, "scripts/image_planner.py", str(product_dir), "--write"], log_path, timeout, product_dir)
         require_files(product_dir, ["output/image-plan.json"])
     elif step == "image_qc":
@@ -1759,6 +1898,22 @@ def run_local_step(product_dir: Path, step: str, settings: Dict[str, Any], log_p
             "output/ozon-attributes-final.json",
             "output/ozon-upload-config.json",
         ])
+    elif step == "store_variant_assets":
+        # This stage never calls Ozon.  It stores a separately generated and
+        # QC-checked visual set for every selected cross-entity store.
+        run_checked([
+            python, "scripts/store_variant_assets.py", str(product_dir), "--prepare",
+        ], log_path, timeout, product_dir)
+        try:
+            try:
+                from store_variant_assets import has_store_variants, selected_store_ids, verify_variant_assets
+            except ModuleNotFoundError:
+                from scripts.store_variant_assets import has_store_variants, selected_store_ids, verify_variant_assets
+            if has_store_variants(product_dir):
+                for store_id in selected_store_ids(product_dir):
+                    verify_variant_assets(product_dir, store_id)
+        except (OSError, ValueError, json.JSONDecodeError) as exc:
+            raise RuntimeError(f"多店独立图片资产校验失败：{exc}") from exc
     elif step == "measurements":
         run_checked([python, "pricing-engine/cli.py", str(product_dir), "--write"], log_path, timeout, product_dir)
         require_files(product_dir, ["output/cost-analysis.json", "output/pricing-result.json", "output/profit-analysis.json"])
@@ -3208,6 +3363,10 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
                 "所有图位默认用 generate_from_reference（参照生成）：参考图只锁定产品结构、颜色、比例和SKU差异这些事实，"
                 "生图模型重新生成一张照片级商品图+规整信息图排版，不拼贴供应商促销图的像素、不复制其3D渲染风、中文文字、水印或混入的其它变体结构。"
                 "标签最多30个，俄文#标签，禁止品牌、数字、英文和下划线；少于30个允许。"
+                "若ecommerce-design-context.json中store_cluster.selected_stores有两家或以上，必须额外写store_variants："
+                "每个已选store_id恰好一条，store_profile与上下文一致；每条都必须有独立listing、visual_system、"
+                "按当前SKU顺序的main_images以及正好8张detail_images。不同店铺的标题、简介、标签与图片方案必须按定位独立，"
+                "但SKU、真实属性、规格、结构、颜色、配件和来源证据绝不能改写；不得为同一营业主体建立重复变体。"
             )
         log_path = product_dir / "logs/full-pipeline.log"
         log_path.parent.mkdir(parents=True, exist_ok=True)
@@ -3461,6 +3620,8 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
             or after.get("next_action") != step
         )
         if completed.returncode == 0 and new_step_artifacts_are_complete():
+            if step == "store_variant_assets":
+                refresh_store_variant_progress(product_dir)
             complete_step(product_dir, step)
             cache_store(product_dir, step, cache_key)
             performance_finish(product_dir, step, started, False, "artifact_completed_after_worker_exit")
@@ -3555,6 +3716,32 @@ def run_one_step(product_dir: Path, settings: Dict[str, Any]) -> Dict[str, Any]:
         failed_step = str(status.get("failed_step") or status.get("current_step") or step)
         if step == "retry_failed_step":
             step = failed_step if failed_step in PIPELINE_STEPS else step
+        repaired_multi_store = route_missing_multi_store_assets_automatically(product_dir, step, str(exc))
+        if repaired_multi_store is not None:
+            performance_finish(
+                product_dir, step, locals().get("started", time.monotonic()), False,
+                "multi_store_assets_auto_repair", 0,
+            )
+            return {
+                "product_id": product_dir.name,
+                "outcome": "retry",
+                "step": repaired_multi_store.get("next_action"),
+                "error": str(exc),
+                "auto_resume": True,
+            }
+        resumed_store_variants = continue_store_variant_assets_automatically(product_dir, step, str(exc))
+        if resumed_store_variants is not None:
+            performance_finish(
+                product_dir, step, locals().get("started", time.monotonic()), False,
+                "store_variant_assets_auto_continue", 0,
+            )
+            return {
+                "product_id": product_dir.name,
+                "outcome": "retry",
+                "step": "store_variant_assets",
+                "error": str(exc),
+                "auto_resume": True,
+            }
         automatic = keep_prewrite_ozon_upload_automatic(product_dir, step, str(exc))
         if automatic is not None:
             performance_finish(
@@ -3613,7 +3800,7 @@ def step_group(status: Dict[str, Any]) -> str:
         return "category"
     if step == "measurements":
         return "pricing"
-    if step in {"ecommerce_design", "russian_copy", "product_positioning", "image_plan", "field_completion"}:
+    if step in {"ecommerce_design", "russian_copy", "product_positioning", "image_plan", "field_completion", "store_variant_assets"}:
         return "copy"
     return "analysis"
 

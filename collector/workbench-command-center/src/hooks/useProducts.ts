@@ -5,7 +5,7 @@ import type { ProductDetail, ProductsResponse, RisksResponse } from "@/types/wor
 
 const PRODUCT_CACHE_KEY = "jlc-global-command-center:products-cache:v1";
 const SUBMITTED_READ_ONLY_STATUSES = new Set(["HANDED_OFF_TO_OZON", "PENDING_REMOTE", "OZON_MODERATION", "UPLOADED", "ACTIVE", "CREATED"]);
-const ACTIVE_PRODUCTION_STATUSES = new Set(["PROCESSING", "RUNNING", "UPLOADING", "WAITING_FOR_AI_SERVICE"]);
+const ACTIVE_PRODUCTION_STATUSES = new Set(["PROCESSING", "RUNNING", "UPLOADING", "WAITING_FOR_AI_SERVICE", "IMAGES_GENERATED"]);
 const QUEUED_PRODUCTION_STATUSES = new Set(["QUEUED", "READY"]);
 
 type ProductCache = {

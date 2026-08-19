@@ -68,6 +68,21 @@ async def create_workbench_batch(request: Request) -> Dict[str, Any]:
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="批次内容格式错误")
     selected_stores = validate_target_stores(payload.get("store_ids") or [])
+    registry = list_stores(ROOT)
+    known_store_ids = {str(item.get("store_id") or "") for item in registry}
+    try:
+        # validate_target_stores is the authority for ordinary store existence
+        # and connection.  The extra group policy is applied when the actual
+        # registry is available; keeping that boundary also preserves offline
+        # test/workspace projections that substitute a target-store validator.
+        store_group = (
+            validate_store_group_selection(selected_stores, registry)
+            if all(store_id in known_store_ids for store_id in selected_stores)
+            else {"mode": "single_store", "store_ids": selected_stores}
+        )
+    except StoreGroupPolicyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    selected_stores = store_group["store_ids"]
     product_ids = payload.get("product_ids")
     if product_ids is not None and not isinstance(product_ids, list):
         raise HTTPException(status_code=422, detail="商品列表格式错误")
@@ -119,6 +134,7 @@ async def create_workbench_batch(request: Request) -> Dict[str, Any]:
         launched = launch_or_enqueue_batch(batch, launch_reason)
     return {
         **launched, "product_count": batch["product_count"], "target_store_ids": selected_stores,
+        "store_group": store_group,
         "auto_upload": batch["auto_upload"], "write_api_calls": 0, "inventory_api_calls": 0,
     }
 

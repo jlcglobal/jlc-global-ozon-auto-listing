@@ -205,7 +205,15 @@ def effective_product_status(
     # tests/secondary workspaces isolated from the main repository's cutover
     # marker while preserving the normal workbench behaviour.
     state_root = product_dir.parents[1] if len(product_dir.parents) > 1 else ROOT
-    if task_snapshot is not None or cutover_active(state_root):
+    # A repair/rebuild of a previously submitted multi-store card is newer
+    # than the historical Ozon publication snapshot.  Do not let the old
+    # remote task mask the local "assets still being rebuilt" state; otherwise
+    # the workbench falsely says "Ozon已接收" while three stores have no card.
+    rebuilding_store_variants = (
+        status.get("requires_store_variant_assets") is True
+        and "store_variant_assets" not in (status.get("completed_steps") or [])
+    )
+    if not rebuilding_store_variants and (task_snapshot is not None or cutover_active(state_root)):
         snapshot = task_snapshot if task_snapshot is not None else product_snapshot(state_root, product_dir.name)
         canonical = snapshot.get("product")
         canonical_status = snapshot_effective_aggregate_status(snapshot)
@@ -3410,6 +3418,105 @@ def product_output_image_path(product_dir: Path, raw_path: Any) -> Optional[Path
     return resolved
 
 
+def workbench_store_variants(
+    product_dir: Path,
+    stores: List[Dict[str, Any]],
+    publications: Dict[str, Any],
+    status: Dict[str, Any],
+) -> Dict[str, Any]:
+    """Expose only committed per-store assets for the workbench preview.
+
+    A store workspace can contain a copied primary lane while its own generation
+    is still running. It must never be presented as that store's independent
+    images, so a manifest is the completion boundary.
+    """
+    selected_ids = [
+        str(store_id)
+        for store_id, record in (publications.get("stores") or {}).items()
+        if isinstance(record, dict) and record.get("selected") is True
+    ]
+    # Keep the primary shop first in both the production pipeline and the UI.
+    primary_order = {"zhonglian1": 0, "zhonglian2": 1, "zhonglian5": 2, "jlc-blobal-6": 3}
+    selected_ids.sort(key=lambda store_id: (primary_order.get(store_id, 99), store_id))
+    if not selected_ids:
+        return {"total": 0, "ready": 0, "items": []}
+    store_by_id = {str(store.get("id")): store for store in stores if isinstance(store, dict)}
+    design = load_optional_json(product_dir / "output/ozon-ecommerce-design.json")
+    design_by_store = {
+        str(item.get("store_id")): item
+        for item in design.get("store_variants") or []
+        if isinstance(item, dict) and str(item.get("store_id") or "").strip()
+    }
+    progress = status.get("store_variant_progress") or {}
+    ready_ids = {str(value) for value in progress.get("ready_store_ids") or []}
+    pending_ids = {str(value) for value in progress.get("pending_store_ids") or []}
+    allowed_suffixes = {".png", ".jpg", ".jpeg", ".webp"}
+    items: List[Dict[str, Any]] = []
+    for store_id in selected_ids:
+        store = store_by_id.get(store_id) or {}
+        variant = design_by_store.get(store_id) or {}
+        listing = variant.get("listing") if isinstance(variant.get("listing"), dict) else {}
+        profile = store.get("store_profile") if isinstance(store.get("store_profile"), dict) else {}
+        variant_root = product_dir / "output" / "store-variants" / store_id
+        manifest = load_optional_json(variant_root / "asset-manifest.json")
+        complete = str(manifest.get("status") or "").upper() == "PASS"
+        generated_root = variant_root / "generated-images"
+        preview_root = (
+            ROOT / "runtime" / "store-variant-image-workspaces" / product_dir.name
+            / store_id / "products" / product_dir.name / "output" / "generated-images"
+        )
+        images: List[Dict[str, Any]] = []
+        image_root = generated_root if complete else preview_root
+        preview_active = (
+            not complete
+            and str(status.get("current_step") or "") == "store_variant_assets"
+            and isinstance(status.get("active_step"), dict)
+            and str((status.get("active_step") or {}).get("name") or "") == "store_variant_assets"
+            and running_batch_pid() is not None
+        )
+        if (complete or preview_active) and image_root.is_dir():
+            for image_path in sorted(path for path in image_root.rglob("*") if path.is_file() and path.suffix.lower() in allowed_suffixes):
+                relative_path = image_path.relative_to(image_root).as_posix()
+                images.append({
+                    "slot": image_path.stem,
+                    "path": relative_path,
+                    "type": "main" if "variant-main" in image_path.parts else "detail",
+                    "preview": not complete,
+                    "url": f"/api/workbench/products/{product_dir.name}/store-variants/{store_id}/images/{urllib.parse.quote(relative_path, safe='/')}",
+                })
+        image_count = len(images)
+        state = "ready" if complete else "generating" if store_id in pending_ids or store_id not in ready_ids else "waiting"
+        message = (
+            f"独立图片已完成：{image_count}/11 张"
+            if complete else f"正在生成：{image_count}/11 张为未质检预览，完成后转为正式图片。"
+            if image_count else "正在生成独立商品卡和图片，完成后会在这里显示。"
+            if state == "generating" else "等待独立商品卡和图片生成。"
+        )
+        items.append({
+            "store_id": store_id,
+            "display_name": store.get("display_name") or store_id,
+            "profile_label": profile.get("label") or variant.get("store_profile") or "店铺版本",
+            "title_ru": listing.get("seo_title_ru") or "资料生成中",
+            "state": state,
+            "image_count": image_count,
+            "expected_image_count": 11,
+            "message": message,
+            "images": images,
+        })
+    return {"total": len(items), "ready": sum(item["state"] == "ready" for item in items), "items": items}
+
+
+def live_store_variant_progress(product_dir: Path, status: Dict[str, Any]) -> Tuple[List[str], List[str], int]:
+    """Read durable manifests so the dashboard never lags the active worker."""
+    stores = list_stores(ROOT)
+    publications = load_publications(product_dir, [store["id"] for store in stores])
+    variants = workbench_store_variants(product_dir, stores, publications, status)
+    items = variants.get("items") or []
+    ready = [str(item.get("store_id")) for item in items if item.get("state") == "ready"]
+    pending = [str(item.get("store_id")) for item in items if item.get("state") != "ready"]
+    return ready, pending, int(variants.get("total") or len(items))
+
+
 def regeneration_slot_names(value: Any) -> List[str]:
     """Accept both legacy slot strings and detailed retry records."""
     names: List[str] = []
@@ -3670,6 +3777,12 @@ def workbench_pipeline_progress(product_dir: Path, status: Dict[str, Any], image
     elif step == "image_generation" and planned_images:
         slot_text = f"；当前：{'、'.join(active_slots)}" if active_slots else ""
         status_note = f"图片进度：已生成 {generated_images}/{planned_images}，已通过 {completed_images}/{planned_images}{slot_text}。"
+    elif step == "store_variant_assets":
+        ready, pending, total = live_store_variant_progress(product_dir, status)
+        status_note = (
+            f"多店独立资料补齐中：已完成 {len(ready)}/{total} 家"
+            f"；待补 {'、'.join(pending) if pending else '无'}。"
+        )
     elif step == "ecommerce_design":
         if str(status.get("ai_service_state") or "") == "waiting_for_recovery":
             status_note = str(status.get("error_message") or "").strip() or "电商设计等待联网模型恢复，断点已保留。"
@@ -3850,6 +3963,27 @@ def product_ui_state(
 
     def action(action_id: str, label: str, enabled: bool = True, reason: str = "") -> Dict[str, Any]:
         return {"id": action_id, "label": label, "enabled": enabled, "reason": reason}
+
+    if (
+        status.get("requires_store_variant_assets") is True
+        and "store_variant_assets" not in (status.get("completed_steps") or [])
+    ):
+        ready, pending, total = live_store_variant_progress(product_dir, status)
+        return {
+            "schema_version": "1.0.0",
+            "kind": "workbench_collection",
+            "state": "store_variants_generating",
+            "tone": "running",
+            "title": "多店资料补齐中",
+            "message": (
+                f"已完成 {len(ready)}/{total} 家店铺的独立商品卡与图片；"
+                f"正在补齐 {'、'.join(pending) if pending else '剩余店铺'}。完成后才会重新提交 Ozon。"
+            ),
+            "progress_label": "多店资料生成中",
+            "blocking": False,
+            "primary_action": action("generation_running", "自动生成中", False, "多店资料正在后台补齐"),
+            "secondary_actions": [action("view_details", "查看详情")],
+        }
 
     if source_kind == "ozon_reference_draft":
         if raw_status in REMOTE_PENDING_PUBLICATION_STATES or readiness_state == "submitted_read_only":
@@ -4533,6 +4667,7 @@ def workbench_product_detail(product_id: str) -> Dict[str, Any]:
     )
     stores = list_stores(ROOT)
     publications = load_publications(product_dir, [store["id"] for store in stores])
+    store_variants = workbench_store_variants(product_dir, stores, publications, status)
     assessment = prelisting_assessment(pricing, qc, risk)
     images = workbench_images(product_dir, plan, qc, status)
     pipeline_progress = workbench_pipeline_progress(product_dir, status, images)
@@ -4597,6 +4732,7 @@ def workbench_product_detail(product_id: str) -> Dict[str, Any]:
         "stores": stores,
         "publications": publications,
         "publication_summary": publication_summary(publications),
+        "store_variants": store_variants,
         "ai_suggestions": build_ai_suggestions(product_dir, content, risk, qc),
         "ozon": status.get("ozon") or {},
         "timeline": readable_timeline(status, product_dir),

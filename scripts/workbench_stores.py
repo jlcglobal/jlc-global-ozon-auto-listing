@@ -9,6 +9,11 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Mapping, Optional
 
+try:
+    from scripts.store_cluster_profiles import normalize_profile, profile_from_store
+except ModuleNotFoundError:
+    from store_cluster_profiles import normalize_profile, profile_from_store
+
 
 def now() -> str:
     return datetime.now(timezone.utc).astimezone().isoformat(timespec="seconds")
@@ -58,6 +63,8 @@ def load_registry(root: Path) -> Dict[str, Any]:
         shop.setdefault("last_validated_at", None)
         shop.setdefault("last_validation_error", None)
         shop.setdefault("default_currency_code", "CNY")
+        shop["store_profile"] = normalize_profile(shop.get("store_profile"))
+        shop.setdefault("business_entity", "unknown")
         shop.setdefault("client_id_env", f"OZON_{store_id.upper().replace('-', '_')}_CLIENT_ID")
         shop.setdefault("api_key_env", f"OZON_{store_id.upper().replace('-', '_')}_API_KEY")
         path = secret_path(root, store_id)
@@ -124,6 +131,8 @@ def public_store(root: Path, shop: Mapping[str, Any]) -> Dict[str, Any]:
         "credentials_display": "已配置" if all(configured.values()) else "未配置",
         "last_validated_at": shop.get("last_validated_at"),
         "last_validation_error": shop.get("last_validation_error") if validation == "failed" else None,
+        "store_profile": profile_from_store(shop),
+        "business_entity": shop.get("business_entity") or "unknown",
         **store_stats(root, str(shop["id"])),
     }
 
@@ -160,6 +169,8 @@ def upsert_store(root: Path, payload: Mapping[str, Any], store_id: Optional[str]
         "default_vat": current.get("default_vat", "0"),
         "default_unbranded_value": current.get("default_unbranded_value", "Нет бренда"),
         "default_unbranded_dictionary_value_id": current.get("default_unbranded_dictionary_value_id", 126745801),
+        "store_profile": normalize_profile(payload.get("store_profile", current.get("store_profile"))),
+        "business_entity": str(payload.get("business_entity", current.get("business_entity") or "unknown")).strip() or "unknown",
     })
     client_id = str(payload.get("client_id") or "").strip()
     api_key = str(payload.get("api_key") or "").strip()

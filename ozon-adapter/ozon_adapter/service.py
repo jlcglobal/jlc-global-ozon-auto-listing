@@ -410,14 +410,17 @@ def normalize_attribute(
         elif attribute_id == 8229 and isinstance(page, dict) and values_path is not None:
             write_json_atomic(values_path, page)
         if not isinstance(page, dict):
-            if not bool(item.get("is_required", item.get("required", False))):
-                page = {"values": [], "truncated": False}
-            else:
-                page = _cached_response(
-                    values_path,
-                    lambda: client.get_attribute_values(category_id, type_id, attribute_id),
-                    max_age_hours,
-                )
+            # Optional dictionary fields are still platform contracts.  In
+            # particular, Ozon's colour field (10096) rejects handwritten
+            # text and will not merge variants unless its dictionary value ID
+            # is present.  Fetch a missing dictionary once and keep it in the
+            # local cache; _cached_response deliberately never refreshes a
+            # verified cached dictionary just because it is old.
+            page = _cached_response(
+                values_path,
+                lambda: client.get_attribute_values(category_id, type_id, attribute_id),
+                max_age_hours,
+            )
         values_truncated = page["truncated"]
         for value in page["values"]:
             value_id = _positive_int(value.get("id"))

@@ -258,7 +258,10 @@ export function PipelinePanel({
   const localProducts = products || [];
   const inboxProducts = useMemo(() => localProducts.filter(isLocalQueueProduct), [localProducts]);
   const attentionProducts = useMemo(() => localProducts.filter(isAttentionProduct), [localProducts]);
-  const searchActions = searchVisibilityPlan?.actions || [];
+  const searchPlanMatchesStore = !selectedStoreId || !searchVisibilityPlan?.shop_id || searchVisibilityPlan.shop_id === selectedStoreId;
+  // Do not render a stale plan from another shop while the selected shop's
+  // cache is being read. This keeps the badge and product list consistent.
+  const searchActions = searchPlanMatchesStore ? (searchVisibilityPlan?.actions || []) : [];
   const shopOptions = (shops?.length ? shops : searchVisibilityPlan?.shop_id ? [{
     id: searchVisibilityPlan.shop_id,
     display_name: searchVisibilityPlan.shop_id,
@@ -267,7 +270,6 @@ export function PipelinePanel({
   const selectedShop = shopOptions.find((shop) => shop.id === selectedStoreId)
     || shopOptions.find((shop) => shop.id === searchVisibilityPlan?.shop_id)
     || shopOptions[0];
-  const searchPlanMatchesStore = !selectedStoreId || !searchVisibilityPlan?.shop_id || searchVisibilityPlan.shop_id === selectedStoreId;
   const normalizedQuery = query.trim().toLowerCase();
 
   useEffect(() => {
@@ -472,7 +474,7 @@ export function PipelinePanel({
           <div className="workspace-products">
             {activeTab === "ozon" ? (
               !searchPlanMatchesStore ? (
-                <div className="queue-empty">这个店铺还没更新搜索词</div>
+                <div className="queue-empty">正在读取当前店铺已缓存的 Ozon 商品信息</div>
               ) : visibleOzonActions.length ? (
                 <>
                   {sidebarOzonActions.map(renderOzonAction)}

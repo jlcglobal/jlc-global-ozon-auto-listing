@@ -14,8 +14,10 @@ from typing import Any, Dict, List, Set
 
 try:
     from scripts.product_fact_merger import build_product_fact_lock, merge_product_facts, sha256_json, file_sha256
+    from scripts.store_publications import load_publications
 except ModuleNotFoundError:
     from product_fact_merger import build_product_fact_lock, merge_product_facts, sha256_json, file_sha256
+    from store_publications import load_publications
 
 ROOT = Path(__file__).resolve().parents[1]
 BUILDER_VERSION = "attribute-fill-input-v5-category-attribute-plan"
@@ -341,6 +343,40 @@ def build_ecommerce_design_context(value: Dict[str, Any]) -> Dict[str, Any]:
             "Use this small file for ecommerce design. Full Ozon attributes are compiled later by field_completion; "
             "do not enumerate dictionaries or required fields here."
         ),
+    }
+
+
+def store_cluster_design_context(product_dir: Path) -> Dict[str, Any]:
+    """Expose only selected-store positioning, never credentials, to the designer."""
+    # Publication selection is SQLite-backed after cutover.  Reading the old
+    # JSON file here lost selected stores for resumed products, so the designer
+    # silently produced one master card for every store.  Always use the same
+    # projection used by the uploader.
+    publications = load_publications(product_dir)
+    selected = {
+        str(store_id)
+        for store_id, record in (publications.get("stores") or {}).items()
+        if isinstance(record, dict) and record.get("selected")
+    }
+    registry = load_optional_json(ROOT / "ozon-adapter/shops.json")
+    profiles = []
+    for shop in registry.get("shops") or []:
+        if not isinstance(shop, dict):
+            continue
+        store_id = str(shop.get("id") or shop.get("name") or "")
+        if store_id not in selected:
+            continue
+        profiles.append({
+            "store_id": store_id,
+            "store_profile": str(shop.get("store_profile") or "standard"),
+            "business_entity": str(shop.get("business_entity") or "unknown"),
+        })
+    return {
+        "single_entity_duplicate_rule": (
+            "A different title, price or image is not evidence of a different physical product. "
+            "Make a separate listing/image variant only for each selected store from a different business entity."
+        ),
+        "selected_stores": profiles,
     }
 
 
@@ -680,7 +716,9 @@ def build_attribute_fill_input(product_dir: Path) -> Dict[str, Any]:
     }
     write_json_atomic(output / "attribute-fill-input.json", value)
     write_json_atomic(output / COMPACT_FILENAME, build_compact_attribute_fill_input(value))
-    write_json_atomic(output / DESIGN_CONTEXT_FILENAME, build_ecommerce_design_context(value))
+    context = build_ecommerce_design_context(value)
+    context["store_cluster"] = store_cluster_design_context(product_dir)
+    write_json_atomic(output / DESIGN_CONTEXT_FILENAME, context)
     return value
 
 

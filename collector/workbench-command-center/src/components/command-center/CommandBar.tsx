@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { motion } from "framer-motion";
-import { ChartPie, Link2, ListChecks, PackageSearch, Plus, Power, Settings, Workflow } from "lucide-react";
+import { ChartPie, FileSpreadsheet, Link2, ListChecks, PackageSearch, Plus, Power, Settings, Workflow } from "lucide-react";
 import jlcLogo from "@/assets/jlc-global-logo.png";
 import { Button } from "@/components/ui/button";
 import { Dialog, DialogContent, DialogDescription, DialogHeader, DialogTitle, DialogTrigger } from "@/components/ui/dialog";
@@ -30,6 +30,8 @@ export function CommandBar({
   canStopBatch,
   stoppingBatch,
   onStopBatch,
+  onGenerateKeywordGrowthReport,
+  generatingKeywordGrowthReport,
 }: {
   system?: SystemStatus | null;
   onOpenBatchLauncher: () => void;
@@ -42,6 +44,8 @@ export function CommandBar({
   canStopBatch?: boolean;
   stoppingBatch?: boolean;
   onStopBatch: () => void;
+  onGenerateKeywordGrowthReport?: () => void;
+  generatingKeywordGrowthReport?: boolean;
 }) {
   const clock = useClock();
   return (
@@ -125,6 +129,18 @@ export function CommandBar({
         <Button className="command-secondary-action" variant="secondary" size="sm" onClick={onOpenOzonReferenceLauncher} title="Ozon参考上架" aria-label="Ozon参考上架">
           <Link2 className="h-4 w-4" />
           <span className="command-action-label">Ozon参考上架</span>
+        </Button>
+        <Button
+          className="command-secondary-action"
+          variant="secondary"
+          size="sm"
+          onClick={onGenerateKeywordGrowthReport}
+          disabled={!onGenerateKeywordGrowthReport || generatingKeywordGrowthReport}
+          title="生成 Ozon 关键词增长机会周报"
+          aria-label="关键词周报"
+        >
+          <FileSpreadsheet className="h-4 w-4" />
+          <span className="command-action-label">{generatingKeywordGrowthReport ? "生成中" : "关键词周报"}</span>
         </Button>
         <Button variant="secondary" size="icon" aria-label="店铺设置" onClick={onOpenStoreManager}>
           <Settings className="h-4 w-4" />

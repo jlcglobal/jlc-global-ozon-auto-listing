@@ -23,10 +23,70 @@ const STEP_LABELS = {
   offer_exists_check: "检查Ozon是否已有商品", upload_feasibility: "检查上传条件",
   product_positioning: "确定商品定位", ecommerce_design: "设计完整上架与图片销售方案", russian_copy: "生成俄文标题和文案",
   image_plan: "规划图片方案", image_generation: "生成商品图片",
-  image_qc: "进行图片质检", field_completion: "填写Ozon属性",
+  image_qc: "进行图片质检", store_variant_assets: "生成各店独立图片", field_completion: "填写Ozon属性",
   ozon_upload: "提交Ozon",
   manual_ozon_upload: "等待手动上传",
 };
+
+const STORE_GROUP_PRESETS = [
+  {
+    id: "1256",
+    label: "组合 1256",
+    storeIds: ["zhonglian1", "zhonglian2", "zhonglian5", "jlc-blobal-6"],
+    description: "1、2、5、6 · 四个不同主体",
+  },
+  {
+    id: "V346",
+    label: "组合 V346",
+    storeIds: ["volttech", "zhonglian3", "zhonglian4", "jlc-blobal-6"],
+    description: "V、3、4、6 · 四个不同主体",
+  },
+];
+
+function currentStoreSelectionRule() {
+  const selected = [...state.selectedStoreIds];
+  if (!selected.length) return {mode:"empty"};
+  if (selected.length === 1) return {mode:"single_store", storeIds:selected};
+  const preset = STORE_GROUP_PRESETS.find((item) =>
+    item.storeIds.length === selected.length && item.storeIds.every((storeId) => state.selectedStoreIds.has(storeId))
+  );
+  return preset ? {mode:"preset", preset, storeIds:preset.storeIds} : {mode:"invalid", storeIds:selected};
+}
+
+function storeSelectionHelp(rule = currentStoreSelectionRule()) {
+  if (rule.mode === "preset") return `已选择 ${rule.preset.label}：${rule.preset.description}`;
+  if (rule.mode === "single_store") return "单店上架：只生成这一家店的商品卡。";
+  if (rule.mode === "invalid") return "多店仅允许组合 1256 或 V346；其他情况请只选一家店。";
+  return "请选择一家店，或直接选择跨主体组合 1256 / V346。";
+}
+
+function refreshStoreSelectionUi() {
+  const rule = currentStoreSelectionRule();
+  const invalid = rule.mode === "invalid";
+  root.querySelectorAll("[data-product-store]").forEach((input) => {
+    input.checked = state.selectedStoreIds.has(input.dataset.productStore);
+  });
+  const note = root.querySelector("[data-store-selection-help]");
+  if (note) {
+    note.textContent = storeSelectionHelp(rule);
+    note.classList.toggle("error", invalid);
+  }
+  const button = root.querySelector('[data-action="run-product"]');
+  if (button) {
+    const readyToUpload = String(state.currentProduct?.status?.status || "").toUpperCase() === "WAITING_MANUAL_REVIEW";
+    const blocked = (state.currentProduct?.stores || []).some((shop) =>
+      state.selectedStoreIds.has(shop.id) && (!shop.enabled || shop.connection_status !== "connected")
+    );
+    button.textContent = readyToUpload
+      ? `确认修改并立即上传（${state.selectedStoreIds.size} 家店铺）`
+      : `运行任务（${state.selectedStoreIds.size} 家店铺）`;
+    button.disabled = blocked || invalid || !state.selectedStoreIds.size || state.draftSaveFailed;
+  }
+  const saveStores = root.querySelector('[data-action="save-product-stores"]');
+  if (saveStores) saveStores.disabled = !state.selectedStoreIds.size || invalid;
+  const summary = root.querySelector("details.store-selector summary");
+  if (summary) summary.textContent = `上传至 ${state.selectedStoreIds.size} 家店铺`;
+}
 
 function isNeedsAttentionStatus(value) {
   return ["NEEDS_ATTENTION", "FAILED"].includes(String(value || "").toUpperCase());
@@ -887,9 +947,6 @@ async function renderReview(options = {}) {
   const product = state.currentProduct;
   const waitingForAi = aiServiceWaiting(product);
   state.selectedStoreIds = new Set(Object.values(product.publications?.stores || {}).filter((item) => item.selected).map((item) => item.store_id));
-  if (!state.selectedStoreIds.size) {
-    (product.stores || []).filter((shop) => shop.enabled && shop.connection_status === "connected").forEach((shop) => state.selectedStoreIds.add(shop.id));
-  }
   const rawStatus = String(product.status?.status || "").toUpperCase();
   const priorityUpload = (state.queueSummary?.priority_product_ids || []).includes(product.product_id);
   const terminalPublication = isTerminalStatus(rawStatus);
@@ -1282,7 +1339,16 @@ function renderReviewStoreSelector(product) {
     const selected = state.selectedStoreIds.has(shop.id);
     return `<label class="store-option ${available ? "" : "unavailable"}"><input type="checkbox" data-product-store="${escapeHtml(shop.id)}" ${selected ? "checked" : ""} ${available || selected ? "" : "disabled"}><span><strong>${escapeHtml(shop.display_name)}</strong><small>${storeStatusLabel(shop.connection_status)} · ${shop.credentials_display}${shop.last_validation_error ? ` · ${escapeHtml(storeConnectionIssue(shop))}` : ""}</small></span>${available ? "" : `<span class="status-pill medium">不可上传</span>`}</label>`;
   }).join("");
-  return `<details class="store-selector"><summary>上传至 ${state.selectedStoreIds.size} 家店铺</summary><div class="store-selector-popover"><div class="store-options">${options || `<p class="form-help">请先到店铺中心添加并验证店铺</p>`}</div><div class="store-card-actions"><button class="secondary-button" data-action="select-all-stores" type="button">全选可用</button><button class="primary-button" data-action="save-product-stores" type="button" ${state.selectedStoreIds.size ? "" : "disabled"}>保存选择</button></div></div></details>`;
+  const rule = currentStoreSelectionRule();
+  const presets = STORE_GROUP_PRESETS.map((preset) => {
+    const unavailable = preset.storeIds.filter((storeId) => {
+      const shop = stores.find((item) => item.id === storeId);
+      return !shop || !shop.enabled || shop.connection_status !== "connected";
+    });
+    const selected = rule.mode === "preset" && rule.preset.id === preset.id;
+    return `<button class="store-group-preset ${selected ? "selected" : ""}" data-action="select-store-group" data-store-group="${preset.id}" type="button" ${unavailable.length ? "disabled" : ""}><strong>${preset.label}</strong><small>${escapeHtml(preset.description)}${unavailable.length ? " · 有店铺不可用" : ""}</small></button>`;
+  }).join("");
+  return `<details class="store-selector"><summary>上传至 ${state.selectedStoreIds.size} 家店铺</summary><div class="store-selector-popover"><div class="store-group-presets"><p>跨主体组合</p><div>${presets}</div><small data-store-selection-help class="${rule.mode === "invalid" ? "error" : ""}">${escapeHtml(storeSelectionHelp(rule))}</small></div><div class="store-options">${options || `<p class="form-help">请先到店铺中心添加并验证店铺</p>`}</div><div class="store-card-actions"><button class="secondary-button" data-action="clear-store-selection" type="button">清空选择</button><button class="primary-button" data-action="save-product-stores" type="button" ${state.selectedStoreIds.size && rule.mode !== "invalid" ? "" : "disabled"}>保存选择</button></div></div></details>`;
 }
 
 function storeStatusLabel(value) {
@@ -2854,27 +2920,7 @@ root.addEventListener("change", (event) => {
     if (blockTerminalProductMutation()) return;
     const storeId = event.target.dataset.productStore;
     if (event.target.checked) state.selectedStoreIds.add(storeId); else state.selectedStoreIds.delete(storeId);
-    const button = root.querySelector('[data-action="run-product"]');
-    if (button) {
-      const readyToUpload = String(state.currentProduct?.status?.status || "").toUpperCase() === "WAITING_MANUAL_REVIEW";
-      const needsStoreSelection = true;
-      const blocked = (state.currentProduct?.stores || []).some((shop) =>
-        state.selectedStoreIds.has(shop.id) && (!shop.enabled || shop.connection_status !== "connected")
-      );
-      button.textContent = readyToUpload
-        ? `确认修改并立即上传（${state.selectedStoreIds.size} 家店铺）`
-        : needsStoreSelection ? `运行任务（${state.selectedStoreIds.size} 家店铺）` : "继续生成";
-      button.disabled = blocked || (needsStoreSelection && !state.selectedStoreIds.size) || state.draftSaveFailed;
-    }
-    const saveStores = root.querySelector('[data-action="save-product-stores"]');
-    if (saveStores) {
-      const blocked = (state.currentProduct?.stores || []).some((shop) =>
-        state.selectedStoreIds.has(shop.id) && (!shop.enabled || shop.connection_status !== "connected")
-      );
-      saveStores.disabled = !state.selectedStoreIds.size || blocked;
-    }
-    const storeSummary = root.querySelector("details.store-selector summary");
-    if (storeSummary) storeSummary.textContent = `上传至 ${state.selectedStoreIds.size} 家店铺`;
+    refreshStoreSelectionUi();
   }
   if (event.target.matches("[data-select-batch-product]")) {
     const productId = event.target.dataset.selectBatchProduct;
@@ -3253,10 +3299,24 @@ root.addEventListener("click", async (event) => {
     document.querySelector(".review-shell")?.classList.toggle("queue-collapsed", state.queueCollapsed);
     return;
   }
-  if (action === "select-all-stores") {
+  if (action === "select-store-group") {
     if (blockTerminalProductMutation()) return;
-    (state.currentProduct.stores || []).filter((shop) => shop.enabled && shop.connection_status === "connected").forEach((shop) => state.selectedStoreIds.add(shop.id));
-    return renderReview({productId: state.currentProductId});
+    const preset = STORE_GROUP_PRESETS.find((item) => item.id === event.target.closest("[data-store-group]")?.dataset.storeGroup);
+    if (!preset) return;
+    const unavailable = preset.storeIds.filter((storeId) => {
+      const shop = (state.currentProduct.stores || []).find((item) => item.id === storeId);
+      return !shop || !shop.enabled || shop.connection_status !== "connected";
+    });
+    if (unavailable.length) return toast(`${preset.label} 有不可用店铺：${unavailable.join("、")}`, "error");
+    state.selectedStoreIds = new Set(preset.storeIds);
+    refreshStoreSelectionUi();
+    return toast(`已选择 ${preset.label}（${preset.storeIds.length} 家跨主体店铺）`, "success");
+  }
+  if (action === "clear-store-selection") {
+    if (blockTerminalProductMutation()) return;
+    state.selectedStoreIds.clear();
+    refreshStoreSelectionUi();
+    return;
   }
   if (action === "save-product-stores") {
     if (blockTerminalProductMutation()) return;

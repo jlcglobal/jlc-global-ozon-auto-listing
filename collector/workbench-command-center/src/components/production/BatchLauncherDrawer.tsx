@@ -16,6 +16,21 @@ const steps: Array<{ key: StepKey; label: string }> = [
   { key: "confirm", label: "确认启动" },
 ];
 
+const storeGroupPresets = [
+  {
+    id: "1256",
+    label: "组合 1256",
+    storeIds: ["zhonglian1", "zhonglian2", "zhonglian5", "jlc-blobal-6"],
+    description: "1、2、5、6 · 四个不同主体",
+  },
+  {
+    id: "V346",
+    label: "组合 V346",
+    storeIds: ["volttech", "zhonglian3", "zhonglian4", "jlc-blobal-6"],
+    description: "V、3、4、6 · 四个不同主体",
+  },
+] as const;
+
 function isConnectedShop(shop: ShopCard) {
   return Boolean(shop.enabled) && shop.connection_status === "connected";
 }
@@ -69,6 +84,17 @@ export function BatchLauncherDrawer({
     () => (shops || []).filter((shop) => selectedStores.includes(shop.id)),
     [shops, selectedStores],
   );
+  const selectedPreset = useMemo(() => storeGroupPresets.find((preset) =>
+    preset.storeIds.length === selectedStores.length && preset.storeIds.every((storeId) => selectedStores.includes(storeId)),
+  ), [selectedStores]);
+  const invalidStoreGroup = selectedStores.length > 1 && !selectedPreset;
+  const storeSelectionMessage = selectedPreset
+    ? `已选择 ${selectedPreset.label}：${selectedPreset.description}`
+    : invalidStoreGroup
+      ? "多店仅允许组合 1256 或 V346；其他情况请只选一家店。"
+      : selectedStores.length === 1
+        ? "单店上架：只生成这一家店的商品卡。"
+        : "请选择一家店，或直接选择跨主体组合 1256 / V346。";
 
   useEffect(() => {
     if (!open) return;
@@ -78,11 +104,6 @@ export function BatchLauncherDrawer({
     setSelectedProducts(initialProductId ? [initialProductId] : []);
     onRefresh().catch(() => null);
   }, [initialProductId, open]);
-
-  useEffect(() => {
-    if (!open || selectedStores.length || !connectedShops.length) return;
-    setSelectedStores(connectedShops.map((shop) => shop.id));
-  }, [connectedShops, open, selectedStores.length]);
 
   function toggleProduct(productId: string) {
     setLastResult(null);
@@ -98,6 +119,19 @@ export function BatchLauncherDrawer({
     );
   }
 
+  function chooseStoreGroup(groupId: string) {
+    const preset = storeGroupPresets.find((item) => item.id === groupId);
+    if (!preset) return;
+    const unavailable = preset.storeIds.filter((storeId) => !connectedShops.some((shop) => shop.id === storeId));
+    if (unavailable.length) {
+      setLocalError(`${preset.label} 有不可用店铺：${unavailable.join("、")}`);
+      return;
+    }
+    setLastResult(null);
+    setLocalError("");
+    setSelectedStores([...preset.storeIds]);
+  }
+
   function goNext() {
     setLocalError("");
     if (step === "products") {
@@ -111,6 +145,10 @@ export function BatchLauncherDrawer({
     if (step === "shops") {
       if (!selectedStores.length) {
         setLocalError("至少选择一个已连接店铺。");
+        return;
+      }
+      if (invalidStoreGroup) {
+        setLocalError("多店仅允许组合 1256 或 V346；其他情况请只选一家店。");
         return;
       }
       setStep("confirm");
@@ -136,7 +174,7 @@ export function BatchLauncherDrawer({
     }
   }
 
-  const canContinue = step === "products" ? selectedProducts.length > 0 : selectedStores.length > 0;
+  const canContinue = step === "products" ? selectedProducts.length > 0 : selectedStores.length > 0 && !invalidStoreGroup;
 
   return (
     <Sheet open={open} onOpenChange={onOpenChange}>
@@ -236,6 +274,36 @@ export function BatchLauncherDrawer({
             </div>
               ) : step === "shops" ? (
                 <div className="launcher-grid">
+              <section className="launcher-store-groups" aria-label="跨主体店群组合">
+                <div className="launcher-store-groups-head">
+                  <div>
+                    <span className="panel-kicker">跨主体组合</span>
+                    <strong>一键选择合规店群</strong>
+                  </div>
+                  <Button size="sm" variant="ghost" onClick={() => { setSelectedStores([]); setLocalError(""); }} disabled={!selectedStores.length || busy}>
+                    清空选择
+                  </Button>
+                </div>
+                <div className="launcher-store-group-options">
+                  {storeGroupPresets.map((preset) => {
+                    const unavailable = preset.storeIds.filter((storeId) => !connectedShops.some((shop) => shop.id === storeId));
+                    const selected = selectedPreset?.id === preset.id;
+                    return (
+                      <button
+                        key={preset.id}
+                        type="button"
+                        className={cn("launcher-store-group", selected && "selected")}
+                        disabled={Boolean(unavailable.length) || busy}
+                        onClick={() => chooseStoreGroup(preset.id)}
+                      >
+                        <strong>{preset.label}</strong>
+                        <small>{preset.description}{unavailable.length ? " · 有店铺不可用" : ""}</small>
+                      </button>
+                    );
+                  })}
+                </div>
+                <p className={cn(invalidStoreGroup && "error")}>{storeSelectionMessage}</p>
+              </section>
               {(shops || []).map((shop) => {
                 const available = isConnectedShop(shop);
                 return (
@@ -294,7 +362,7 @@ export function BatchLauncherDrawer({
             </Button>
           )}
           {focusedLaunch ? (
-            <Button onClick={submit} disabled={!selectedProducts.length || !selectedStores.length || busy}>
+          <Button onClick={submit} disabled={!selectedProducts.length || !selectedStores.length || invalidStoreGroup || busy}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
               启动生产
             </Button>
@@ -303,7 +371,7 @@ export function BatchLauncherDrawer({
               下一步
             </Button>
           ) : (
-            <Button onClick={submit} disabled={!selectedProducts.length || !selectedStores.length || busy}>
+            <Button onClick={submit} disabled={!selectedProducts.length || !selectedStores.length || invalidStoreGroup || busy}>
               {busy ? <Loader2 className="h-4 w-4 animate-spin" /> : <Rocket className="h-4 w-4" />}
               启动生产
             </Button>

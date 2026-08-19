@@ -7,10 +7,12 @@ routes register on the existing FastAPI instance via `from app import *`.
 from __future__ import annotations
 
 import copy as copy_module
+import csv
 import json
 import math
 import mimetypes
 import re
+import subprocess
 import threading
 import time
 from datetime import datetime, timedelta
@@ -2137,3 +2139,118 @@ def workbench_traffic_performance_latest() -> Dict[str, Any]:
         "inventory_api_calls": 0,
         "ad_budget_api_calls": 0,
     }
+
+
+# ---------------------------------------------------------------------------
+# Ozon keyword growth radar (Seefar keyword mining → ranked Excel report)
+# ---------------------------------------------------------------------------
+KEYWORD_GROWTH_SKILL_DIR = ROOT / ".agents/skills/ozon-keyword-growth-radar"
+KEYWORD_GROWTH_OUTPUT_DIR = ROOT / "outputs/ozon-keyword-growth"
+KEYWORD_GROWTH_XLSX = KEYWORD_GROWTH_OUTPUT_DIR / "Ozon关键词增长机会周报.xlsx"
+KEYWORD_GROWTH_FIELDS = [
+    "keyword",
+    "monthly_search_heat",
+    "monthly_growth_percent",
+    "market_space",
+    "conversion_concentration_percent",
+    "competitor_count",
+    "competitor_seller_count",
+    "ad_competitor_count",
+    "product_count",
+    "cart_conversion_percent",
+    "return_cancel_rate_percent",
+    "average_price_rub",
+]
+
+
+def _keyword_growth_csv_rows() -> List[Dict[str, Any]]:
+    """Aggregate every Seefar keyword-miner import report into radar CSV rows.
+
+    Seefar keyword data lives in per-import JSON reports (one per product/shop
+    import), not in the market.sqlite keywords table (which holds a different,
+    Ozon-analytics sourced keyword set). Each report's ``rows`` already carry
+    the normalized metrics (monthly_search_heat, monthly_growth_percent, ...).
+    """
+    by_query: Dict[str, Dict[str, Any]] = {}
+    if MARKET_SEERFAR_KEYWORD_IMPORT_DIR.is_dir():
+        for path in sorted(MARKET_SEERFAR_KEYWORD_IMPORT_DIR.glob("*.json")):
+            data = load_optional_json(path, {})
+            for row in data.get("rows") or []:
+                if not isinstance(row, dict):
+                    continue
+                query = str(row.get("query") or "").strip()
+                if not query or re.search(r"[\u3400-\u9fff\uf900-\ufaff]", query):
+                    continue
+                metrics = row.get("metrics") if isinstance(row.get("metrics"), dict) else {}
+                heat = metrics.get("monthly_search_heat") or metrics.get("search_count")
+                if not heat:
+                    continue
+                existing = by_query.get(query)
+                if existing is None or float(heat) > float(existing.get("monthly_search_heat") or 0):
+                    by_query[query] = {
+                        "keyword": query,
+                        "monthly_search_heat": heat,
+                        "monthly_growth_percent": metrics.get("monthly_growth_percent") or "",
+                        "market_space": metrics.get("market_space") or "",
+                        "conversion_concentration_percent": metrics.get("conversion_concentration_percent") or "",
+                        "competitor_count": metrics.get("competitor_count") or "",
+                        "competitor_seller_count": metrics.get("competitor_seller_count") or "",
+                        "ad_competitor_count": metrics.get("ad_competitor_count") or "",
+                        "product_count": metrics.get("product_count") or "",
+                        "cart_conversion_percent": metrics.get("cart_conversion_percent") or "",
+                        "return_cancel_rate_percent": metrics.get("return_cancel_rate_percent") or "",
+                        "average_price_rub": metrics.get("average_price_rub") or "",
+                    }
+    return list(by_query.values())
+
+
+@app.post("/api/workbench/market-intelligence/keyword-growth-report")
+def workbench_keyword_growth_report() -> Dict[str, Any]:
+    rows = _keyword_growth_csv_rows()
+    if not rows:
+        raise HTTPException(status_code=404, detail="暂无 Seefar 关键词挖掘数据，请先完成一轮关键词挖掘导入")
+
+    KEYWORD_GROWTH_OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    raw_csv = KEYWORD_GROWTH_OUTPUT_DIR / "keyword_growth_raw.csv"
+    with raw_csv.open("w", encoding="utf-8-sig", newline="") as handle:
+        writer = csv.DictWriter(handle, fieldnames=KEYWORD_GROWTH_FIELDS)
+        writer.writeheader()
+        writer.writerows(rows)
+
+    python_bin = ROOT / ".venv/bin/python"
+    rank_script = KEYWORD_GROWTH_SKILL_DIR / "scripts" / "rank_keyword_growth.py"
+    report_script = KEYWORD_GROWTH_SKILL_DIR / "scripts" / "build_readable_weekly_report.mjs"
+    rank_csv = KEYWORD_GROWTH_OUTPUT_DIR / "keyword_growth_rank.csv"
+    preview_dir = KEYWORD_GROWTH_OUTPUT_DIR / "preview"
+    try:
+        subprocess.run(
+            [str(python_bin), str(rank_script), str(raw_csv), str(rank_csv)],
+            check=True, capture_output=True, text=True, timeout=60,
+        )
+        subprocess.run(
+            ["node", str(report_script), str(rank_csv), str(KEYWORD_GROWTH_XLSX), str(preview_dir)],
+            check=True, capture_output=True, text=True, timeout=60,
+        )
+    except (subprocess.SubprocessError, OSError) as exc:
+        raise HTTPException(status_code=500, detail=f"周报生成失败：{exc}") from exc
+
+    return {
+        "schema_version": "1.0.0",
+        "available": True,
+        "excel_path": str(KEYWORD_GROWTH_XLSX),
+        "keyword_count": len(rows),
+        "generated_at": datetime.now().astimezone().isoformat(timespec="seconds"),
+        "notice": "关键词增长机会周报已生成，可下载。",
+    }
+
+
+@app.get("/api/workbench/market-intelligence/keyword-growth-report/latest")
+def workbench_keyword_growth_report_latest() -> FileResponse:
+    if not KEYWORD_GROWTH_XLSX.is_file():
+        raise HTTPException(status_code=404, detail="周报尚未生成，请先触发一次生成")
+    return FileResponse(
+        KEYWORD_GROWTH_XLSX,
+        media_type="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        filename=KEYWORD_GROWTH_XLSX.name,
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )

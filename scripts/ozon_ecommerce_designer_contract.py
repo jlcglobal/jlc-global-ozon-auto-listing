@@ -8,6 +8,7 @@ already completed unified design artifact.
 from __future__ import annotations
 
 import argparse
+import copy
 import json
 import re
 import tempfile
@@ -1841,7 +1842,17 @@ def attribute_decision_errors(product_dir: Path, design: Dict[str, Any]) -> List
             if not matched:
                 errors.append(f"attribute {attribute_id} dictionary value is absent from current allowed_values")
             elif str(decision.get("ozon_value") or "") != str(matched.get("value") or ""):
-                errors.append(f"attribute {attribute_id} ozon_value must exactly match the current dictionary value")
+                if attribute_id == 10096:
+                    # Preserve the seller-visible colour wording in creative
+                    # copy, but make the platform decision canonical before
+                    # materializing the upload fields. Ozon accepts this
+                    # attribute only as a current dictionary value.
+                    decision["ozon_value"] = str(matched.get("value") or "")
+                    decision["dictionary_value_id"] = int(
+                        matched.get("dictionary_value_id", matched.get("id"))
+                    )
+                else:
+                    errors.append(f"attribute {attribute_id} ozon_value must exactly match the current dictionary value")
     missing = sorted(
         attribute_id
         for attribute_id, attribute in attributes.items()
@@ -2306,7 +2317,58 @@ def validate_design(
                         "continuing because final SKU identity is enforced by each SKU main image."
                     ],
                 )
+    cluster_context = load_json(product_dir / "output/ecommerce-design-context.json") if (product_dir / "output/ecommerce-design-context.json").is_file() else {}
+    selected_store_ids = [
+        str(item.get("store_id") or "")
+        for item in ((cluster_context.get("store_cluster") or {}).get("selected_stores") or [])
+        if isinstance(item, dict) and str(item.get("store_id") or "")
+    ]
+    variants = design.get("store_variants") or []
+    if len(selected_store_ids) > 1:
+        by_store = {str(item.get("store_id") or ""): item for item in variants if isinstance(item, dict)}
+        missing_variants = [store_id for store_id in selected_store_ids if store_id not in by_store]
+        unexpected_variants = [store_id for store_id in by_store if store_id not in selected_store_ids]
+        if missing_variants:
+            errors.append("store_variants missing selected stores: " + ", ".join(missing_variants))
+        if unexpected_variants:
+            errors.append("store_variants contains unselected stores: " + ", ".join(unexpected_variants))
+        if len(by_store) != len(variants):
+            errors.append("store_variants store_id values must be unique")
+        for store_id, variant in by_store.items():
+            variant_mains = variant.get("main_images") or []
+            variant_details = variant.get("detail_images") or []
+            if len(variant_mains) != len(skus):
+                errors.append(f"store variant {store_id} main image count must equal selected SKU count")
+            if len(variant_details) != 8:
+                errors.append(f"store variant {store_id} detail image count must equal 8")
+            if [str(item.get("sku_id") or "") for item in variant_mains] != sku_ids:
+                errors.append(f"store variant {store_id} main images must match selected SKU order")
+            if buyer_visible_cjk_errors({"listing": variant.get("listing") or {}, "main_images": variant_mains, "detail_images": variant_details}):
+                errors.append(f"store variant {store_id} contains buyer-visible CJK text")
     return errors
+
+
+def store_variant_design(design: Dict[str, Any], store_id: str) -> Dict[str, Any]:
+    """Project one validated commercial variant without changing product facts.
+
+    The caller keeps attributes, SKU plan and source references from the master
+    design.  Only buyer-visible copy and image art direction are store-scoped.
+    """
+    variant = next(
+        (item for item in (design.get("store_variants") or [])
+         if isinstance(item, dict) and str(item.get("store_id") or "") == str(store_id)),
+        None,
+    )
+    if variant is None:
+        raise ValueError(f"store variant is missing for {store_id}")
+    projected = copy.deepcopy(design)
+    for key in ("listing", "visual_system", "main_images", "detail_images"):
+        projected[key] = copy.deepcopy(variant[key])
+    projected["active_store_variant"] = {
+        "store_id": str(store_id),
+        "store_profile": str(variant.get("store_profile") or "standard"),
+    }
+    return projected
 
 
 def materialize(product_dir: Path, design: Dict[str, Any]) -> None:

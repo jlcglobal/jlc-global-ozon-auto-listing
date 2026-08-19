@@ -15,7 +15,7 @@ import type { SearchVisibilityPlan } from "@/types/workbench";
 
 export function useSearchVisibilityPlan() {
   const [plan, setPlan] = useState<SearchVisibilityPlan | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(false);
   const [syncing, setSyncing] = useState(false);
   const [applying, setApplying] = useState(false);
   const [importingYandex, setImportingYandex] = useState(false);
@@ -23,13 +23,27 @@ export function useSearchVisibilityPlan() {
   const [importingOzonProductQuery, setImportingOzonProductQuery] = useState(false);
   const [error, setError] = useState("");
   const activeStoreIdRef = useRef("");
+  const latestRequestRef = useRef(0);
+
+  async function loadCurrentStorePlan(storeId?: string) {
+    const requestedStoreId = String(storeId ?? activeStoreIdRef.current ?? "").trim();
+    const requestId = ++latestRequestRef.current;
+    const next = await loadSearchVisibilityPlan(requestedStoreId || undefined);
+
+    // The response for the previous shop can arrive after a store switch. Never
+    // allow it to overwrite the currently selected shop's product cards.
+    if (requestId !== latestRequestRef.current) return null;
+    if (requestedStoreId && activeStoreIdRef.current && requestedStoreId !== activeStoreIdRef.current) return null;
+    setPlan(next);
+    return next;
+  }
 
   async function refreshSearchVisibilityPlan(storeId?: string) {
-    if (storeId !== undefined) activeStoreIdRef.current = storeId;
+    if (storeId !== undefined) activeStoreIdRef.current = String(storeId || "").trim();
     setError("");
+    setLoading(true);
     try {
-      const next = await loadSearchVisibilityPlan(storeId ?? (activeStoreIdRef.current || undefined));
-      setPlan(next);
+      const next = await loadCurrentStorePlan(storeId);
       return next;
     } catch (err) {
       setError(getErrorMessage(err));
@@ -40,21 +54,10 @@ export function useSearchVisibilityPlan() {
   }
 
   useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    loadSearchVisibilityPlan(activeStoreIdRef.current || undefined)
-      .then((next) => {
-        if (!cancelled) setPlan(next);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(getErrorMessage(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
+    // App chooses the default shop asynchronously. Loading the legacy
+    // unscoped cache here used to show another shop's catalog (for example the
+    // 95 cards of shop 3) before that selection was available.
+    setLoading(false);
   }, []);
 
   useEffect(() => {
@@ -62,11 +65,11 @@ export function useSearchVisibilityPlan() {
     let busy = false;
 
     async function refreshSilently() {
-      if (busy || (typeof document !== "undefined" && document.hidden)) return;
+      if (busy || !activeStoreIdRef.current || (typeof document !== "undefined" && document.hidden)) return;
       busy = true;
       try {
-        const next = await loadSearchVisibilityPlan(activeStoreIdRef.current || undefined);
-        if (!cancelled) setPlan(next);
+        const next = await loadCurrentStorePlan();
+        if (cancelled || !next) return;
       } catch (err) {
         if (!cancelled) setError(getErrorMessage(err));
       } finally {
@@ -92,6 +95,7 @@ export function useSearchVisibilityPlan() {
     try {
       const next = await syncSearchVisibilityPlanRequest(payload);
       activeStoreIdRef.current = String(payload.store_id || next.shop_id || "");
+      ++latestRequestRef.current;
       setPlan(next);
       return next;
     } catch (err) {

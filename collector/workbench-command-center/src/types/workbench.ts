@@ -314,6 +314,27 @@ export type ProductDetail = {
     failed?: number;
     skipped?: number;
   };
+  store_variants?: {
+    total?: number;
+    ready?: number;
+    items?: Array<{
+      store_id: string;
+      display_name?: string;
+      profile_label?: string;
+      title_ru?: string;
+      state?: "ready" | "generating" | "waiting" | string;
+      image_count?: number;
+      expected_image_count?: number;
+      message?: string;
+      images?: Array<{
+        slot?: string;
+        path?: string;
+        type?: "main" | "detail" | string;
+        preview?: boolean;
+        url?: string;
+      }>;
+    }>;
+  };
   pricing?: {
     recommendation?: string;
     exchange_rate?: { rub_per_cny?: number; source?: string };

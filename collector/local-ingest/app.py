@@ -110,6 +110,7 @@ from workbench_stores import (  # noqa: E402
     upsert_store,
     validate_store_read_only,
 )
+from store_cluster_policy import StoreGroupPolicyError, validate_selection as validate_store_group_selection  # noqa: E402
 from workbench_learning import (  # noqa: E402
     materialize_active_experience,
     record_image_feedback,
@@ -2278,6 +2279,48 @@ def workbench_asset(product_id: str, bucket: str, asset_path: str) -> FileRespon
     return FileResponse(image_path, media_type=mimetypes.guess_type(image_path.name)[0] or "application/octet-stream")
 
 
+@app.get("/api/workbench/products/{product_id}/store-variants/{store_id}/images/{image_path:path}")
+def workbench_store_variant_image(product_id: str, store_id: str, image_path: str) -> FileResponse:
+    """Serve an already committed independent store image, never a workspace copy."""
+    product_dir = workbench_product_dir(product_id)
+    if not re.fullmatch(r"[A-Za-z0-9_-]{1,64}", store_id):
+        raise HTTPException(status_code=404, detail="店铺版本不存在")
+    publications = load_publications(product_dir)
+    record = (publications.get("stores") or {}).get(store_id) or {}
+    if not isinstance(record, dict) or record.get("selected") is not True:
+        raise HTTPException(status_code=404, detail="店铺版本不存在")
+    official_root = (product_dir / "output" / "store-variants" / store_id / "generated-images").resolve()
+    manifest = load_optional_json(official_root.parent / "asset-manifest.json")
+    complete = str(manifest.get("status") or "").upper() == "PASS"
+    status = load_optional_json(product_dir / "status.json")
+    preview_active = (
+        not complete
+        and str(status.get("current_step") or "") == "store_variant_assets"
+        and isinstance(status.get("active_step"), dict)
+        and str((status.get("active_step") or {}).get("name") or "") == "store_variant_assets"
+        and running_batch_pid() is not None
+    )
+    root = official_root if complete else (
+        ROOT / "runtime" / "store-variant-image-workspaces" / product_id
+        / store_id / "products" / product_id / "output" / "generated-images"
+    ).resolve()
+    requested = Path(urllib.parse.unquote(image_path))
+    if requested.is_absolute() or ".." in requested.parts:
+        raise HTTPException(status_code=403, detail="图片路径不合法")
+    candidate = (root / requested).resolve()
+    try:
+        candidate.relative_to(root)
+    except ValueError as exc:
+        raise HTTPException(status_code=403, detail="图片路径不合法") from exc
+    if (not complete and not preview_active) or not candidate.is_file():
+        raise HTTPException(status_code=404, detail="店铺独立图片尚未完成")
+    return FileResponse(
+        candidate,
+        media_type=mimetypes.guess_type(candidate.name)[0] or "application/octet-stream",
+        headers={"Cache-Control": "no-store, max-age=0"},
+    )
+
+
 @app.get("/api/workbench/products/{product_id}/source-images/{image_type}/{index}")
 def workbench_source_image(product_id: str, image_type: str, index: int) -> FileResponse:
     product_dir = workbench_product_dir(product_id)
@@ -2767,9 +2810,14 @@ async def save_product_store_selection(product_id: str, request: Request) -> Dic
     if not isinstance(payload, dict):
         raise HTTPException(status_code=422, detail="店铺选择格式错误")
     selected = validate_target_stores(payload.get("store_ids") or [])
+    try:
+        group = validate_store_group_selection(selected, list_stores(ROOT))
+    except StoreGroupPolicyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    selected = group["store_ids"]
     data = select_stores(product_dir, selected, connected_store_ids(), payload.get("overrides") or {})
-    append_log(product_dir, "target_stores_selected", {"store_ids": selected})
-    return {"saved": True, "store_ids": selected, "publications": data, "summary": publication_summary(data)}
+    append_log(product_dir, "target_stores_selected", {"store_ids": selected, "store_group": group})
+    return {"saved": True, "store_ids": selected, "store_group": group, "publications": data, "summary": publication_summary(data)}
 
 
 @app.post("/api/workbench/products/{product_id}/stores/{store_id}/retry")
@@ -3020,6 +3068,17 @@ async def run_single_workbench_product(product_id: str, request: Request) -> Dic
             status_code=422,
             detail="这件商品还没有保存目标店铺。请先点“上传至店铺”选择店铺，再点继续。",
         )
+    registry = list_stores(ROOT)
+    known_store_ids = {str(item.get("store_id") or "") for item in registry}
+    try:
+        store_group = (
+            validate_store_group_selection(selected_stores, registry)
+            if all(store_id in known_store_ids for store_id in selected_stores)
+            else {"mode": "single_store", "store_ids": selected_stores}
+        )
+    except StoreGroupPolicyError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    selected_stores = store_group["store_ids"]
     original_status = load_optional_json(product_dir / "status.json")
     status = prepare_partial_upload_resume(
         product_dir,
@@ -3088,12 +3147,15 @@ async def run_single_workbench_product(product_id: str, request: Request) -> Dic
             if confirmed_manual_upload:
                 atomic_write_json(product_dir / "status.json", original_status)
             raise
-    append_log(product_dir, "workbench_product_run", {"batch_id": batch["batch_id"], "launch_status": launched["status"]})
+    append_log(product_dir, "workbench_product_run", {
+        "batch_id": batch["batch_id"], "launch_status": launched["status"], "store_group": store_group,
+    })
     return {
         "status": launched["status"], "batch_id": batch["batch_id"], "pid": launched.get("pid"),
         "queue_position": launched.get("queue_position", 0), "write_api_calls": 0,
         "inventory_api_calls": 0, "target_store_ids": selected_stores,
         "target_store_id_source": store_id_source,
+        "store_group": store_group,
         "resumed_from_checkpoint": resume_authorized,
         "priority_upload": launched.get("priority_upload", False),
         "preemption_requested": launched.get("preemption_requested", False),

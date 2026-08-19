@@ -12,8 +12,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, Iterable, List, Tuple
 
+try:
+    from russian_color_rules import normalize_russian_color_name
+except ModuleNotFoundError:  # Imported as scripts.ozon_attribute_compiler.
+    from scripts.russian_color_rules import normalize_russian_color_name
+
 ROOT = Path(__file__).resolve().parents[1]
-COMPILER_VERSION = "ozon-attribute-compiler-v7-aspect-size-rank-fallback"
+COMPILER_VERSION = "ozon-attribute-compiler-v8-source-gender-evidence"
 CJK_PATTERN = re.compile(r"[\u3400-\u9fff]")
 LOCAL_PATH_PATTERN = re.compile(r"(?i)(?:^|\\s)(?:/Users/|[A-Z]:\\\\|products/P\\d{6}/|file://)")
 CONTROL_PATTERN = re.compile(r"[\x00-\x08\x0b\x0c\x0e-\x1f\x7f]")
@@ -294,13 +299,32 @@ def allowed_by_id(attribute: Dict[str, Any], value_id: Any) -> Dict[str, Any] | 
 
 def allowed_by_value(attribute: Dict[str, Any], value: Any) -> Dict[str, Any] | None:
     normalized = normalize_attr_name(value)
-    return next(
+    direct = next(
         (
             item for item in attribute.get("allowed_values") or []
             if normalize_attr_name(item.get("value")) == normalized
         ),
         None,
     )
+    if direct is not None:
+        return direct
+    # Ozon product colour (10096) is a dictionary field.  The collected SKU
+    # may say “тёмно-зелёный” or “светло-голубой” while the current dictionary
+    # stores the canonical simple colour.  Resolve that source-grounded
+    # synonym before giving up; never send the handwritten text without a
+    # dictionary ID.
+    if int(attribute.get("attribute_id") or 0) == 10096:
+        canonical_colour = normalize_russian_color_name(value)
+        if canonical_colour:
+            target = normalize_attr_name(canonical_colour)
+            return next(
+                (
+                    item for item in attribute.get("allowed_values") or []
+                    if normalize_attr_name(item.get("value")) == target
+                ),
+                None,
+            )
+    return None
 
 
 def normalize_confidence(value: Any, *, default: float = 0.95) -> float:
@@ -457,8 +481,15 @@ def is_gender_attribute(attribute: Dict[str, Any]) -> bool:
     return normalize_attr_name(attribute.get("attribute_name")) == "пол"
 
 
-def gender_fact_from_fill_input(fill_input: Dict[str, Any]) -> Dict[str, Any] | None:
-    """Return explicit unisex gender evidence from current source facts only."""
+def gender_fact_from_fill_input(fill_input: Dict[str, Any], design: Dict[str, Any] | None = None) -> Dict[str, Any]:
+    """Return source-grounded gender evidence without inventing a demographic.
+
+    1688 often puts ``女``/``女款`` in the listing title instead of exposing a
+    separate ``适用性别`` property.  That is still an explicit source fact for
+    an Ozon-required gender field, provided it is not contradicted by a
+    neutral or male marker.  Keep the evidence in the compiled artifact so
+    the automatic decision is auditable.
+    """
     candidates: List[Dict[str, Any]] = []
     structured = (fill_input.get("merged_facts") or {}).get("structured_attributes") or {}
     for key, raw in structured.items():
@@ -477,53 +508,119 @@ def gender_fact_from_fill_input(fill_input: Dict[str, Any]) -> Dict[str, Any] | 
         "中性", "男女均可", "男女通用", "男女同款", "男女皆宜", "男/女", "男 女",
         "унисекс", "unisex", "мужской и женский", "для мужчин и женщин",
     )
+    female_tokens = ("女款", "女士", "女式", "女包", "女装", "女鞋", "女童", "女")
+    male_tokens = ("男款", "男士", "男式", "男包", "男装", "男鞋", "男童", "男")
     for raw in candidates:
         value = raw.get("value_cn") or raw.get("value") or raw.get("canonical_value") or ""
         source_text = raw.get("source_text") or raw.get("text") or ""
         evidence_text = f"{value} {source_text}".casefold()
         if any(token.casefold() in evidence_text for token in neutral_tokens):
             return {
+                "kind": "male",
+                "origin": "explicit_unisex_policy",
                 "raw_value": str(value).strip(),
                 "source_text": str(source_text or "").strip(),
                 "source_ref": raw.get("source_ref") or "input/source.json.product_attributes",
             }
-    return None
+        female = any(token.casefold() in evidence_text for token in female_tokens)
+        male = any(token.casefold() in evidence_text for token in male_tokens)
+        if female != male:
+            return {
+                "kind": "female" if female else "male",
+                "origin": "explicit_source",
+                "raw_value": str(value).strip(),
+                "source_text": str(source_text or "").strip(),
+                "source_ref": raw.get("source_ref") or "input/source.json.product_attributes",
+            }
+
+    title = str((fill_input.get("merged_facts") or {}).get("title_cn") or "").strip()
+    title_text = title.casefold()
+    if title and not any(token.casefold() in title_text for token in neutral_tokens):
+        female = any(token.casefold() in title_text for token in female_tokens)
+        male = any(token.casefold() in title_text for token in male_tokens)
+        if female != male:
+            return {
+                "kind": "female" if female else "male",
+                "origin": "explicit_source",
+                "raw_value": title,
+                "source_text": title,
+                "source_ref": "input/source.json.title_cn",
+            }
+    # The ecommerce designer is the visual-analysis stage: it receives only
+    # the current product's source images and is forbidden to change identity.
+    # Use its product-understanding/listing wording only when raw text did not
+    # establish gender, and preserve that weaker inference separately.
+    visual_sections = [
+        (design or {}).get("product_understanding") or {},
+        (design or {}).get("buyer_strategy") or {},
+        (design or {}).get("listing") or {},
+        (design or {}).get("visual_system") or {},
+    ]
+    visual_text = " ".join(json.dumps(section, ensure_ascii=False) for section in visual_sections).casefold()
+    visual_female_tokens = ("женская", "женский", "女性", "女款", "女士", "女式")
+    visual_male_tokens = ("мужская", "мужской", "男性", "男款", "男士", "男式")
+    visual_female = any(token in visual_text for token in visual_female_tokens)
+    visual_male = any(token in visual_text for token in visual_male_tokens)
+    if visual_female != visual_male:
+        return {
+            "kind": "female" if visual_female else "male",
+            "origin": "visual_analysis",
+            "raw_value": "current product visual analysis",
+            "source_text": "female" if visual_female else "male",
+            "source_ref": "output/ozon-ecommerce-design.json.product_understanding",
+        }
+    # User policy: a genuinely gender-neutral or visually indeterminate item
+    # defaults to male instead of blocking a required Ozon field.
+    return {
+        "kind": "male",
+        "origin": "default_male",
+        "raw_value": "unknown",
+        "source_text": "No explicit source or visual gender evidence",
+        "source_ref": "user_policy.default_gender_when_unknown",
+    }
 
 
-def gender_decision_from_fact(attribute: Dict[str, Any], fill_input: Dict[str, Any]) -> Dict[str, Any] | None:
+def gender_decision_from_fact(
+    attribute: Dict[str, Any], fill_input: Dict[str, Any], design: Dict[str, Any] | None = None
+) -> Dict[str, Any] | None:
     if not is_gender_attribute(attribute):
         return None
-    fact = gender_fact_from_fill_input(fill_input)
-    if not fact:
-        return None
+    fact = gender_fact_from_fill_input(fill_input, design)
     male = allowed_by_value(attribute, "Мужской")
     female = allowed_by_value(attribute, "Женский")
     if not male or not female:
         return None
-    values = [
-        {"value": str(male.get("value") or "Мужской"), "dictionary_value_id": int(male.get("dictionary_value_id", male.get("id")))},
-        {"value": str(female.get("value") or "Женский"), "dictionary_value_id": int(female.get("dictionary_value_id", female.get("id")))},
-    ]
-    return {
-        "attribute_id": int(attribute["attribute_id"]),
-        "attribute_name": attribute.get("attribute_name") or "Пол",
-        "scope": "common",
-        "decision_status": "filled",
-        "raw_semantic_value": fact["raw_value"],
-        "canonical_value": "unisex",
-        "canonical_unit": "dictionary_collection",
-        "ozon_value": "; ".join(item["value"] for item in values),
-        "dictionary_values": values,
-        "source": "1688",
-        "mapping_method": "deterministic_unisex_gender_split",
-        "confidence": 0.94,
-        "source_refs": [
-            str(fact.get("source_ref") or "input/source.json.product_attributes"),
-            f"1688 gender fact: {fact['raw_value']}",
-            "Ozon gender dictionary has no unisex value; selected Мужской and Женский",
-            *([str(fact.get("source_text"))] if fact.get("source_text") else []),
-        ],
-    }
+    if fact.get("kind") in {"female", "male"}:
+        selected = female if fact["kind"] == "female" else male
+        origin = str(fact.get("origin") or "explicit_source")
+        mapping_method = {
+            "explicit_source": "deterministic_explicit_gender_from_source",
+            "explicit_unisex_policy": "user_policy_default_male_for_unisex",
+            "visual_analysis": "visual_gender_inference_from_current_product",
+            "default_male": "user_policy_default_male_when_gender_unknown",
+        }.get(origin, "deterministic_explicit_gender_from_source")
+        source = "1688" if origin in {"explicit_source", "explicit_unisex_policy"} else ("AI_inferred" if origin == "visual_analysis" else "user_policy")
+        confidence = 0.96 if origin == "explicit_source" else (0.84 if origin == "visual_analysis" else 1.0)
+        return {
+            "attribute_id": int(attribute["attribute_id"]),
+            "attribute_name": attribute.get("attribute_name") or "Пол",
+            "scope": "common",
+            "decision_status": "filled",
+            "raw_semantic_value": fact["raw_value"],
+            "canonical_value": str(selected.get("value") or ""),
+            "canonical_unit": "dictionary",
+            "ozon_value": str(selected.get("value") or ""),
+            "dictionary_value_id": int(selected.get("dictionary_value_id", selected.get("id"))),
+            "source": source,
+            "mapping_method": mapping_method,
+            "confidence": confidence,
+            "source_refs": [
+                str(fact.get("source_ref") or "input/source.json.title_cn"),
+                f"1688 explicit gender evidence: {fact['raw_value']}",
+                f"Ozon gender dictionary value: {selected.get('value')} ({selected.get('dictionary_value_id', selected.get('id'))})",
+            ],
+        }
+    return None
 
 
 def infer_target_unit(attribute: Dict[str, Any], dimension: str) -> str:
@@ -870,13 +967,27 @@ def product_type_default_decision(
     allowed_values = attribute.get("allowed_values") or []
     allowed = None
     category_type_id = None
+    category_path: List[str] = []
+    category_name = None
     if fill_input:
         category = fill_input.get("category") if isinstance(fill_input.get("category"), dict) else {}
         category_type_id = fill_input.get("type_id") or category.get("type_id")
+        category_path = [str(value or "") for value in (category.get("category_path") or [])]
+        category_name = category.get("category_name")
     if category_type_id not in {None, "", "unknown"}:
         allowed = allowed_by_id(attribute, category_type_id)
     if not allowed and len(allowed_values) == 1:
         allowed = allowed_values[0]
+    # Fallback：类目 type_id 有时不是产品类型字典值 id，直接匹配会落空；
+    # 用类目路径最末段/类目名去 allowed_values 按值名匹配，避免必填产品类型静默缺失。
+    if not allowed:
+        for hint in [*(reversed(category_path)), category_name]:
+            hint = str(hint or "").strip()
+            if not hint:
+                continue
+            allowed = allowed_by_value(attribute, hint)
+            if allowed:
+                break
     if not allowed:
         return None
     value = str(allowed.get("value") or "").strip()
@@ -1682,7 +1793,7 @@ def compile_product_attributes(product_dir: Path) -> Dict[str, Any]:
         if default_decision:
             common_decisions[attribute_id] = default_decision
             continue
-        gender_decision = gender_decision_from_fact(attribute, fill_input)
+        gender_decision = gender_decision_from_fact(attribute, fill_input, design)
         if gender_decision:
             common_decisions[attribute_id] = gender_decision
             continue

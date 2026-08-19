@@ -295,6 +295,16 @@ button:disabled { cursor: not-allowed; opacity: .48; }
 .store-fieldset { margin: 14px 0; padding: 12px; border: 1px solid var(--line); border-radius: 6px; }
 .store-fieldset legend { padding: 0 6px; color: var(--muted); font-size: 11px; }
 .store-options { display: grid; gap: 7px; }
+.store-group-presets { display: grid; gap: 7px; margin-bottom: 11px; padding: 9px; border: 1px solid #315849; border-radius: 7px; background: #0d241a; }
+.store-group-presets > p { margin: 0; color: var(--gold-light); font-size: 10px; font-weight: 800; }
+.store-group-presets > div { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 7px; }
+.store-group-presets > small { color: var(--muted); font-size: 9px; line-height: 1.45; }
+.store-group-presets > small.error { color: #ffb9ad; }
+.store-group-preset { min-height: 48px; display: grid; gap: 3px; padding: 7px 9px; text-align: left; color: var(--text); background: #102e22; border: 1px solid #376c58; border-radius: 6px; }
+.store-group-preset strong { font-size: 11px; }
+.store-group-preset small { color: #a8c5b8; font-size: 9px; }
+.store-group-preset:hover:not(:disabled), .store-group-preset.selected { color: #fff6cf; border-color: var(--gold); background: #1c3f2e; }
+.store-group-preset:disabled { opacity: .5; cursor: not-allowed; }
 .store-option { min-height: 42px; display: grid; grid-template-columns: auto 1fr auto; gap: 9px; align-items: center; padding: 7px 9px; border: 1px solid var(--line); border-radius: 5px; background: #111317; }
 .store-option input { accent-color: var(--gold); }
 .store-option strong { font-size: 11px; }

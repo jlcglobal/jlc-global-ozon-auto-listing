@@ -1,11 +1,10 @@
-const PLUGIN_VERSION = "0.4.25";
+const PLUGIN_VERSION = "0.4.41";
 const MAX_SELECTED_SKUS = 10;
 const DEFAULT_FACTORY_URL = "http://192.168.3.13:8765";
 let latestDrawerCapture = null;
 let localCategoryTreeCachePromise = null;
 let localCategoryRulesCachePromise = null;
 let pageWindowProductData = [];
-let pageProbeInjected = false;
 const PAGE_PROBE_ATTR = "data-caf-window-product-data";
 
 // 1688 页面是 HTTPS，直接从内容脚本请求局域网 HTTP 会被浏览器按混合内容拦截。
@@ -40,20 +39,23 @@ window.addEventListener("CAF_PAGE_PRODUCT_DATA_READY", () => {
 });
 
 function injectPageProbe() {
-  if (pageProbeInjected || typeof chrome === "undefined" || !chrome.runtime?.getURL) return;
-  pageProbeInjected = true;
-  try {
-    const script = document.createElement("script");
-    script.src = chrome.runtime.getURL("page-probe.js");
-    script.onload = () => script.remove();
-    script.onerror = () => script.remove();
-    (document.head || document.documentElement).appendChild(script);
-  } catch {
-    pageProbeInjected = false;
-  }
+  // 1688 hydrates window.context after document_idle. Run again immediately
+  // before capture instead of trusting one early, incomplete snapshot.
+  if (typeof chrome === "undefined" || !chrome.runtime?.getURL) return Promise.resolve(false);
+  return new Promise((resolve) => {
+    try {
+      const script = document.createElement("script");
+      script.src = `${chrome.runtime.getURL("page-probe.js")}?captured_at=${Date.now()}`;
+      script.onload = () => { script.remove(); resolve(true); };
+      script.onerror = () => { script.remove(); resolve(false); };
+      (document.head || document.documentElement).appendChild(script);
+    } catch {
+      resolve(false);
+    }
+  });
 }
 
-injectPageProbe();
+void injectPageProbe();
 
 function textOf(node) {
   return node ? (node.textContent || "").replace(/\s+/g, " ").trim() : "";
@@ -379,6 +381,36 @@ function parseJsonCandidate(candidate) {
   }
 }
 
+// Do not rely on page-world variables for this shape.  Modern 1688 pages
+// often keep tradeModel in a closure, while the same, complete JSON is still
+// embedded in the offer HTML.  We only accept the precise SKU structures below
+// so a nearby recommendation block cannot become a product SKU.
+function jsonArrayAfterPageToken(text, token, predicate) {
+  let offset = 0;
+  while (offset < text.length) {
+    const tokenIndex = text.indexOf(token, offset);
+    if (tokenIndex < 0) return null;
+    const openIndex = text.indexOf("[", tokenIndex + token.length);
+    if (openIndex >= 0 && openIndex - tokenIndex < 240) {
+      const parsed = parseJsonCandidate(extractBalanced(text, openIndex, "[", "]"));
+      if (predicate(parsed)) return parsed;
+    }
+    offset = tokenIndex + token.length;
+  }
+  return null;
+}
+
+function is1688SkuPropsArray(value) {
+  return Array.isArray(value) && value.length > 0 && value.length <= 50 && value.every((item) => (
+    item && typeof item === "object" && typeof item.prop === "string" && Array.isArray(item.value || item.values)
+  ));
+}
+
+function is1688SkuMapArray(value) {
+  return Array.isArray(value) && value.length > 0 && value.length <= 500
+    && value.some((item) => item && typeof item === "object" && extractRealSkuId(item) && typeof item.specAttrs === "string");
+}
+
 function isGeneratedSkuId(value) {
   return /^(script-sku|dom-sku|dom-combo|combo-sku)-/i.test(String(value || "").trim());
 }
@@ -543,7 +575,6 @@ function appendParsedJsonStrings(value, out = [], seen = new Set(), depth = 0) {
 }
 
 function readPageWindowProductData() {
-  injectPageProbe();
   const text = document.documentElement.getAttribute(PAGE_PROBE_ATTR);
   const parsed = parseJsonCandidate(text);
   if (Array.isArray(parsed)) pageWindowProductData = parsed;
@@ -641,7 +672,12 @@ function offerImgListDetailUrls(structured: any[], mainUrls: string[], skuUrls: 
   // 从 script_init_data 的 offerImgList 补回未被 main/sku 占用的图片。
   const urls: string[] = [];
   (structured || []).forEach((result: any) => {
-    (result.data || []).forEach((snippet: any) => deepFindArrayByKey(snippet.data, "offerImgList", urls));
+    const resultData = result?.data;
+    if (Array.isArray(resultData)) {
+      resultData.forEach((snippet: any) => deepFindArrayByKey(snippet?.data ?? snippet, "offerImgList", urls));
+      return;
+    }
+    deepFindArrayByKey(resultData, "offerImgList", urls);
   });
   const idOf = (u: string) => {
     const m = /ibank\/([A-Za-z0-9_]+)/.exec(String(u || ""));
@@ -1354,13 +1390,13 @@ function normalizeSkuListItem(item, index, sourceName) {
   };
 }
 
-function findStructuredSkuListItems(value, out = [], sourceName = "script_init_data") {
-  if (!value || typeof value !== "object" || out.length > 500) return out;
+function findStructuredSkuListItems(value, out = [], sourceName = "script_init_data", depth = 0) {
+  if (!value || typeof value !== "object" || out.length > 500 || depth > 8) return out;
   if (Array.isArray(value)) {
     value.slice(0, 500).forEach((item, index) => {
       const normalized = normalizeSkuListItem(item, index, sourceName);
       if (normalized) out.push(normalized);
-      findStructuredSkuListItems(item, out, sourceName);
+      findStructuredSkuListItems(item, out, sourceName, depth + 1);
     });
     return out;
   }
@@ -1368,7 +1404,11 @@ function findStructuredSkuListItems(value, out = [], sourceName = "script_init_d
     if (/sku|spec|prop|sale|offer|product|data|list|map/i.test(key)) {
       const normalized = normalizeSkuListItem(child, out.length, sourceName);
       if (normalized) out.push(normalized);
-      findStructuredSkuListItems(child, out, sourceName);
+      findStructuredSkuListItems(child, out, sourceName, depth + 1);
+    } else if (child && typeof child === "object" && depth < 4) {
+      // 穿透非关键词容器键（如 window.context 的 result/data），否则
+      // 埋在深层对象里的 skuMap 数组会被漏掉。depth<4 控制递归深度。
+      findStructuredSkuListItems(child, out, sourceName, depth + 1);
     }
   });
   return out;
@@ -1402,6 +1442,59 @@ function buildSkuPropImageLookup(models) {
     });
   });
   return byValue;
+}
+
+function applySkuPropsImageDirect(skus: any[], structured: any[]): any[] {
+  // 1688 常把颜色 SKU 放在"尺寸/规格"属性组下，属性组名不是"颜色"，
+  // 上层按颜色的绑定路径就匹配不到，SKU 图退回 DOM 顺序抓图导致张冠李戴。
+  // 这里直接从 script 数据的 skuProps 提取 value.name -> imageUrl 的精确映射，
+  // 按 SKU 名/specAttrs 精确绑定，优先级最高。
+  const nameToImage = new Map<string, string>();
+  const collectProps = (value: any) => {
+    if (!value || typeof value !== "object") return;
+    if (Array.isArray(value)) {
+      value.forEach(collectProps);
+      return;
+    }
+    if (Array.isArray(value.skuProps)) {
+      value.skuProps.forEach((prop: any) => {
+        const vals = Array.isArray(prop?.value) ? prop.value : (Array.isArray(prop?.values) ? prop.values : []);
+        vals.forEach((v: any) => {
+          if (!v || typeof v !== "object") return;
+          const img = imageFromStructuredValue(v);
+          const name = cleanText(firstDefined(v.name, v.valueName, v.value, v.text, v.title, v.label, v.specName));
+          if (img && name && name !== "unknown") nameToImage.set(comparableText(name), img);
+        });
+      });
+    }
+    Object.values(value).slice(0, 40).forEach(collectProps);
+  };
+  (structured || []).forEach((result: any) => {
+    // `result.data` is normally a list of parsed snippets, but the page-source
+    // recovery deliberately supplies one structured object ({skuProps,skuMap}).
+    // Treat both representations uniformly; never abort SKU recovery because a
+    // valid object happens not to implement Array#forEach.
+    const snippets = Array.isArray(result?.data) ? result.data : [result?.data];
+    snippets.forEach((snippet: any) => collectProps(snippet?.data || snippet));
+  });
+  if (!nameToImage.size) return skus;
+  return skus.map((sku) => {
+    if (sku.image_url && sku.image_url !== "unknown") return sku;
+    const keys = [
+      ...(sku.option_values || []).flatMap((option: any) => [option.value_cn, option.value, option.valueId, option.value_id]),
+      sku.sku_name,
+      sku.source_data?.specAttrs,
+      sku.source_data?.spec,
+    ].map((key: any) => comparableText(key)).filter(Boolean);
+    const hit = keys.map((key) => nameToImage.get(key)).find(Boolean);
+    if (!hit) return sku;
+    return {
+      ...sku,
+      image_url: hit,
+      sku_image_missing: false,
+      source_data: { ...(sku.source_data || {}), sku_image_source: "sku_prop_image_direct" },
+    };
+  });
 }
 
 function applySkuPropImage(sku, propImageLookup) {
@@ -1565,16 +1658,54 @@ function findStructuredSkuModels(value, out = []) {
   return out;
 }
 
+function findDetachedSkuContainers(value, propLists = [], skuMaps = [], depth = 0) {
+  // Some current 1688 pages embed `skuProps` and `skuMap` as two adjacent
+  // JSON fragments in one large script.  The generic script parser preserves
+  // both fragments, but they no longer share their original parent object.
+  // Recognize those strict shapes and reunite them below.
+  if (!value || typeof value !== "object" || depth > 10) return { propLists, skuMaps };
+  if (Array.isArray(value)) {
+    const isProps = value.length > 0 && value.length <= 50 && value.every((item) => (
+      item && typeof item === "object" && typeof item.prop === "string"
+      && Array.isArray(item.value || item.values)
+    ));
+    const realSkuCount = value.filter((item) => extractRealSkuId(item)).length;
+    const isMap = value.length > 0 && realSkuCount > 0 && value.some((item) => (
+      item && typeof item === "object" && typeof item.specAttrs === "string"
+    ));
+    if (isProps) propLists.push(value);
+    if (isMap) skuMaps.push(value);
+    value.slice(0, 500).forEach((item) => findDetachedSkuContainers(item, propLists, skuMaps, depth + 1));
+    return { propLists, skuMaps };
+  }
+  Object.values(value).forEach((child) => findDetachedSkuContainers(child, propLists, skuMaps, depth + 1));
+  return { propLists, skuMaps };
+}
+
 function extractStructuredSkus(structured, hasProductPriceRange = false) {
   const skus = [];
   const models = [];
   const maps = [];
   const listItems = [];
+  const detachedProps = [];
+  const detachedMaps = [];
   structured.forEach((item) => {
     findStructuredSkuModels(item.data, models);
     findStructuredSkuMaps(item.data, maps);
     findStructuredSkuListItems(item.data, listItems, item.source || "script_init_data");
+    findDetachedSkuContainers(item.data, detachedProps, detachedMaps);
     if (Array.isArray(item.data)) item.data.forEach((child) => findStructuredSkuModels(child?.data || child, models));
+  });
+  const pairedProps = new Set();
+  detachedProps.forEach((props) => {
+    if (pairedProps.has(props)) return;
+    pairedProps.add(props);
+    // The page's skuMap is one product-level table.  Prefer the map whose
+    // specAttrs contains the first selectable property value.
+    const firstValue = String((props[0]?.value || props[0]?.values || [])[0]?.name || "");
+    const map = detachedMaps.find((candidate) => candidate.some((row) => String(row?.specAttrs || "").includes(firstValue)))
+      || detachedMaps[0];
+    if (map) models.push({ props, map, source: "detached_1688_sku_containers" });
   });
   const propImageLookup = buildSkuPropImageLookup(models);
   const domPropertyData = buildDomPropertyImageData(extractDomSkuGroups());
@@ -1598,7 +1729,8 @@ function extractStructuredSkus(structured, hasProductPriceRange = false) {
   const finalized = skus.map((sku) => applyDomPropertyImage(
     finalizeSkuImageAndPrice(sku, propImageLookup, hasProductPriceRange), domPropertyData.lookup
   ));
-  return { skus: finalized, modelCount: models.length, mapCount: maps.length, propertyGroups: domPropertyData.propertyGroups, realSkuIdCount: finalized.filter((sku) => isRealSkuId(sku.sku_id)).length };
+  const withSkuProps = applySkuPropsImageDirect(finalized, structured);
+  return { skus: withSkuProps, modelCount: models.length, mapCount: maps.length, propertyGroups: domPropertyData.propertyGroups, realSkuIdCount: withSkuProps.filter((sku) => isRealSkuId(sku.sku_id)).length };
 }
 
 function findSkuContainers() {
@@ -1752,6 +1884,34 @@ async function warmDetailImages() {
   }
   window.scrollTo(originalX, originalY);
   await sleep(80);
+}
+
+function extractDetailUrl() {
+  // 1688 详情描述常挂在独立的 detailUrl 页面（itemcdn.tmall.com/...），
+  // 详情长图只在该页面里，当前商品页的 DOM/脚本都拿不到。返回第一个
+  // 非空的 detailUrl，供详情图为空时兜底抓取。
+  const scripts = [...document.querySelectorAll("script")];
+  for (const script of scripts) {
+    const match = /"detailUrl"\s*:\s*"([^"]+)"/.exec(script.textContent || "");
+    if (match && /^https?:/i.test(match[1])) return match[1];
+  }
+  return null;
+}
+
+async function fetchDetailImagesFromDetailUrl(detailUrl) {
+  // content script 的 fetch 受页面 CORS 限制，跨域抓 itemcdn.tmall.com
+  // 会被拦；改由 background service worker（有 host_permissions）代抓。
+  const response = await chrome.runtime.sendMessage({ type: "FACTORY_FETCH_DETAIL_PAGE", url: detailUrl });
+  if (!response || !response.ok || !response.body) return [];
+  const text = String(response.body || "");
+  const urls = [];
+  const imagePattern = /https?:\/\/[^"'\s<>\\]+?\.(?:jpg|jpeg|png|webp)/gi;
+  let match;
+  while ((match = imagePattern.exec(text)) && urls.length < 80) {
+    const url = normalizeImageUrl(match[0]);
+    if (url && !isBlockedImageUrl(url)) urls.push(url);
+  }
+  return [...new Set(urls)];
 }
 
 function extractDomSkuGroups() {
@@ -1974,6 +2134,109 @@ function applyVisibleSkuRowImages(skus) {
   });
 }
 
+function currentGalleryPrimaryImageUrl() {
+  const candidates = [];
+  const selectors = [
+    ".detail-gallery img",
+    ".mod-detail-gallery img",
+    "[class*='gallery'] img",
+    "[class*='Gallery'] img",
+    "[class*='main-image'] img",
+    "[class*='mainImage'] img"
+  ];
+  selectors.forEach((selector) => {
+    document.querySelectorAll(selector).forEach((node) => {
+      const url = imageCandidateUrl(node);
+      if (!url || isBlockedImageUrl(url)) return;
+      const rect = node.getBoundingClientRect?.() || {};
+      if (Number(rect.width || 0) < 120 || Number(rect.height || 0) < 120) return;
+      candidates.push({ url, area: Number(rect.width || 0) * Number(rect.height || 0) });
+    });
+  });
+  candidates.sort((left, right) => right.area - left.area);
+  return candidates[0]?.url || "unknown";
+}
+
+function skuImageLabels(sku) {
+  const raw = cleanText(sku?.source_data?.specAttrs || sku?.sku_name || "");
+  return [...new Set([
+    raw,
+    ...raw.split(/[>＞#／/|]/).map((item) => cleanText(item)),
+    cleanText(sku?.sku_name || "")
+  ].filter((item) => item && item !== "unknown" && item.length <= 80))];
+}
+
+function selectableSkuOptionNodes(label) {
+  const target = comparableText(label);
+  if (!target) return [];
+  const result = [];
+  findSkuContainers().forEach((root) => {
+    root.querySelectorAll("[role='button'], button, li, a, [class*='item'], [class*='value'], [class*='option'], [data-value], [data-name]").forEach((node) => {
+      if (!(node instanceof HTMLElement) || node.closest("#caf-sku-drawer-root")) return;
+      if (node.matches("[disabled],[aria-disabled='true']")) return;
+      const text = cleanText(node.getAttribute("title") || node.getAttribute("aria-label") || node.getAttribute("data-value") || node.getAttribute("data-name") || textOf(node));
+      const normalized = comparableText(text);
+      if (!normalized || normalized.length > 120 || /加入购物车|立即订购|起批|价格|客服|收藏|购买数量|库存|¥/.test(text)) return;
+      if (normalized === target || target.startsWith(`${normalized}>`) || target.startsWith(`${normalized}#`)) result.push(node);
+    });
+  });
+  return [...new Set(result)];
+}
+
+function skuOptionLooksSelected(node) {
+  const signature = `${node.className || ""} ${node.getAttribute("aria-selected") || ""} ${node.getAttribute("data-selected") || ""}`.toLowerCase();
+  return node.getAttribute("aria-selected") === "true" || node.getAttribute("data-selected") === "true" || /selected|active|checked|current/.test(signature);
+}
+
+async function recoverSkuImagesFromVariantSelection(skus) {
+  // Some 1688 offers provide real SKU IDs and prices but omit a SKU image field.
+  // For a single unambiguous visible option, read the active product image after
+  // selecting that option.  This is source-grounded recovery, not similarity
+  // matching: ambiguous combinations and unchanged galleries stay as unknown.
+  const missing = (skus || []).filter((sku) => !sku?.image_url || sku.image_url === "unknown");
+  if (!missing.length) return skus;
+  const initiallySelected = [];
+  findSkuContainers().forEach((root) => {
+    root.querySelectorAll("[role='button'], button, li, a, [class*='item'], [class*='value'], [class*='option'], [data-value], [data-name]").forEach((node) => {
+      if (node instanceof HTMLElement && skuOptionLooksSelected(node)) initiallySelected.push(node);
+    });
+  });
+  const recovered = new Map();
+  try {
+    for (const sku of missing.slice(0, 50)) {
+      const candidates = skuImageLabels(sku)
+        .flatMap((label) => selectableSkuOptionNodes(label))
+        .filter((node, index, list) => list.indexOf(node) === index);
+      if (candidates.length !== 1) continue;
+      const before = currentGalleryPrimaryImageUrl();
+      candidates[0].scrollIntoView({ block: "center", inline: "nearest" });
+      candidates[0].dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window }));
+      await sleep(180);
+      const after = currentGalleryPrimaryImageUrl();
+      if (!after || after === "unknown" || after === before) continue;
+      recovered.set(String(sku.sku_id || ""), after);
+    }
+  } finally {
+    // Restore the operator's visible selection.  This is a read-only recovery
+    // step and must not leave the 1688 page on another SKU.
+    initiallySelected.forEach((node) => {
+      try { node.dispatchEvent(new MouseEvent("click", { bubbles: true, cancelable: true, view: window })); } catch (_) {}
+    });
+  }
+  if (!recovered.size) return skus;
+  return (skus || []).map((sku) => {
+    const imageUrl = recovered.get(String(sku.sku_id || ""));
+    if (!imageUrl) return sku;
+    return {
+      ...sku,
+      image_url: imageUrl,
+      variant_image_url: imageUrl,
+      sku_image_missing: false,
+      source_data: { ...(sku.source_data || {}), sku_image_source: "interactive_variant_gallery" }
+    };
+  });
+}
+
 function extractSkus(structured, hasProductPriceRange = false, productRangePrice = null) {
   const structuredResult = extractStructuredSkus(structured, hasProductPriceRange);
   if (structuredResult.skus.length) {
@@ -2070,6 +2333,137 @@ function extractSkus(structured, hasProductPriceRange = false, productRangePrice
   }
   const values = keepCollectedSkuRecords(applyVisibleSkuRowImages(skus));
   return { values: values.slice(0, 300), candidateCount: Math.max(rawCandidates.length, skus.length), source: values.length ? "dom_semantic" : "unknown" };
+}
+
+function extractSkusFrom1688PageSource(pageSource, productRangePrice = null) {
+  const skuProps = jsonArrayAfterPageToken(pageSource, '"skuProps"', is1688SkuPropsArray);
+  const skuMap = jsonArrayAfterPageToken(pageSource, '"skuMap"', is1688SkuMapArray);
+  if (!skuProps || !skuMap) {
+    return {
+      values: [],
+      propertyGroups: [],
+      reason: "源码中未同时找到有效的 skuProps 与 skuMap"
+    };
+  }
+  const sourceModel = { skuProps, skuMap };
+  const extracted = extractStructuredSkus([
+    { source: "background_1688_page_source", data: sourceModel }
+  ], false);
+  const values = keepCollectedSkuRecords(
+    applyProductRangePrice(extracted.skus, productRangePrice)
+  ).slice(0, 300);
+  const propertyGroups = buildDomPropertyImageData(
+    skuProps.map((prop) => normalizeSkuProp(prop, "background_1688_page_source")).filter(Boolean)
+  ).propertyGroups;
+  return { values, propertyGroups, reason: null };
+}
+
+function refreshCaptureSkuState(capture, values, propertyGroups, source, recovery) {
+  const skuDebug = buildSkuDebug(values, {
+    sku_source: source,
+    structured_count: capture.raw_snapshot?.structured_data_summary?.structured_candidates,
+    window_variable_count: pageWindowProductData.length
+  });
+  const realSkuIdCount = values.filter((sku) => isRealSkuId(sku.sku_id)).length;
+  capture.skus = values;
+  capture.sku_property_groups = propertyGroups;
+  capture.capture_warnings = (capture.capture_warnings || []).filter((warning) => !/^skus:/.test(String(warning)));
+  if (skuDebug.missing_image_skus.length) capture.capture_warnings.push(`skus: ${skuDebug.missing_image_skus.length} SKU missing dedicated image`);
+  if (skuDebug.missing_price_skus.length) capture.capture_warnings.push(`skus: ${skuDebug.missing_price_skus.length} SKU missing sku-specific price`);
+  capture.field_diagnostics = (capture.field_diagnostics || []).map((item) => item.field === "skus" ? {
+    ...item,
+    strategy: source,
+    hit: values.length > 0,
+    failure_reason: values.length ? null : item.failure_reason,
+    candidate_count: values.length
+  } : item);
+  capture.raw_snapshot = capture.raw_snapshot || {};
+  Object.assign(capture.raw_snapshot, {
+    sku_candidate_count: values.length,
+    sku_real_id_count: realSkuIdCount,
+    sku_missing_real_id_count: Math.max(values.length - realSkuIdCount, 0),
+    sku_debug: skuDebug,
+    sku_property_image_debug: buildSkuPropertyImageDebug(propertyGroups, values),
+    sku_source: source,
+    page_source_sku_recovery: recovery,
+    sku_variant_signal_detected: Boolean(recovery?.variant_signal_detected)
+  });
+  capture.sku_image_preflight = {
+    status: skuDebug.missing_image_skus.length ? "WARNING" : "PASS",
+    total_skus: values.length,
+    sku_with_images: skuDebug.sku_with_images,
+    missing_count: skuDebug.missing_image_skus.length,
+    missing_sku_ids: skuDebug.missing_image_skus,
+    checked_at: new Date().toISOString(),
+    collection_allowed: true,
+    rule: "1688 SKU专属图从商品页 skuProps 精确读取；缺失SKU保留真实缺图标记，禁止猜图"
+  };
+}
+
+async function recoverSkusFrom1688PageSource(capture) {
+  if (!/1688\.com$/.test(location.hostname)) return capture;
+  if ((capture.skus || []).some((sku) => isRealSkuId(sku?.sku_id))) return capture;
+  const documentHasVariantSignal = [...document.scripts].some((script) => /"skuProps"\s*:|"skuMap"\s*:/.test(script.textContent || ""));
+  try {
+    // First fetch from the current detail.1688.com origin.  The service worker
+    // has an extension origin and can receive an anti-bot response even while
+    // the logged-in product tab can read its own public document normally.
+    let response: any = null;
+    let pageSource = "";
+    let sameOriginError = "";
+    try {
+      const currentPage = await fetch(location.href, { credentials: "include", cache: "no-store" });
+      if (!currentPage.ok) throw new Error(`当前商品页读取失败 HTTP ${currentPage.status}`);
+      pageSource = await currentPage.text();
+      if (!pageSource || pageSource.length > 2_000_000) throw new Error("当前商品页源码为空或超出安全大小");
+      response = { ok: true, source: "same_origin_content_fetch" };
+    } catch (error) {
+      sameOriginError = error?.message || "当前商品页读取失败";
+    }
+    if (!pageSource) {
+      response = await chrome.runtime.sendMessage({
+        type: "FACTORY_FETCH_1688_PAGE_SOURCE",
+        url: location.href
+      });
+      pageSource = String(response?.body || "");
+    }
+    const sourceHasVariantSignal = /"skuProps"\s*:|"skuMap"\s*:/.test(pageSource);
+    const recovery = {
+      status: "failed",
+      reason: response?.ok ? "源码SKU结构解析失败" : (response?.error || sameOriginError || "1688商品页源码读取失败"),
+      variant_signal_detected: documentHasVariantSignal || sourceHasVariantSignal
+    };
+    if (!response?.ok || !pageSource) {
+      capture.raw_snapshot = capture.raw_snapshot || {};
+      capture.raw_snapshot.page_source_sku_recovery = recovery;
+      capture.raw_snapshot.sku_variant_signal_detected = recovery.variant_signal_detected;
+      return capture;
+    }
+    const productRangePrice = productPriceForQuantity(capture.price_information, capture.minimum_order_quantity?.value);
+    const recovered = extractSkusFrom1688PageSource(pageSource, productRangePrice);
+    if (!recovered.values.some((sku) => isRealSkuId(sku?.sku_id))) {
+      capture.raw_snapshot = capture.raw_snapshot || {};
+      capture.raw_snapshot.page_source_sku_recovery = { ...recovery, reason: recovered.reason || recovery.reason };
+      capture.raw_snapshot.sku_variant_signal_detected = recovery.variant_signal_detected;
+      return capture;
+    }
+    refreshCaptureSkuState(capture, recovered.values, recovered.propertyGroups, response?.source || "background_1688_page_source", {
+      status: "recovered",
+      source: response?.source || "background_1688_page_source",
+      variant_signal_detected: true,
+      sku_count: recovered.values.length,
+      real_sku_id_count: recovered.values.filter((sku) => isRealSkuId(sku.sku_id)).length
+    });
+  } catch (error) {
+    capture.raw_snapshot = capture.raw_snapshot || {};
+    capture.raw_snapshot.page_source_sku_recovery = {
+      status: "failed",
+      reason: error?.message || "1688商品页源码读取失败",
+      variant_signal_detected: documentHasVariantSignal
+    };
+    capture.raw_snapshot.sku_variant_signal_detected = documentHasVariantSignal;
+  }
+  return capture;
 }
 
 function skuDisplayName(sku) {
@@ -2417,7 +2811,10 @@ function showSkuDrawer(capture, options = {}) {
   const selected = new Set();
   const capturedSkus = keepCollectedSkuRecords(capture.skus || []);
   const hasVariantEvidence = (capture.sku_property_groups || []).some((group) => (group?.values || []).length)
-    || (capture.raw_snapshot?.all_raw_skus || []).length > 0;
+    || (capture.raw_snapshot?.all_raw_skus || []).length > 0
+    // A failed recovery with actual skuProps/skuMap evidence must never be
+    // mislabeled as a real one-specification offer.
+    || capture.raw_snapshot?.sku_variant_signal_detected === true;
   const offerId = String(capture.source_url || "").match(/\/offer\/(\d{6,})/)?.[1];
   const skus = !capturedSkus.length && !hasVariantEvidence && offerId
     ? [{
@@ -2824,7 +3221,8 @@ function showSkuDrawer(capture, options = {}) {
     const listTitle = document.createElement("div");
     listTitle.className = "caf-sku-list-title";
     if (!skus.length) {
-      listTitle.textContent = "未解析到真实 1688 SKU，请重新采集。";
+      const recoveryReason = capture.raw_snapshot?.page_source_sku_recovery?.reason;
+      listTitle.textContent = `未解析到真实 1688 SKU：${recoveryReason || "未找到有效规格表"}`;
       list.appendChild(listTitle);
       return;
     }
@@ -3000,20 +3398,45 @@ function showSkuDrawer(capture, options = {}) {
   loadCategorySearch(capture.title_cn || "");
 }
 
+function safeCaptureStep(name, fallback, operation, errors) {
+  try {
+    const value = operation();
+    if (value === undefined || value === null) throw new Error("解析器未返回结果");
+    return value;
+  } catch (error) {
+    const message = error?.message || String(error || "unknown error");
+    console.warn(`CAF ${name} capture failed`, error);
+    errors.push({ stage: name, message });
+    return fallback;
+  }
+}
+
 function buildCapture() {
-  const structured = parseJsonScripts();
-  const title = extractTitle(structured);
-  const supplier = extractSupplier(structured);
-  const attrs = extractAttributes(structured);
-  const price = extractPriceInfo(structured);
-  const moq = extractMinimumOrder();
-  const mainImages = extractMainImages();
-  const detailImages = extractDetailImages();
+  const captureErrors = [];
+  const structuredResult = safeCaptureStep("structured_data", [], parseJsonScripts, captureErrors);
+  const structured = Array.isArray(structuredResult) ? structuredResult : [];
+  const title = safeCaptureStep("title", { value: "unknown", candidates: [], selectors: [] }, () => extractTitle(structured), captureErrors);
+  const supplier = safeCaptureStep("supplier", { value: "unknown", candidates: [], selectors: [] }, () => extractSupplier(structured), captureErrors);
+  const attrs = safeCaptureStep("attributes", { values: [], selectors: [] }, () => extractAttributes(structured), captureErrors);
+  const price = safeCaptureStep("price", { value: { currency: "unknown", price_ranges: [], raw_text: "unknown" }, selectors: [], candidateCount: 0 }, () => extractPriceInfo(structured), captureErrors);
+  const moq = safeCaptureStep("minimum_order", { value: { value: null, raw_text: "unknown" }, candidateCount: 0 }, extractMinimumOrder, captureErrors);
+  const mainImages = safeCaptureStep("main_images", { values: [], selectors: [] }, extractMainImages, captureErrors);
+  const detailImages = safeCaptureStep("detail_images", { values: [], selectors: [] }, extractDetailImages, captureErrors);
+  title.candidates = Array.isArray(title.candidates) ? title.candidates : [];
+  supplier.candidates = Array.isArray(supplier.candidates) ? supplier.candidates : [];
+  attrs.values = Array.isArray(attrs.values) ? attrs.values : [];
+  price.value = price.value && typeof price.value === "object" ? price.value : {};
+  price.value.price_ranges = Array.isArray(price.value.price_ranges) ? price.value.price_ranges : [];
+  moq.value = moq.value && typeof moq.value === "object" ? moq.value : { value: null, raw_text: "unknown" };
+  mainImages.values = Array.isArray(mainImages.values) ? mainImages.values : [];
+  detailImages.values = Array.isArray(detailImages.values) ? detailImages.values : [];
   const productRangePrice = productPriceForQuantity(price.value, moq.value.value);
-  const skus = extractSkus(structured, price.value.price_ranges.length > 0, productRangePrice);
+  const skus = safeCaptureStep("skus", { values: [], candidateCount: 0, source: "unknown", propertyGroups: [] }, () => extractSkus(structured, price.value.price_ranges.length > 0, productRangePrice), captureErrors);
+  skus.values = Array.isArray(skus.values) ? skus.values : [];
   // 1688 详情区懒加载，DOM 常抓不到详情图；从 offerImgList 补回未被 main/sku 占用的图。
   const skuImageUrls = skus.values.map((sku: any) => sku.image_url || sku.variant_image_url || "").filter(Boolean);
-  offerImgListDetailUrls(structured, mainImages.values.map((v: any) => v.url), skuImageUrls).forEach((item) => detailImages.values.push(item));
+  const supplementalDetailImages = safeCaptureStep("offer_image_list", [], () => offerImgListDetailUrls(structured, mainImages.values.map((v: any) => v.url), skuImageUrls), captureErrors);
+  supplementalDetailImages.forEach((item) => detailImages.values.push(item));
   {
     const seenDetail = new Set<string>();
     detailImages.values = detailImages.values.filter((item: any) => {
@@ -3023,6 +3446,7 @@ function buildCapture() {
     });
   }
   const warnings = [];
+  captureErrors.forEach((item) => warnings.push(`${item.stage}: ${item.message}`));
   const realSkuIdCount = skus.values.filter((sku) => isRealSkuId(sku.sku_id)).length;
   const skuDebug = buildSkuDebug(skus.values, {
     sku_source: skus.source || "unknown",
@@ -3091,6 +3515,7 @@ function buildCapture() {
       sku_debug: skuDebug,
       sku_property_image_debug: skuPropertyImageDebug,
       sku_source: skus.source || "unknown"
+      ,capture_errors: captureErrors
     },
     sku_image_preflight: {
       status: skuDebug.missing_image_skus.length ? "WARNING" : "PASS",
@@ -3108,10 +3533,60 @@ function buildCapture() {
 }
 
 async function buildReadyCapture() {
-  await warmAllSkuImages();
-  await warmProductAttributeTables();
-  await warmDetailImages();
-  return buildCapture();
+  // 1688 frequently replaces virtualized DOM nodes while the page is being
+  // warmed. A failed optional warm-up must never turn the whole capture into
+  // unknown/0/0/0; the parser can still collect the currently available data.
+  for (const warm of [warmAllSkuImages, warmProductAttributeTables, warmDetailImages]) {
+    try {
+      await warm();
+    } catch (error) {
+      console.warn("CAF optional page warm-up failed", error);
+    }
+  }
+  // The SKU model is populated asynchronously on modern 1688 pages, so refresh
+  // the page-context snapshot after warm-up and before any parsing begins.
+  await injectPageProbe();
+  const capture = buildCapture();
+  // The content-script world cannot always see 1688's closed-over tradeModel.
+  // Recover real SKU rows from the same offer's source before any UI fallback.
+  await recoverSkusFrom1688PageSource(capture);
+  // 详情描述挂在独立 detailUrl 页面时，商品页 DOM/脚本都采不到详情图；
+  // 这里在详情图为空时兜底抓取该页面，避免 detail_images=0。
+  if (!(capture.detail_images || []).length) {
+    const detailUrl = extractDetailUrl();
+    if (detailUrl) {
+      try {
+        const urls = await fetchDetailImagesFromDetailUrl(detailUrl);
+        if (urls.length) {
+          capture.detail_images = urls.map((url, index) => ({ url, source: "detail_url_page", source_order: index }));
+          capture.raw_snapshot = capture.raw_snapshot || {};
+          capture.raw_snapshot.detail_image_source = { source: "detail_url_page", detail_url: detailUrl, count: urls.length };
+          capture.capture_warnings = (capture.capture_warnings || []).filter((warning) => !/^detail_images:/.test(String(warning)));
+        }
+      } catch (error) {
+        console.warn("CAF detail-url image fetch failed", error);
+      }
+    }
+  }
+  const recoveredSkus = await recoverSkuImagesFromVariantSelection(capture.skus || []);
+  if (recoveredSkus === capture.skus) return capture;
+  capture.skus = recoveredSkus;
+  const skuDebug = buildSkuDebug(recoveredSkus, {
+    sku_source: capture.raw_snapshot?.sku_source || "interactive_variant_gallery"
+  });
+  capture.capture_warnings = (capture.capture_warnings || []).filter((warning) => !/^skus: \d+ SKU missing dedicated image$/.test(String(warning)));
+  if (skuDebug.missing_image_skus.length) capture.capture_warnings.push(`skus: ${skuDebug.missing_image_skus.length} SKU missing dedicated image`);
+  if (capture.raw_snapshot) capture.raw_snapshot.sku_debug = skuDebug;
+  capture.sku_image_preflight = {
+    ...(capture.sku_image_preflight || {}),
+    status: skuDebug.missing_image_skus.length ? "WARNING" : "PASS",
+    sku_with_images: skuDebug.sku_with_images,
+    missing_count: skuDebug.missing_image_skus.length,
+    missing_sku_ids: skuDebug.missing_image_skus,
+    checked_at: new Date().toISOString(),
+    rule: "优先读取1688 SKU专属图；缺失时只允许逐规格切换后读取当前商品图，无法确认仍保留真实缺图标记"
+  };
+  return capture;
 }
 
 chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
@@ -3124,9 +3599,11 @@ chrome.runtime.onMessage.addListener((message, sender, sendResponse) => {
   }
   if (message.type === "COLLECTOR_PREVIEW" || message.type === "COLLECTOR_CAPTURE") {
     buildReadyCapture().then(sendResponse).catch((error) => sendResponse({
-      is_collectable: /1688\.com/.test(location.hostname),
+      is_collectable: false,
+      error_code: "CAPTURE_BUILD_FAILED",
       reason: `SKU图片加载失败：${error?.message || "页面未完成加载"}`,
-      capture_warnings: ["SKU图片加载失败"]
+      capture_warnings: ["SKU图片加载失败"],
+      capture_error: error?.stack || error?.message || String(error || "unknown error")
     }));
     return true;
   }

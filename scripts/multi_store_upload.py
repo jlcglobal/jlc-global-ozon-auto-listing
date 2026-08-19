@@ -23,12 +23,18 @@ try:
     from pipeline_runtime import load_json, normalize_checkpoint, now, write_json_atomic
     from store_publications import ensure_store_offer_ids, is_store_offer_id, load_publications, save_publications
     from task_database import cutover_active
-    from workbench_stores import mark_store_validation_failed
+    from workbench_stores import load_registry, mark_store_validation_failed
+    from store_cluster_profiles import profile_from_store
+    from ozon_ecommerce_designer_contract import materialize as materialize_design, store_variant_design
+    from store_variant_assets import apply_variant_assets_to_isolated, has_store_variants
 except ModuleNotFoundError:  # Imported as scripts.multi_store_upload by tests/tools.
     from scripts.pipeline_runtime import load_json, normalize_checkpoint, now, write_json_atomic
     from scripts.store_publications import ensure_store_offer_ids, is_store_offer_id, load_publications, save_publications
     from scripts.task_database import cutover_active
-    from scripts.workbench_stores import mark_store_validation_failed
+    from scripts.workbench_stores import load_registry, mark_store_validation_failed
+    from scripts.store_cluster_profiles import profile_from_store
+    from scripts.ozon_ecommerce_designer_contract import materialize as materialize_design, store_variant_design
+    from scripts.store_variant_assets import apply_variant_assets_to_isolated, has_store_variants
 
 
 ROOT = Path(__file__).resolve().parents[1]
@@ -281,7 +287,59 @@ def stop_workspace_image_channels(workspace: Path, wait_seconds: float = 12) -> 
         raise RuntimeError(f"旧图片通道仍在退出中，已阻止删除工作区：{live}")
 
 
-def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publication: Mapping[str, Any]) -> Path:
+def _is_merge_model_name_attribute(item: Mapping[str, Any]) -> bool:
+    """识别 Ozon「型号名（用于合并 SPU）」属性，而非名称模板里的型号名。
+
+    合并型号名在 Ozon 各分类的 attribute_id 可能不同，9048 只是最常见的一个；
+    语义名字（Название модели для объединения в одну карточку）才是稳定判据。
+    「Название модели для шаблона наименования」（模板型号名）不用于跨账号合并，
+    必须排除，否则多店仍会共用同一模板名。
+    """
+    try:
+        attribute_id = int(item.get("attribute_id") or 0)
+    except (TypeError, ValueError):
+        attribute_id = 0
+    if attribute_id == 9048:
+        return True
+    name = re.sub(r"[^a-zа-яё0-9]", "", str(item.get("attribute_name") or "").casefold())
+    return "названиемоделидляобъединения" in name
+
+
+def _scope_store_model_name(isolated: Path, store_id: str) -> None:
+    """多店上架时给每个店独立的合并型号名，避免 Ozon 判跨账号 SPU 重复。
+
+    Ozon 的「型号名（для объединения в одну карточку）」是跨 SKU/跨账号合并
+    SPU 的稳定键。同一商品发多个店时若共用同一型号名，Ozon 会报
+    spu_already_exists_in_another_account。给每个店加 store 后缀，让每个店成为
+    独立 SPU；店内所有 SKU 仍共享同一型号名，颜色变体照常合并为一张卡。
+    """
+    attrs_path = isolated / "output" / "ozon-attributes-final.json"
+    if not attrs_path.is_file():
+        return
+    attrs = load_json(attrs_path)
+    suffix = f"-{_safe_store_id(store_id)}"
+    changed = False
+    for key in ("common_attributes", "attributes"):
+        for item in attrs.get(key) or []:
+            if not _is_merge_model_name_attribute(item):
+                continue
+            for field in ("value", "canonical_value", "target_value", "ozon_value"):
+                value = str(item.get(field) or "").strip()
+                if value and value.casefold() not in {"unknown", "none", "null"} and not value.endswith(suffix):
+                    item[field] = value + suffix
+                    changed = True
+    if changed:
+        write_json_atomic(attrs_path, attrs)
+
+
+def prepare_isolated_product(
+    root: Path,
+    product_dir: Path,
+    store_id: str,
+    publication: Mapping[str, Any],
+    *,
+    selected_store_count: int = 1,
+) -> Path:
     repair_images = image_repair_retryable(publication)
     repair_variant = variant_repair_retryable(publication)
     force_refresh = (
@@ -298,6 +356,47 @@ def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publi
     isolated.parent.mkdir(parents=True, exist_ok=True)
     shutil.copytree(product_dir, isolated)
     output = isolated / "output"
+    master_design_path = output / "ozon-ecommerce-design.json"
+    store_variant_selected = False
+    if selected_store_count > 1 and not master_design_path.is_file():
+        raise RuntimeError(
+            "多店商品缺少店铺独立资料，已阻止复用同一标题、文案或图片提交"
+        )
+    if master_design_path.is_file():
+        master_design = load_json(master_design_path)
+        if selected_store_count > 1:
+            # A multi-store listing must never silently fall back to the
+            # product-master copy or image set.  The original implementation
+            # only installed store assets when the design happened to contain
+            # variants; a resumed/legacy product could therefore publish the
+            # same card to every selected store.  Missing assets are a hard
+            # pre-write error, including on image-repair retries.
+            if not master_design.get("store_variants"):
+                raise RuntimeError(
+                    "多店商品缺少店铺独立资料，已阻止复用同一标题、文案或图片提交"
+                )
+            if not has_store_variants(product_dir):
+                raise RuntimeError(
+                    "多店商品缺少已验证的店铺独立图片资产，已阻止提交"
+                )
+            # This is a store-scoped projection inside an isolated workspace.
+            # It changes only buyer copy and visual direction; source facts,
+            # SKU plan and compiled Ozon attributes stay shared and untouched.
+            projected = store_variant_design(master_design, store_id)
+            materialize_design(isolated, projected)
+            store_variant_selected = True
+            # The upload workspace must receive the exact plan, files and QC
+            # receipts produced for this store.  A missing manifest is a hard
+            # pre-write stop, never a fallback to another store's images.
+            apply_variant_assets_to_isolated(product_dir, isolated, store_id)
+        elif master_design.get("store_variants"):
+            # A single-store retry may still use its store-scoped plan when
+            # the source product was previously prepared for a store cluster.
+            projected = store_variant_design(master_design, store_id)
+            materialize_design(isolated, projected)
+            store_variant_selected = has_store_variants(product_dir)
+            if store_variant_selected:
+                apply_variant_assets_to_isolated(product_dir, isolated, store_id)
     for name in STORE_ARTIFACTS:
         (output / name).unlink(missing_ok=True)
     previous = store_artifact_dir(product_dir, store_id)
@@ -334,19 +433,36 @@ def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publi
     status["completed_steps"] = [step for step in status.get("completed_steps") or [] if step != "ozon_upload"]
     status["pending_steps"] = ["ozon_upload"]
     write_json_atomic(isolated / "status.json", status)
-    ensure_upload_config_exists(isolated, force_refresh=force_refresh)
+    ensure_upload_config_exists(
+        isolated,
+        force_refresh=force_refresh or store_variant_selected,
+    )
     config_path = output / "ozon-upload-config.json"
     config = load_json(config_path)
     config["shop_name"] = store_id
+    shop = next(
+        (
+            item for item in (load_registry(root).get("shops") or [])
+            if str(item.get("id") or "") == store_id
+        ),
+        {},
+    )
+    # A profile price is an automatic *suggestion* applied only when this
+    # store has no explicit SKU override.  Thus users keep full control over
+    # deliberate price edits while every cluster store receives a genuinely
+    # distinct commercial card by default.
+    price_multiplier = float(profile_from_store(shop).get("price_multiplier") or 1.0)
     prices = {
-        str(item.get("sku_id")): item.get("price_override_cny", item.get("initial_price_cny"))
+        str(item.get("sku_id")): item.get("price_override_cny")
         for item in publication.get("sku_publications") or []
-        if item.get("price_override_cny", item.get("initial_price_cny")) not in {None, "", "unknown"}
+        if item.get("price_override_cny") not in {None, "", "unknown"}
     }
     for item in config.get("sku_prices") or []:
         sku_id = str(item.get("source_sku_id"))
         if sku_id in prices:
             item["price"] = f"{float(prices[sku_id]):.2f}"
+        elif item.get("price") not in {None, "", "unknown"}:
+            item["price"] = f"{float(item['price']) * price_multiplier:.2f}"
     write_json_atomic(config_path, config)
     offer_ids = {
         str(item.get("sku_id")): str(item.get("offer_id"))
@@ -395,6 +511,9 @@ def prepare_isolated_product(root: Path, product_dir: Path, store_id: str, publi
                 for sku_id in draft_sku_ids
             ],
         })
+    # 多店上架：每个店用独立的 9048 型号名，避免 Ozon 判跨账号 SPU 重复。
+    if selected_store_count > 1:
+        _scope_store_model_name(isolated, store_id)
     return isolated
 
 
@@ -672,7 +791,9 @@ def variant_repair_retryable(record: Mapping[str, Any]) -> bool:
         parts.extend(sku.get("errors") or [])
         parts.extend(sku.get("warnings") or [])
     haystack = " ".join(str(part) for part in parts if part).casefold()
-    return any(token in haystack for token in VARIANT_FAILURE_TOKENS)
+    return bool(record.get("requires_variant_merge")) or any(
+        token in haystack for token in VARIANT_FAILURE_TOKENS
+    )
 
 
 def stale_prewrite_pending(record: Mapping[str, Any]) -> bool:
@@ -691,6 +812,23 @@ def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_
     status = dict(outcome.get("status") or {})
     result = dict(outcome.get("result") or {})
     idempotency = dict(outcome.get("idempotency") or {})
+    items = [item for item in (result.get("items") or []) if isinstance(item, Mapping)]
+    # Ozon can create a card while rejecting one or more image URLs.  That is
+    # not a successful publication: the marketplace silently substitutes a
+    # fallback picture, which makes SKU cards look identical.  Preserve the
+    # remote product IDs, but force the store into the dedicated image-repair
+    # path instead of reporting it as uploaded.
+    remote_issues = [
+        issue
+        for item in items
+        for issue in [*(item.get("errors") or []), *(item.get("warnings") or [])]
+    ] + list(result.get("errors") or []) + list(result.get("warnings") or [])
+    remote_image_failure = any(
+        ozon_issue_bucket(issue) == "image_link" for issue in remote_issues
+    )
+    remote_variant_failure = any(
+        ozon_issue_bucket(issue) == "duplicate_spu" for issue in remote_issues
+    )
     write_count = int(status.get("api_write_count") or 0)
     raw_status = str(status.get("status") or "NEEDS_ATTENTION").upper()
     has_task_id = (
@@ -698,7 +836,12 @@ def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_
         or any(not _unknown(item.get("task_id")) for item in (result.get("items") or []))
     )
     result_failed = str(result.get("status") or "").upper() == "FAILED"
-    if raw_status in {"FAILED", "NEEDS_ATTENTION"} or result_failed:
+    if (
+        remote_image_failure
+        or remote_variant_failure
+        or raw_status in {"FAILED", "NEEDS_ATTENTION"}
+        or result_failed
+    ):
         store_status = "FAILED"
     elif raw_status in {"ACTIVE", "UPLOADED"}:
         store_status = "SUCCESS"
@@ -717,11 +860,12 @@ def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_
         store_status = "PENDING_REMOTE"
     else:
         store_status = "FAILED"
-    items = result.get("items") or []
     by_sku = {str(item.get("source_sku_id") or item.get("sku_id") or ""): item for item in items}
     action = str(result.get("action") or result.get("upload_action") or "UNKNOWN").upper()
     status_error_message = status.get("error_message")
     errors = result.get("errors") or (status.get("ozon") or {}).get("errors") or []
+    if (remote_image_failure or remote_variant_failure) and not errors:
+        errors = remote_issues
     if not errors and raw_status in {"FAILED", "NEEDS_ATTENTION"} and not _unknown(status_error_message):
         errors = [{
             "step": "ozon_upload",
@@ -734,6 +878,7 @@ def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_
         item = by_sku.get(str(sku.get("sku_id"))) or (items[0] if len(items) == 1 else {})
         item_action = str(item.get("action") or "UNKNOWN").upper()
         resolved_action = item_action if not _unknown(item_action) else action if not _unknown(action) else str(sku.get("action") or "UNKNOWN").upper()
+        sku_issues = [*(item.get("errors") or []), *(item.get("warnings") or [])]
         sku.update({
             "offer_id": item.get("offer_id") or sku.get("offer_id") or "unknown",
             "action": resolved_action,
@@ -741,7 +886,8 @@ def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_
             "ozon_product_id": str(item.get("product_id") or item.get("ozon_product_id") or "unknown"),
             "payload_hash": idempotency.get("payload_hash") or result.get("payload_hash") or sku.get("payload_hash") or "unknown",
             "moderation_status": store_status.lower(),
-            "errors": errors, "warnings": result.get("warnings") or [],
+            "errors": sku_issues if store_status == "FAILED" else [],
+            "warnings": (item.get("warnings") or result.get("warnings") or []),
         })
     record.update({
         "selected": True, "status": store_status,
@@ -750,7 +896,13 @@ def _store_result(record: Dict[str, Any], outcome: Mapping[str, Any], increment_
         "last_submitted_at": now() if write_count else record.get("last_submitted_at"),
         "last_checked_at": now(),
         "last_error": None if store_status != "FAILED" else (
-            result.get("error_message") or status_error_message or "店铺上传失败"
+            "Ozon 无法下载图片直链；需使用稳定的公开图片直链重传图片。"
+            if remote_image_failure
+            else (
+                "Ozon 要求将颜色 SKU 合并为同一商品卡；将保留同一型号名并更新现有卡。"
+                if remote_variant_failure
+                else result.get("error_message") or status_error_message or "店铺上传失败"
+            )
         ),
     })
 
@@ -760,7 +912,15 @@ def aggregate_product_status(
     publications: Mapping[str, Any],
     root: Optional[Path] = None,
 ) -> Dict[str, Any]:
-    status = normalize_checkpoint(load_json(product_dir / "status.json"))
+    raw_status = load_json(product_dir / "status.json")
+    # ARCHIVED is a terminal local lifecycle state (user_archived_in_ozon):
+    # a later read-only status poll must never resurrect an archived product
+    # back into WAITING_MANUAL_REVIEW / PENDING_REMOTE, and normalize_checkpoint
+    # must not rewrite its next_action back to a pipeline step.  Return the
+    # archived snapshot untouched.
+    if str(raw_status.get("status") or "") == "ARCHIVED" or str(raw_status.get("local_lifecycle_status") or "") == "ARCHIVED":
+        return raw_status
+    status = normalize_checkpoint(raw_status)
     previous_status = str(status.get("status") or "unknown")
     selected = [item for item in (publications.get("stores") or {}).values() if item.get("selected")]
     states = {str(item.get("status") or "") for item in selected}
@@ -992,6 +1152,10 @@ def execute_selected_stores(
     # Allocate every selected store/SKU article in one persisted pass before
     # creating a workspace or allowing the first Ozon request.
     publications = ensure_store_offer_ids(product_dir)
+    selected_store_count = sum(
+        1 for record in (publications.get("stores") or {}).values()
+        if isinstance(record, Mapping) and record.get("selected")
+    )
     only = set(only_store_ids or [])
     run = runner or default_runner
     attempted = []
@@ -1014,7 +1178,10 @@ def execute_selected_stores(
         ):
             skipped.append({"store_id": store_id, "reason": "ambiguous_state_blocks_resubmit"})
             continue
-        isolated = prepare_isolated_product(root, product_dir, store_id, record)
+        isolated = prepare_isolated_product(
+            root, product_dir, store_id, record,
+            selected_store_count=selected_store_count,
+        )
         record["status"] = "UPLOADING"
         save_publications(product_dir, publications)
         try:

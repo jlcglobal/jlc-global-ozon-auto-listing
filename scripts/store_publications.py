@@ -4,6 +4,7 @@ from __future__ import annotations
 import hashlib
 import json
 import secrets
+import shutil
 import tempfile
 from datetime import datetime, timezone
 from pathlib import Path
@@ -264,6 +265,83 @@ def select_stores(
             record.get("title_override") or record.get("image_version_override")
             or record.get("store_notes") or price_overrides or price_overrides_cny
         )
+    return save_publications(product_dir, data)
+
+
+def restart_archived_store_publications(
+    product_dir: Path,
+    store_ids: Iterable[str],
+    *,
+    reason: str,
+) -> Dict[str, Any]:
+    """Start fresh cards after the operator archived the prior remote cards.
+
+    This is intentionally explicit: it discards only remote identities for the
+    named stores, keeps all source/design/image assets, and lets the normal
+    allocator create new opaque offer IDs before any new Ozon write.
+    """
+    data = load_publications(product_dir)
+    requested = list(dict.fromkeys(str(value) for value in store_ids if str(value).strip()))
+    stores = data.get("stores") or {}
+    unknown = [store_id for store_id in requested if store_id not in stores]
+    if unknown:
+        raise ValueError("未知店铺：" + "、".join(unknown))
+    restarted_at = now()
+    for store_id in requested:
+        record = stores[store_id]
+        if not record.get("selected"):
+            raise ValueError(f"店铺 {store_id} 未被选中，不能重跑")
+        archived_attempt = {
+            "at": restarted_at,
+            "reason": reason,
+            "api_write_count": int(record.get("api_write_count") or 0),
+            "sku_publications": [
+                {
+                    "sku_id": sku.get("sku_id"),
+                    "offer_id": sku.get("offer_id"),
+                    "task_id": sku.get("task_id"),
+                    "ozon_product_id": sku.get("ozon_product_id"),
+                }
+                for sku in (record.get("sku_publications") or [])
+            ],
+        }
+        record.setdefault("archived_remote_attempts", []).append(archived_attempt)
+        record.update({
+            "status": "SELECTED",
+            "api_write_count": 0,
+            "last_submitted_at": None,
+            "last_checked_at": restarted_at,
+            "last_error": None,
+        })
+        for sku in record.get("sku_publications") or []:
+            sku.update({
+                "offer_id": "unknown",
+                "action": "UNKNOWN",
+                "task_id": "unknown",
+                "ozon_product_id": "unknown",
+                "payload_hash": "unknown",
+                "moderation_status": "not_submitted",
+                "errors": [],
+                "warnings": [],
+            })
+        # The next isolated upload workspace copies current store artifacts.
+        # Move (never delete) old idempotency/results aside, otherwise the
+        # new run would correctly receive fresh offer IDs but still be blocked
+        # by a prior remote task copied from this directory.
+        run_dir = product_dir / "output" / "store-runs" / store_id
+        if run_dir.is_dir():
+            history_dir = run_dir / f"archived-remote-at-{restarted_at.replace(':', '-').replace('+', '_')}"
+            history_dir.mkdir(parents=True, exist_ok=True)
+            for name in (
+                "ozon-result.json", "ozon-write-receipt.json", "ozon-idempotency.json",
+                "ozon-last-upload-hashes.json", "product-exists-check.json",
+                "ozon-upload-payload.json", "ozon-images.json", "ozon-image-transfer.json",
+                "ozon-preflight.json", "ozon-update-request-summary.json",
+                "store-offer-id-map.json", "ozon-image-update-receipt.json",
+            ):
+                source = run_dir / name
+                if source.is_file():
+                    shutil.move(str(source), str(history_dir / name))
     return save_publications(product_dir, data)
 
 

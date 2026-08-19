@@ -133,6 +133,56 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
         })();
         return true;
     }
+    if (message?.type === 'FACTORY_FETCH_DETAIL_PAGE') {
+        (async () => {
+            try {
+                const url = String(message.url || "");
+                const parsed = new URL(url);
+                if (parsed.protocol !== "https:" || !parsed.hostname.endsWith(".tmall.com")) {
+                    throw new Error("详情页地址不在允许域名");
+                }
+                const response = await fetch(url, { credentials: "include" });
+                if (!response.ok)
+                    throw new Error(`详情页读取失败 HTTP ${response.status}`);
+                sendResponse({ ok: true, status: response.status, body: await response.text() });
+            }
+            catch (error) {
+                sendResponse({ ok: false, status: 0, error: error?.message || '详情页读取失败' });
+            }
+        })();
+        return true;
+    }
+    if (message?.type === 'FACTORY_FETCH_1688_PAGE_SOURCE') {
+        // The content script runs in an isolated world and recent 1688 pages do
+        // not consistently expose tradeModel there.  Read the current offer's
+        // HTML through the extension worker instead, under a deliberately narrow
+        // allow-list.  This is a read-only recovery path, never a purchase action.
+        (async () => {
+            try {
+                const url = String(message.url || "");
+                const parsed = new URL(url);
+                if (parsed.protocol !== "https:"
+                    || parsed.hostname !== "detail.1688.com"
+                    || !/^\/offer\/\d+\.html$/i.test(parsed.pathname)) {
+                    throw new Error("1688商品页地址不在允许范围");
+                }
+                const response = await fetch(url, {
+                    credentials: "include",
+                    headers: { Accept: "text/html,application/xhtml+xml" }
+                });
+                if (!response.ok)
+                    throw new Error(`1688商品页读取失败 HTTP ${response.status}`);
+                const body = await response.text();
+                if (!body || body.length > 2000000)
+                    throw new Error("1688商品页源码为空或超出安全大小");
+                sendResponse({ ok: true, status: response.status, body });
+            }
+            catch (error) {
+                sendResponse({ ok: false, status: 0, error: error?.message || "1688商品页读取失败" });
+            }
+        })();
+        return true;
+    }
     if (message?.type !== 'FACTORY_FETCH')
         return undefined;
     (async () => {

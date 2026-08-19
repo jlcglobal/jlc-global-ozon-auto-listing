@@ -27,6 +27,21 @@ type MeasurementDraft = Record<string, {
   package_height_cm: string;
 }>;
 
+const storeGroupPresets = [
+  {
+    id: "1256",
+    label: "组合 1256",
+    storeIds: ["zhonglian1", "zhonglian2", "zhonglian5", "jlc-blobal-6"],
+    description: "1、2、5、6 · 四个不同主体",
+  },
+  {
+    id: "V346",
+    label: "组合 V346",
+    storeIds: ["volttech", "zhonglian3", "zhonglian4", "jlc-blobal-6"],
+    description: "V、3、4、6 · 四个不同主体",
+  },
+] as const;
+
 function money(value?: number, currency = "CNY") {
   if (typeof value !== "number" || Number.isNaN(value)) return "--";
   if (currency === "RUB") return `${Math.round(value)} ₽`;
@@ -267,6 +282,7 @@ export function ProductDetailDrawer({
   const [categoryOpen, setCategoryOpen] = useState(false);
   const [bindingBusyKey, setBindingBusyKey] = useState("");
   const [selectedStoreIds, setSelectedStoreIds] = useState<string[]>([]);
+  const [storeVariantPreviewId, setStoreVariantPreviewId] = useState("");
   const [storeBusy, setStoreBusy] = useState(false);
   const [suggestionBusy, setSuggestionBusy] = useState("");
   const [answer, setAnswer] = useState("");
@@ -294,7 +310,20 @@ export function ProductDetailDrawer({
   const sortedLogs = useMemo(() => logs.slice(0, 12), [logs]);
   const stores = selectedStores(detail);
   const allStores = detail?.stores || [];
+  const selectedStoreGroup = useMemo(() => storeGroupPresets.find((preset) =>
+    preset.storeIds.length === selectedStoreIds.length && preset.storeIds.every((storeId) => selectedStoreIds.includes(storeId)),
+  ), [selectedStoreIds]);
+  const invalidStoreSelection = selectedStoreIds.length > 1 && !selectedStoreGroup;
+  const storeSelectionHelp = selectedStoreGroup
+    ? `已选择 ${selectedStoreGroup.label}：${selectedStoreGroup.description}`
+    : invalidStoreSelection
+      ? "多店仅允许组合 1256 或 V346；其他情况请只选一家店。"
+      : selectedStoreIds.length === 1
+        ? "单店上架：只生成这一家店的商品卡。"
+        : "请选择一家店，或直接选择跨主体组合 1256 / V346。";
   const publicationStores = detail?.publications?.stores || {};
+  const storeVariants = detail?.store_variants?.items || [];
+  const selectedStoreVariant = storeVariants.find((item) => item.store_id === storeVariantPreviewId) || storeVariants[0];
   const failedStoreIds = Object.entries(publicationStores)
     .filter(([, record]) => String(record?.status || record?.upload_status || "").toUpperCase() === "FAILED")
     .map(([storeId]) => storeId);
@@ -355,7 +384,18 @@ export function ProductDetailDrawer({
     );
   }
 
+  function chooseStoreGroup(groupId: string) {
+    const preset = storeGroupPresets.find((item) => item.id === groupId);
+    if (!preset) return;
+    const unavailable = preset.storeIds.some((storeId) => {
+      const shop = allStores.find((item) => item.id === storeId);
+      return !shop || !shop.enabled || shop.connection_status !== "connected";
+    });
+    if (!unavailable) setSelectedStoreIds([...preset.storeIds]);
+  }
+
   async function saveStores() {
+    if (invalidStoreSelection) return;
     setStoreBusy(true);
     try {
       await onSaveStores(selectedStoreIds);
@@ -467,6 +507,12 @@ export function ProductDetailDrawer({
     const publications = detail?.publications?.stores || {};
     setSelectedStoreIds(Object.entries(publications).filter(([, record]) => record?.selected).map(([storeId]) => storeId));
   }, [detail?.product_id, detail?.publications?.stores]);
+
+  useEffect(() => {
+    if (!storeVariants.some((item) => item.store_id === storeVariantPreviewId)) {
+      setStoreVariantPreviewId(storeVariants[0]?.store_id || "");
+    }
+  }, [detail?.product_id, storeVariantPreviewId, storeVariants]);
 
   useEffect(() => {
     setCopyDraft({
@@ -650,6 +696,38 @@ export function ProductDetailDrawer({
                   </div>
                   <Button size="sm" variant="secondary" onClick={() => setCategoryOpen(true)} disabled={!detail?.product_id}>修改</Button>
                 </div>
+                <section className="detail-store-groups" aria-label="跨主体店群组合">
+                  <div className="detail-store-groups-head">
+                    <div>
+                      <span>跨主体组合</span>
+                      <strong>一键选择合规店群</strong>
+                    </div>
+                    <Button size="sm" variant="ghost" onClick={() => setSelectedStoreIds([])} disabled={!selectedStoreIds.length || actionBusy || storeBusy}>
+                      清空选择
+                    </Button>
+                  </div>
+                  <div className="detail-store-group-options">
+                    {storeGroupPresets.map((preset) => {
+                      const unavailable = preset.storeIds.some((storeId) => {
+                        const shop = allStores.find((item) => item.id === storeId);
+                        return !shop || !shop.enabled || shop.connection_status !== "connected";
+                      });
+                      return (
+                        <button
+                          key={preset.id}
+                          type="button"
+                          className={cn("detail-store-group", selectedStoreGroup?.id === preset.id && "selected")}
+                          disabled={unavailable || actionBusy || storeBusy}
+                          onClick={() => chooseStoreGroup(preset.id)}
+                        >
+                          <strong>{preset.label}</strong>
+                          <small>{preset.description}{unavailable ? " · 有店铺不可用" : ""}</small>
+                        </button>
+                      );
+                    })}
+                  </div>
+                  <p className={cn(invalidStoreSelection && "error")}>{storeSelectionHelp}</p>
+                </section>
                 <div className="store-chip-grid">
                   {(allStores.length ? allStores : stores).slice(0, 8).map((store) => {
                     const selected = selectedStoreIds.includes(store.id);
@@ -671,7 +749,7 @@ export function ProductDetailDrawer({
                 </div>
                 <div className="store-save-row">
                   <span>已选择 {selectedStoreIds.length} 家店铺</span>
-                  <Button size="sm" onClick={saveStores} disabled={!detail?.product_id || !selectedStoreIds.length || storeBusy || actionBusy}>
+                  <Button size="sm" onClick={saveStores} disabled={!detail?.product_id || !selectedStoreIds.length || invalidStoreSelection || storeBusy || actionBusy}>
                     保存目标店铺
                   </Button>
                 </div>
@@ -714,6 +792,54 @@ export function ProductDetailDrawer({
                   {!Object.keys(publicationStores).length && <p className="drawer-empty">暂无上传店铺记录</p>}
                 </div>
               </section>
+
+              {storeVariants.length > 0 && (
+                <section className="detail-section store-variant-section">
+                  <div className="store-variant-heading">
+                    <div>
+                      <h4>各店独立资料与图片</h4>
+                      <p>已完成 {detail?.store_variants?.ready || 0}/{detail?.store_variants?.total || storeVariants.length} 家；这里只展示已完成店铺的真实独立图片。</p>
+                    </div>
+                  </div>
+                  <div className="store-variant-list">
+                    {storeVariants.map((variant) => (
+                      <button
+                        key={variant.store_id}
+                        type="button"
+                        className={cn("store-variant-card", selectedStoreVariant?.store_id === variant.store_id && "selected", `state-${variant.state || "waiting"}`)}
+                        onClick={() => setStoreVariantPreviewId(variant.store_id)}
+                      >
+                        <div>
+                          <strong>{variant.display_name || variant.store_id}</strong>
+                          <span>{variant.profile_label || "店铺版本"} · {variant.state === "ready" ? "已完成" : variant.state === "generating" ? "生成中" : "等待中"}</span>
+                        </div>
+                        <b>{variant.image_count || 0}/{variant.expected_image_count || 11} 图</b>
+                        <small>{variant.message || "等待生成"}</small>
+                      </button>
+                    ))}
+                  </div>
+                  {selectedStoreVariant && (
+                    <div className="store-variant-preview">
+                      <div>
+                        <strong>{selectedStoreVariant.display_name || selectedStoreVariant.store_id} 图片预览</strong>
+                        <span>{selectedStoreVariant.title_ru || "资料生成中"}</span>
+                      </div>
+                      {selectedStoreVariant.images?.length ? (
+                        <div className="store-variant-image-grid">
+                          {selectedStoreVariant.images.map((image) => (
+                            <figure key={image.path || image.slot}>
+                              {image.url && <img src={image.url} alt={`${selectedStoreVariant.display_name || selectedStoreVariant.store_id} ${image.slot || "图片"}`} loading="lazy" />}
+                              <figcaption>{image.preview ? "生成中预览" : image.type === "main" ? "主图" : "详情图"} · {image.slot}</figcaption>
+                            </figure>
+                          ))}
+                        </div>
+                      ) : (
+                        <p className="store-variant-empty">{selectedStoreVariant.message || "该店独立图片尚未完成。"}</p>
+                      )}
+                    </div>
+                  )}
+                </section>
+              )}
 
               <section className="detail-section attribute-overview-section">
                 <h4>类目属性概览</h4>

@@ -29,7 +29,8 @@ _COLOR_MAPPINGS: tuple[tuple[tuple[str, ...], str], ...] = (
     (("酒红", "酒红色", "深酒红", "бордов"), "бордовый"),
     (("红色", "red", "красн"), "красный"),
     (("粉红", "粉色", "pink", "розов"), "розовый"),
-    (("浅蓝", "淡蓝", "светло-син"), "светло-синий"),
+    (("浅蓝", "淡蓝", "светло-голуб", "голуб"), "голубой"),
+    (("светло-син",), "светло-синий"),
     (("深蓝", "藏青", "темно-син", "тёмно-син"), "темно-синий"),
     (("蓝色", "blue", "син"), "синий"),
     (("黄色", "yellow", "желт", "жёлт"), "желтый"),
@@ -76,11 +77,11 @@ def normalize_russian_color_name(value: Any) -> str | None:
     if not raw:
         return None
     folded = raw.casefold().replace("ё", "е")
-    if is_russian_color_name(raw) and not re.search(r"\d", raw):
-        return raw.lower().replace("ё", "е")
     for tokens, russian in _COLOR_MAPPINGS:
         if any(token.casefold().replace("ё", "е") in folded for token in tokens):
             return russian
+    if is_russian_color_name(raw) and not re.search(r"\d", raw):
+        return raw.lower().replace("ё", "е")
     return None
 
 

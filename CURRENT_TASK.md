@@ -1,6 +1,6 @@
 # CURRENT_TASK
 
-更新时间：2026-07-22
+更新时间：2026-08-19
 
 ## 当前阶段
 
@@ -8,6 +8,7 @@
 
 ## 本轮已完成
 
+- 2026-08-19：新增「Ozon 关键词增长雷达」选品工具（独立于上架流水线）。详见 `PROJECT_HANDOFF.md` 的「当前已完成」第一条；skill 在 `.agents/skills/ozon-keyword-growth-radar/`，后端接口 `POST /api/workbench/market-intelligence/keyword-growth-report` + `GET .../latest`，前端顶部命令栏「关键词周报」按钮，数据源为 `market-intelligence/reports/seerfar-keyword-imports/`。已 git 提交推送。
 - 2026-07-20：修复所有商品通用的图片失败续跑逻辑。`needs_review`/失败图位不再因为缺少人工恢复请求而被跳过；失败图位会自动重新进入 `image_generation` 队列，已通过并有有效文件/回执/hash 的图位不会重做。
 - 2026-07-20：图片失败重试改为按图位计数，不再用整件商品的 `image_generation` 单次重试把任务打回人工处理；启动前异常不消耗真实生图次数。
 - 2026-07-20：P000020 正在真实验证该规则：当前从失败图位 `main-5811835345115` 继续，已通过的 5 张图片保留，Ozon 写接口仍为 0。

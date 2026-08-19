@@ -1,10 +1,12 @@
 # PROJECT_HANDOFF
 
-更新时间：2026-07-22
+更新时间：2026-08-19
 
 ## 项目当前真实方向
 
 AI Factory 是本地 1688 → Ozon 自动上架生产线。当前不做库存、订单、广告、财务运营分析或传统 ERP。
+
+另有独立的「Ozon 关键词增长雷达」选品工具（不属于上架流水线步骤）：用 Seefar 关键词挖掘数据做增长/机会排名并产出 Excel 周报。
 
 正式商品主链：
 
@@ -22,6 +24,13 @@ AI Factory 是本地 1688 → Ozon 自动上架生产线。当前不做库存、
 
 ## 当前已完成
 
+- 2026-08-19：新增「Ozon 关键词增长雷达」选品工具（独立于上架流水线，已 git 提交并推送到 agent/windows-pipeline-and-category-fixes 分支）。
+  - 功能：聚合工作台已导入的 Seefar 关键词挖掘数据，按「月搜热度（绝对量）+ 月搜增长（增长率）」排名，做增长/机会分离，排除低基数尖峰、垄断/转化集中度过高、供给拥挤、退货取消率过高、增长率异常（>300%）、Seefar 100% 缺省值，产出 `Ozon关键词增长机会周报.xlsx`（5 个 sheet：决策看板/关键词增长榜/关键词机会榜/排除项/完整数据）。
+  - skill：`.agents/skills/ozon-keyword-growth-radar/`（SKILL.md + references/keyword-growth-framework.md + scripts/fetch_seefar_keyword_growth.py、rank_keyword_growth.py、build_readable_weekly_report.mjs）。
+  - 后端：`collector/local-ingest/market_routes.py` 的 `POST /api/workbench/market-intelligence/keyword-growth-report`（生成）与 `GET .../latest`（下载 Excel）。
+  - 前端：顶部命令栏「关键词周报」按钮。
+  - 数据源：`market-intelligence/reports/seerfar-keyword-imports/*.json`（历史 Seefar 关键词挖掘导入，约 259 个报告 → 446 个去重关键词）。
+  - 注意：Seefar 没有类目 API，也没有关键词挖掘 API；数据只能来自浏览器 worker（`seerfar-browser-worker.mjs`）抓取 seerfar.cn 页面后导入，或用户手动导出 CSV。
 - 2026-07-20：图片生成失败续跑已改成全局按图位恢复。任何商品的失败/`needs_review` 图位都会重新进入生图队列；已通过图位根据文件、回执和 SHA256 保留，不再重做。
 - 2026-07-20：图片失败不再默认把整件商品卡到人工处理；正常失败图位自动继续重试，启动前程序错误单独记录且不消耗真实生图次数。
 - 2026-07-20：P000020 当前已从失败主图 `main-5811835345115` 真实恢复到 `image_generation`，子图位 worker 已启动；Ozon/库存调用为 0。
